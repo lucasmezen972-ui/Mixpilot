@@ -1,9 +1,14 @@
 name: macOS CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "release/**"
 
 concurrency:
   group: mixpilot-macos-${{ github.event.pull_request.number || github.ref }}
@@ -15,13 +20,16 @@ permissions:
 jobs:
   test-and-build:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - name: Toolchain
         run: |
           xcodebuild -version
           swift --version
+          chmod +x Scripts/*.sh
+
       - name: Unit tests
         id: unit-tests
         shell: bash
@@ -31,19 +39,49 @@ jobs:
           status=$?
           cat unit-test.log
           exit $status
+
       - name: Upload unit-test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-log
           path: unit-test.log
-      - name: Long simulation
-        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
-      - name: Build macOS application
-        run: swift build -c release --product MixPilotAutopilot
-      - name: Upload validation logs
+
+      - name: Long simulation, runtime stress and failure matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 50 --inject-failures | tee simulation-report.json
+
+      - name: Build macOS products
+        run: |
+          swift build -c release --product MixPilotAutopilot
+          swift build -c release --product MixPilotHardwareProbeCLI
+
+      - name: Package development DMG
+        env:
+          MIXPILOT_VERSION: 0.3.${{ github.run_number }}
+        run: |
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+
+      - name: Verify DMG checksum
+        run: shasum -a 256 -c build/MixPilot-Autopilot.dmg.sha256
+
+      - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-validation-${{ github.run_number }}
-          path: unit-test.log
+          name: MixPilot-Validation-Reports
+          path: |
+            simulation-report.json
+            unit-test.log
+          if-no-files-found: warn
+
+      - name: Upload installable DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-Autopilot-development
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
