@@ -50,6 +50,11 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 1120, height: 760)
 
+        WindowGroup("Analyse audio de préparation", id: "preparation-analysis") {
+            PreparationAnalysisView(model: model)
+        }
+        .defaultSize(width: 1040, height: 720)
+
         WindowGroup("Centre de récupération", id: "recovery-center") {
             RecoveryCenterView()
         }
