@@ -1,4 +1,3 @@
-@testable import MixPilotRemote
 import XCTest
 
 final class RemoteSnapshotSequencePolicyTests: XCTestCase {
