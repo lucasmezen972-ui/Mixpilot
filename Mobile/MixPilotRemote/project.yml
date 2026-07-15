@@ -25,6 +25,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote
         PRODUCT_NAME: MixPilot Remote
+        PRODUCT_MODULE_NAME: MixPilotRemote
+        DEFINES_MODULE: YES
+        ENABLE_TESTABILITY: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
   MixPilotRemoteTests:
     type: bundle.unit-test
