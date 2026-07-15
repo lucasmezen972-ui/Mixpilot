@@ -11,7 +11,7 @@ permissions:
 jobs:
   test-and-build:
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -37,3 +37,16 @@ jobs:
         run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
       - name: Build macOS application
         run: swift build -c release --product MixPilotAutopilot
+      - name: Package development DMG
+        env:
+          MIXPILOT_VERSION: 0.1.${{ github.run_number }}
+        run: |
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+      - name: Upload installable DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-Autopilot-development
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
