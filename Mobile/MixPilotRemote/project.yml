@@ -11,7 +11,7 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.1.0
+    MARKETING_VERSION: 0.3.0
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
   MixPilotRemote:
@@ -26,11 +26,28 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote
         PRODUCT_NAME: MixPilot Remote
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+  MixPilotRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+      - path: ../../Shared/RemoteProtocolV1/Fixtures
+        buildPhase: resources
+    dependencies:
+      - target: MixPilotRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   MixPilotRemote:
     build:
       targets:
         MixPilotRemote: all
+        MixPilotRemoteTests: [test]
+    test:
+      targets:
+        - MixPilotRemoteTests
     run:
       config: Debug
     archive:
