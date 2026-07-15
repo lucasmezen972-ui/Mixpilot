@@ -73,7 +73,9 @@ jobs:
           ./Scripts/package_dmg.sh
 
       - name: Verify DMG checksum
-        run: shasum -a 256 -c build/MixPilot-Autopilot.dmg.sha256
+        run: |
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
 
       - name: Upload validation reports
         if: always()
