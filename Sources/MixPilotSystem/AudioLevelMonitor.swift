@@ -21,7 +21,7 @@ public enum AudioLevelMonitorError: Error, LocalizedError {
 }
 
 public final class AudioLevelMonitor: @unchecked Sendable {
-    public typealias SampleHandler = @Sendable (AudioLevelSample) -> Void
+    public typealias SampleHandler = @MainActor @Sendable (AudioLevelSample) -> Void
 
     private let engine = AVAudioEngine()
     private let stateLock = NSLock()
@@ -83,7 +83,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
 
     private func process(buffer: AVAudioPCMBuffer) {
         guard let channels = buffer.floatChannelData else {
-            handler?(AudioLevelSample(
+            deliver(AudioLevelSample(
                 timestamp: ProcessInfo.processInfo.systemUptime,
                 rmsDB: -160,
                 peakDB: -160,
@@ -112,14 +112,19 @@ public final class AudioLevelMonitor: @unchecked Sendable {
         }
 
         let rms = sqrt(sumSquares / Double(max(1, sampleCount)))
-        let rmsDB = Self.decibels(fromLinear: rms)
-        let peakDB = Self.decibels(fromLinear: peak)
-        handler?(AudioLevelSample(
+        deliver(AudioLevelSample(
             timestamp: ProcessInfo.processInfo.systemUptime,
-            rmsDB: rmsDB,
-            peakDB: peakDB,
+            rmsDB: Self.decibels(fromLinear: rms),
+            peakDB: Self.decibels(fromLinear: peak),
             sourceAvailable: true
         ))
+    }
+
+    private func deliver(_ sample: AudioLevelSample) {
+        guard let handler else { return }
+        Task { @MainActor in
+            handler(sample)
+        }
     }
 
     private static func decibels(fromLinear value: Double) -> Double {
