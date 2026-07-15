@@ -8,17 +8,19 @@ on:
         required: false
         type: string
   push:
-    tags: ["v*"]
+    branches:
+      - "release/**"
+    tags:
+      - "v*"
 
 concurrency:
   group: mixpilot-release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 env:
-  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
   HAS_SIGNING_CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
   HAS_NOTARIZATION: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
 
@@ -28,6 +30,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          requested='${{ inputs.version }}'
+          if [[ -n "$requested" ]]; then
+            version="$requested"
+          elif [[ -f VERSION ]]; then
+            version="$(tr -d '[:space:]' < VERSION)"
+          else
+            echo "VERSION file is missing and no workflow input was provided." >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid release version: $version" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Packaging MixPilot $version"
 
       - name: Toolchain
         run: |
@@ -46,6 +67,20 @@ jobs:
 
       - name: Build hardware probe
         run: swift build -c release --product MixPilotHardwareProbeCLI
+
+      - name: Build iPhone Remote for Simulator
+        run: |
+          brew install xcodegen
+          cd Mobile/MixPilotRemote
+          xcodegen generate
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          swift test --parallel
 
       - name: Import Developer ID certificate
         if: env.HAS_SIGNING_CERT == 'true'
@@ -90,11 +125,14 @@ jobs:
             "runner": "${RUNNER_OS}-${RUNNER_ARCH}",
             "validation": {
               "unitTests": "AUTOMATED_SUCCESS",
-              "simulation50": "AUTOMATED_SUCCESS",
-              "simulation250": "AUTOMATED_SUCCESS",
+              "simulation50": "SIMULATED_SUCCESS",
+              "simulation250": "SIMULATED_SUCCESS",
               "hardwareProbeBuild": "AUTOMATED_SUCCESS",
+              "iphoneSimulatorBuild": "AUTOMATED_SUCCESS",
+              "remoteProtocolContracts": "AUTOMATED_SUCCESS",
               "seratoReal": "REQUIRES_SERATO_VALIDATION",
-              "deviceAudio": "REQUIRES_DEVICE_VALIDATION"
+              "deviceAudio": "REQUIRES_DEVICE_VALIDATION",
+              "physicalPairing": "REQUIRES_DEVICE_VALIDATION"
             }
           }
           JSON
