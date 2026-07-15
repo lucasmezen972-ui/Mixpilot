@@ -9,5 +9,6 @@ func releaseCandidateFailureMatrix() async {
     #expect(report.failedCount == 0)
     #expect(report.results.contains { $0.scenario.incident == .checkpointMismatch && $0.finalState == .manualControl })
     #expect(report.results.contains { $0.scenario.incident == .emergencyPlayerFailure && $0.finalState == .failed })
-    #expect(report.results.filter { $0.scenario.expectedOutcome == .recovered }.allSatisfy(\.incidentRecovered))
+    let recoveredResults = report.results.filter { $0.scenario.expectedOutcome == .recovered }
+    #expect(recoveredResults.allSatisfy { $0.incidentRecovered })
 }
