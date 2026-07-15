@@ -117,10 +117,15 @@ public actor AutopilotEngine {
         incidents.append(incident)
 
         switch kind {
-        case .audioSilence, .internetLoss, .seratoUnavailable:
+        case .audioSilence, .audioSourceLost, .internetLoss, .seratoUnavailable:
             state = .emergencyPlayback
-        case .slowLoad, .wrongTrack, .midiUnavailable:
+        case .slowLoad, .loadTimeout, .wrongTrack, .transitionMismatch,
+             .audioClipping, .midiUnavailable, .powerDisconnected:
             state = .recovering
+        case .checkpointMismatch:
+            state = .manualControl
+        case .emergencyPlayerFailure:
+            state = .failed
         }
     }
 
@@ -132,11 +137,18 @@ public actor AutopilotEngine {
     private func message(for incident: IncidentKind) -> String {
         switch incident {
         case .slowLoad: "Chargement lent : prolongation et nouvelle tentative"
+        case .loadTimeout: "Timeout de chargement : boucle de sécurité et titre alternatif"
         case .wrongTrack: "Mauvais titre détecté : revalidation de la sélection"
+        case .transitionMismatch: "Transition incohérente : annulation et retour au deck actif"
         case .internetLoss: "Internet indisponible : bascule vers le secours local"
         case .audioSilence: "Silence critique : déclenchement du lecteur de secours"
+        case .audioSourceLost: "Source audio perdue : bascule vers le secours local"
+        case .audioClipping: "Saturation détectée : réduction contrôlée des niveaux"
         case .midiUnavailable: "Port MIDI indisponible : récupération contrôlée"
         case .seratoUnavailable: "Serato indisponible : lecture locale de secours"
+        case .powerDisconnected: "Alimentation débranchée : alerte et vérification batterie"
+        case .checkpointMismatch: "Checkpoint incompatible : reprise manuelle obligatoire"
+        case .emergencyPlayerFailure: "Lecteur de secours indisponible : arrêt sécurisé"
         }
     }
 
