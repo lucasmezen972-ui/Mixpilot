@@ -19,27 +19,52 @@ public enum MIDIControllerError: Error, LocalizedError {
     }
 }
 
-public final class CoreMIDIController: @unchecked Sendable {
-    public static let virtualPortName = "MixPilot Virtual Controller"
+private final class SharedMIDIEndpoint: @unchecked Sendable {
+    let client: MIDIClientRef
+    let source: MIDIEndpointRef
+    let sendLock = NSLock()
 
-    private var client = MIDIClientRef()
-    private var source = MIDIEndpointRef()
-    private let lock = NSLock()
-
-    public init() throws {
-        let clientStatus = MIDIClientCreateWithBlock("MixPilot MIDI Client" as CFString, &client) { _ in }
+    init(portName: String) throws {
+        var createdClient = MIDIClientRef()
+        let clientStatus = MIDIClientCreateWithBlock("MixPilot MIDI Client" as CFString, &createdClient) { _ in }
         guard clientStatus == noErr else { throw MIDIControllerError.clientCreation(clientStatus) }
 
-        let sourceStatus = MIDISourceCreate(client, Self.virtualPortName as CFString, &source)
+        var createdSource = MIDIEndpointRef()
+        let sourceStatus = MIDISourceCreate(createdClient, portName as CFString, &createdSource)
         guard sourceStatus == noErr else {
-            MIDIClientDispose(client)
+            MIDIClientDispose(createdClient)
             throw MIDIControllerError.sourceCreation(sourceStatus)
         }
+        client = createdClient
+        source = createdSource
     }
 
     deinit {
         if source != 0 { MIDIEndpointDispose(source) }
         if client != 0 { MIDIClientDispose(client) }
+    }
+}
+
+private enum SharedMIDIEndpointRegistry {
+    static let creationLock = NSLock()
+    nonisolated(unsafe) static var endpoint: SharedMIDIEndpoint?
+
+    static func resolve(portName: String) throws -> SharedMIDIEndpoint {
+        creationLock.lock()
+        defer { creationLock.unlock() }
+        if let endpoint { return endpoint }
+        let created = try SharedMIDIEndpoint(portName: portName)
+        endpoint = created
+        return created
+    }
+}
+
+public final class CoreMIDIController: @unchecked Sendable {
+    public static let virtualPortName = "MixPilot Virtual Controller"
+    private let endpoint: SharedMIDIEndpoint
+
+    public init() throws {
+        endpoint = try SharedMIDIEndpointRegistry.resolve(portName: Self.virtualPortName)
     }
 
     public func sendControlChange(channel: UInt8 = 0, controller: UInt8, value: Double) throws {
@@ -106,8 +131,8 @@ public final class CoreMIDIController: @unchecked Sendable {
     }
 
     private func send(_ bytes: [UInt8]) throws {
-        lock.lock()
-        defer { lock.unlock() }
+        endpoint.sendLock.lock()
+        defer { endpoint.sendLock.unlock() }
 
         var packetList = MIDIPacketList()
         let sent = withUnsafeMutablePointer(to: &packetList) { listPointer -> Bool in
@@ -122,7 +147,7 @@ public final class CoreMIDIController: @unchecked Sendable {
                     bytes.count,
                     baseAddress
                 )
-                return MIDIReceived(source, listPointer) == noErr
+                return MIDIReceived(endpoint.source, listPointer) == noErr
             }
         }
 
