@@ -14,6 +14,7 @@ final class RemoteConnection: ObservableObject {
     private var socket: URLSessionWebSocketTask?
     private var receiverTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var sequencePolicy = RemoteSnapshotSequencePolicy()
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -209,7 +210,8 @@ final class RemoteConnection: ObservableObject {
                 try KeychainStore.shared.save(token, account: endpoint.id)
                 pairingRequired = false
                 status = .authenticated(endpoint.name)
-                Task { [weak self] in await self?.send(.subscribe(lastSequence: self?.snapshot?.sequence)) }
+                let lastSequence = sequencePolicy.lastSequence(for: endpoint.id)
+                Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
             } catch {
                 lastError = error.localizedDescription
             }
@@ -217,11 +219,13 @@ final class RemoteConnection: ObservableObject {
         case "authenticated":
             pairingRequired = false
             status = .authenticated(endpoint?.name ?? "Mac")
-            Task { [weak self] in await self?.send(.subscribe(lastSequence: self?.snapshot?.sequence)) }
+            let lastSequence = endpoint.flatMap { sequencePolicy.lastSequence(for: $0.id) }
+            Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
 
         case "snapshot":
-            if let incoming = message.snapshot,
-               incoming.sequence >= (snapshot?.sequence ?? 0) {
+            if let endpoint,
+               let incoming = message.snapshot,
+               sequencePolicy.shouldAccept(sequence: incoming.sequence, endpointID: endpoint.id) {
                 snapshot = incoming
             }
 
