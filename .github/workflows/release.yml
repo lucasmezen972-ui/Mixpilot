@@ -19,6 +19,8 @@ concurrency:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 env:
   HAS_SIGNING_CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
@@ -145,6 +147,44 @@ jobs:
             build/MixPilot-Autopilot.dmg.sha256
             build/release-manifest.json
             build/codesign-details.txt
+
+      - name: Report RC artifact to pull request
+        if: startsWith(github.ref, 'refs/heads/release/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          checksum="$(awk '{print $1}' build/MixPilot-Autopilot.dmg.sha256)"
+          signature_label="ad-hoc development signature"
+          if [[ "${HAS_SIGNING_CERT}" == "true" ]]; then
+            signature_label="Developer ID"
+          fi
+          notarization_label="not notarized"
+          if [[ "${HAS_SIGNING_CERT}" == "true" && "${HAS_NOTARIZATION}" == "true" ]]; then
+            notarization_label="notarized and stapled"
+          fi
+          cat > build/pr-release-report.md <<REPORT
+          ## RC artifact generated — ${RELEASE_VERSION}
+
+          - Workflow run: ${GITHUB_RUN_ID}
+          - Commit: \`${GITHUB_SHA}\`
+          - Artifact: \`MixPilot-Autopilot-${RELEASE_VERSION}\`
+          - DMG SHA-256: \`${checksum}\`
+          - Signature: ${signature_label}
+          - Notarization: ${notarization_label}
+          - Unit tests: \`AUTOMATED_SUCCESS\`
+          - Simulation 50: \`SIMULATED_SUCCESS\`
+          - Simulation 250: \`SIMULATED_SUCCESS\`
+          - Hardware probe build: \`AUTOMATED_SUCCESS\`
+          - iPhone Simulator build: \`AUTOMATED_SUCCESS\`
+          - Remote protocol contracts: \`AUTOMATED_SUCCESS\`
+          - Serato real: \`REQUIRES_SERATO_VALIDATION\`
+          - Physical audio/pairing: \`REQUIRES_DEVICE_VALIDATION\`
+
+          The PR must remain unmerged until the guided hardware validation is complete.
+          REPORT
+          gh pr comment 17 --body-file build/pr-release-report.md
+          cat build/pr-release-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
