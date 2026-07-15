@@ -4,7 +4,7 @@ Dernière mise à jour : 2026-07-15
 
 ## État global
 
-**Phase 5 — Runtime Autopilot préparé, préflight et robustesse**
+**Phase 6 — Release candidate macOS autonome**
 
 ## Réalisé
 
@@ -32,15 +32,41 @@ Dernière mise à jour : 2026-07-15
 - [x] Checkpoint de session et stratégie de reprise après crash
 - [x] Simulateur de machine à états sur 50 titres
 - [x] Stress-test des commandes générées sur 49 transitions
+- [x] Matrice automatisée de scénarios de panne
+- [x] Inspecteur de transitions et comparaison des variantes
+- [x] Centre de récupération sécurisé
+- [x] Probe matériel macOS pour la validation finale Serato
 - [x] CI macOS : tests, simulation longue, build Release et DMG
 - [x] Scripts de construction `.app` et `.dmg`
+
+## Périmètre actif
+
+Le développement se concentre exclusivement sur **MixPilot Autopilot pour macOS** :
+
+- préparation complète des playlists ;
+- analyse musicale ;
+- transitions automatiques ;
+- pilotage de Serato DJ Pro ;
+- fonctionnement autonome ;
+- surveillance audio et récupération ;
+- sécurité, robustesse et distribution macOS.
+
+## Hors périmètre actuel
+
+- application iPhone ;
+- contrôle à distance ;
+- serveur réseau ou WebSocket destiné à une télécommande ;
+- synchronisation cloud avec une application mobile ;
+- conception d’une API publique pour le mobile.
+
+Ces sujets ne doivent pas détourner le développement de la release candidate macOS. Ils pourront être étudiés plus tard comme projet séparé.
 
 ## Validation automatisée
 
 - `SUCCESS` : tests unitaires du moteur Core.
 - `SUCCESS` : simulation de 50 titres avec incidents injectés.
 - `SUCCESS` : génération de toutes les commandes de 49 transitions dans les limites normalisées.
-- `IN_PROGRESS` : compilation Release et génération du DMG du lot Runtime.
+- `IN_PROGRESS` : assemblage final de la release candidate macOS et génération du DMG.
 
 ## Validation différée jusqu’à la version candidate finale
 
@@ -53,14 +79,12 @@ Dernière mise à jour : 2026-07-15
 
 ## Prochaines étapes automatiques
 
-1. Obtenir une CI entièrement verte pour le lot Runtime.
-2. Intégrer le lot dans `develop`.
-3. Ajouter l’onboarding et l’assistant guidé de mapping MIDI.
-4. Ajouter la timeline détaillée et l’inspecteur de transition.
-5. Ajouter l’exécution de répétitions automatisées depuis l’interface Studio.
-6. Ajouter les diagnostics exportables et le journal d’incidents.
-7. Renforcer les simulations longues et les scénarios de panne.
-8. Produire une version candidate installable avant les tests réels.
+1. Réconcilier la release candidate avec le dernier workspace macOS.
+2. Obtenir une CI entièrement verte.
+3. Corriger toute erreur de compilation ou de simulation restante.
+4. Produire le DMG de release candidate.
+5. Faire la revue finale de sécurité et de récupération.
+6. Préparer une unique campagne de validation réelle sur MacBook Pro M1.
 
 ## Checkpoints humains différés
 
