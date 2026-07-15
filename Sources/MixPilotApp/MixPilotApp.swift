@@ -7,11 +7,11 @@ struct MixPilotAutopilotApp: App {
 
     var body: some Scene {
         WindowGroup("MixPilot Autopilot") {
-            ContentView(model: model)
-                .frame(minWidth: 980, minHeight: 680)
+            AdvancedContentView(model: model)
+                .frame(minWidth: 1_180, minHeight: 760)
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1180, height: 780)
+        .defaultSize(width: 1_360, height: 900)
         .commands {
             CommandMenu("MixPilot") {
                 Button("Ouvrir le Studio") {
