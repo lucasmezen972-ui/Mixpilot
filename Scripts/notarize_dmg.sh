@@ -12,6 +12,8 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DMG_PATH="${1:-$ROOT/build/MixPilot-Autopilot.dmg}"
 APP_PATH="$ROOT/build/MixPilot Autopilot.app"
+DMG_DIR="$(cd "$(dirname "$DMG_PATH")" && pwd)"
+DMG_NAME="$(basename "$DMG_PATH")"
 
 if [[ ! -f "$DMG_PATH" ]]; then
   echo "DMG not found: $DMG_PATH" >&2
@@ -31,5 +33,9 @@ if [[ -d "$APP_PATH" ]]; then
   spctl --assess --type execute --verbose=2 "$APP_PATH"
 fi
 
-shasum -a 256 "$DMG_PATH" > "$DMG_PATH.sha256"
+(
+  cd "$DMG_DIR"
+  shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+  shasum -a 256 -c "$DMG_NAME.sha256"
+)
 echo "Notarized and verified: $DMG_PATH"
