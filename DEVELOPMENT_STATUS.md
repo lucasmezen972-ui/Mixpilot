@@ -4,52 +4,47 @@ Dernière mise à jour : 2026-07-15
 
 ## État global
 
-**Phase 0 — Initialisation du dépôt**
-
-Le dépôt a été initialisé. La gouvernance technique, le cahier des charges et le protocole des interventions humaines sont désormais versionnés sur la branche de fondation.
-
-## Branches
-
-- `main` : base stable initiale
-- `develop` : intégration
-- `feature/bootstrap-foundation` : fondations du projet
+**Phase 2 — Premier MVP natif et prototype vertical**
 
 ## Réalisé
 
-- [x] Dépôt GitHub identifié
-- [x] README initialisé
-- [x] Branche `develop` créée
-- [x] Branche de fondation créée
-- [x] Règles Claude ajoutées
-- [x] Registre des checkpoints humains
-- [x] Cahier des charges versionné dans le dépôt
-- [x] Pull Request de fondation ouverte
-- [x] Visibilité publique confirmée comme décision volontaire
-- [ ] Structure Swift/Xcode
-- [ ] Feasibility Lab
-- [ ] Simulateur Serato
-- [ ] CI macOS
-- [ ] Production `.app`
-- [ ] Production `.dmg`
+- [x] Dépôt et branches initialisés
+- [x] Règles Claude et sécurité du dépôt public
+- [x] Cahier des charges versionné
+- [x] Package Swift 6 modulaire
+- [x] Application SwiftUI macOS
+- [x] Moteur de génération de transitions
+- [x] Machine à états Autopilot
+- [x] Simulateur CLI
+- [x] Six tests du moteur validés localement
+- [x] Simulation de 50 titres et 49 transitions validée localement
+- [x] Récupération de quatre incidents injectés validée localement
+- [x] Port virtuel CoreMIDI implémenté
+- [x] Détection du processus Serato implémentée
+- [x] Lecteur audio local de secours implémenté
+- [x] Feasibility Lab initial
+- [x] CI macOS et simulation longue
+- [x] Scripts de construction `.app` et `.dmg`
 
-## Prochaine étape automatique
+## Validation
 
-1. Ajouter un `.gitignore` adapté à Xcode, macOS et aux secrets.
-2. Ajouter la politique de sécurité du dépôt public.
-3. Préparer les workflows GitHub Actions de validation.
-4. Initialiser le squelette Swift/Xcode depuis un environnement macOS disposant de Xcode.
-5. Construire le Feasibility Lab et le simulateur.
+- `SIMULATED` : moteur de transitions, Autopilot et récupération.
+- `REQUIRES_SERATO_VALIDATION` : CoreMIDI dans Serato, chargement de titres, observation de decks et capture audio.
+- `REQUIRES_MACOS_CI` : compilation des cibles Apple spécifiques.
 
-## Risques ouverts
+## Prochaines étapes automatiques
 
-- Le dépôt est public par décision du propriétaire : aucun secret ni contenu audio protégé ne doit être commité.
-- Aucun test réel Serato n’a encore été effectué.
-- Aucun projet Xcode n’est encore présent.
-- Aucun runner Mac privé n’est encore configuré.
+1. Exécuter la CI macOS sur la Pull Request.
+2. Corriger toute erreur Swift/CoreMIDI/SwiftUI remontée par Xcode.
+3. Ajouter le mapping MIDI persistant.
+4. Ajouter le pilote Accessibilité pour la bibliothèque Serato.
+5. Ajouter la capture audio et le watchdog de silence.
+6. Produire le premier DMG de développement.
 
-## Statuts de validation
+## Checkpoints humains à venir
 
-- `REAL` : validé sur matériel réel
-- `SIMULATED` : validé uniquement dans le simulateur
-- `REQUIRES_SERATO_VALIDATION` : implémenté mais non testé avec Serato réel
-- `BLOCKED_BY_PLATFORM` : bloqué par une limite externe documentée
+- H002 : disposer d’un Mac avec Xcode pour les tests réels.
+- H003 : lancer Serato DJ Pro et connecter Spotify.
+- H004 : accorder les permissions macOS.
+- H005 : mapper les commandes MIDI.
+- H007 : sélectionner la musique locale de secours.

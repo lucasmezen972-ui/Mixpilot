@@ -1,0 +1,26 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Unit tests
+        run: swift test --parallel
+      - name: Long simulation
+        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+      - name: Build macOS application
+        run: swift build -c release --product MixPilotAutopilot
