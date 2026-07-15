@@ -1,6 +1,6 @@
 #if os(macOS)
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Foundation
 
 public struct SeratoWindowObservation: Hashable, Sendable {
@@ -29,8 +29,8 @@ public struct SeratoWindowObservation: Hashable, Sendable {
 
     public func contains(text: String) -> Bool {
         let needle = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        return visibleText.contains { candidate in
-            candidate.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        return visibleText.contains {
+            $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
                 .contains(needle)
         }
     }
@@ -46,9 +46,7 @@ public struct SeratoLibraryRow: Identifiable, Hashable, Sendable {
         self.fields = fields
     }
 
-    public var displayText: String {
-        fields.joined(separator: " • ")
-    }
+    public var displayText: String { fields.joined(separator: " • ") }
 }
 
 public enum SeratoAccessibilityError: Error, LocalizedError {
@@ -70,15 +68,14 @@ public final class SeratoAccessibilityBridge {
     public init() {}
 
     public func requestAccessibilityPrompt() {
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
     public func activateSerato() throws {
         guard let application = seratoApplication() else {
             throw SeratoAccessibilityError.seratoNotRunning
         }
-        guard application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]) else {
+        guard application.activate(options: [.activateAllWindows]) else {
             throw SeratoAccessibilityError.activationFailed
         }
     }
@@ -93,7 +90,6 @@ public final class SeratoAccessibilityBridge {
                 accessibilityGranted: AXIsProcessTrusted()
             )
         }
-
         guard AXIsProcessTrusted() else {
             return SeratoWindowObservation(
                 isRunning: true,
@@ -105,26 +101,22 @@ public final class SeratoAccessibilityBridge {
         }
 
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
-        let mainWindow = preferredWindow(for: appElement)
-        let title = mainWindow.flatMap { stringAttribute($0, attribute: kAXTitleAttribute) }
-
+        let window = preferredWindow(for: appElement)
         var strings: [String] = []
-        if let mainWindow {
+        if let window {
             collectStrings(
-                from: mainWindow,
+                from: window,
                 depth: 0,
                 maxDepth: max(1, maxDepth),
                 maximumStrings: max(1, maximumStrings),
                 into: &strings
             )
         }
-
-        let normalized = normalizedStrings(strings)
         return SeratoWindowObservation(
             isRunning: true,
             processIdentifier: application.processIdentifier,
-            windowTitle: title,
-            visibleText: normalized,
+            windowTitle: window.flatMap { stringAttribute($0, attribute: kAXTitleAttribute) },
+            visibleText: normalizedStrings(strings),
             accessibilityGranted: true
         )
     }
@@ -135,33 +127,19 @@ public final class SeratoAccessibilityBridge {
         guard let window = preferredWindow(for: appElement) else { return [] }
 
         var rowElements: [AXUIElement] = []
-        collectRows(
-            from: window,
-            depth: 0,
-            maxDepth: 12,
-            maxRows: max(1, maxRows),
-            into: &rowElements
-        )
-
+        collectRows(from: window, depth: 0, maxDepth: 12, maxRows: max(1, maxRows), into: &rowElements)
         return rowElements.enumerated().compactMap { index, element in
             var strings: [String] = []
-            collectStrings(
-                from: element,
-                depth: 0,
-                maxDepth: 5,
-                maximumStrings: 30,
-                into: &strings
-            )
+            collectStrings(from: element, depth: 0, maxDepth: 5, maximumStrings: 30, into: &strings)
             let fields = normalizedStrings(strings)
-            guard !fields.isEmpty else { return nil }
-            return SeratoLibraryRow(index: index, fields: fields)
+            return fields.isEmpty ? nil : SeratoLibraryRow(index: index, fields: fields)
         }
     }
 
     private func seratoApplication() -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first { application in
-            let name = application.localizedName?.lowercased() ?? ""
-            let bundle = application.bundleIdentifier?.lowercased() ?? ""
+        NSWorkspace.shared.runningApplications.first {
+            let name = $0.localizedName?.lowercased() ?? ""
+            let bundle = $0.bundleIdentifier?.lowercased() ?? ""
             return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
         }
     }
@@ -181,17 +159,11 @@ public final class SeratoAccessibilityBridge {
         guard depth <= maxDepth, rows.count < maxRows else { return }
         if stringAttribute(element, attribute: kAXRoleAttribute) == kAXRowRole as String {
             rows.append(element)
-            if rows.count >= maxRows { return }
         }
-        guard let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
+        guard rows.count < maxRows,
+              let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
         for child in children {
-            collectRows(
-                from: child,
-                depth: depth + 1,
-                maxDepth: maxDepth,
-                maxRows: maxRows,
-                into: &rows
-            )
+            collectRows(from: child, depth: depth + 1, maxDepth: maxDepth, maxRows: maxRows, into: &rows)
             if rows.count >= maxRows { return }
         }
     }
@@ -204,14 +176,12 @@ public final class SeratoAccessibilityBridge {
         into strings: inout [String]
     ) {
         guard depth <= maxDepth, strings.count < maximumStrings else { return }
-
         for attribute in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXHelpAttribute] {
             if let value = stringAttribute(element, attribute: attribute), !value.isEmpty {
                 strings.append(value)
-                if strings.count >= maximumStrings { return }
             }
+            if strings.count >= maximumStrings { return }
         }
-
         guard let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
         for child in children {
             collectStrings(
@@ -227,10 +197,9 @@ public final class SeratoAccessibilityBridge {
 
     private func normalizedStrings(_ strings: [String]) -> [String] {
         var seen = Set<String>()
-        return strings.compactMap { value in
-            let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleaned.isEmpty, seen.insert(cleaned).inserted else { return nil }
-            return cleaned
+        return strings.compactMap {
+            let cleaned = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !cleaned.isEmpty && seen.insert(cleaned).inserted ? cleaned : nil
         }
     }
 
@@ -238,10 +207,8 @@ public final class SeratoAccessibilityBridge {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
               let value,
-              CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            return nil
-        }
-        return unsafeBitCast(value, to: AXUIElement.self)
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXUIElement.self)
     }
 
     private func stringAttribute(_ element: AXUIElement, attribute: String) -> String? {
