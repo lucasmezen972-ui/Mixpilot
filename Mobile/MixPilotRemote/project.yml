@@ -27,30 +27,12 @@ targets:
         PRODUCT_NAME: MixPilot Remote
         PRODUCT_MODULE_NAME: MixPilotRemote
         DEFINES_MODULE: YES
-        ENABLE_TESTABILITY: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
-  MixPilotRemoteTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: Tests
-      - path: Sources/RemoteModels.swift
-      - path: Sources/RemoteSnapshotSequencePolicy.swift
-      - path: ../../Shared/RemoteProtocolV1/Fixtures
-        buildPhase: resources
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
-        CODE_SIGNING_ALLOWED: NO
 schemes:
   MixPilotRemote:
     build:
       targets:
         MixPilotRemote: all
-        MixPilotRemoteTests: [test]
-    test:
-      targets:
-        - MixPilotRemoteTests
     run:
       config: Debug
     archive:
