@@ -127,28 +127,32 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
         self.provider = provider
         pairingCode = pairingAuthority.rotatePairingCode()
 
-        let parameters = NWParameters.tcp
-        let webSocketOptions = NWProtocolWebSocket.Options()
-        webSocketOptions.autoReplyPing = true
-        webSocketOptions.maximumMessageSize = 64 * 1_024
-        parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
+        do {
+            let parameters = NWParameters.tcp
+            let webSocketOptions = NWProtocolWebSocket.Options()
+            webSocketOptions.autoReplyPing = true
+            webSocketOptions.maximumMessageSize = 64 * 1_024
+            parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
 
-        let listener = NWListener(using: parameters, on: .any)
-        listener.service = NWListener.Service(
-            name: ProcessInfo.processInfo.hostName,
-            type: "_mixpilot._tcp"
-        )
-        listener.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor [weak self] in self?.accept(connection) }
+            let listener = try NWListener(using: parameters, on: .any)
+            listener.service = NWListener.Service(
+                name: ProcessInfo.processInfo.hostName,
+                type: "_mixpilot._tcp"
+            )
+            listener.newConnectionHandler = { [weak self] connection in
+                Task { @MainActor [weak self] in self?.accept(connection) }
+            }
+            listener.stateUpdateHandler = { [weak self] state in
+                Task { @MainActor [weak self] in self?.applyListenerState(state) }
+            }
+            self.listener = listener
+            listener.start(queue: networkQueue)
+            isRunning = true
+            status = "Démarrage de la télécommande…"
+            startSnapshotLoop()
+        } catch {
+            providerFailure(error)
         }
-        listener.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor [weak self] in self?.applyListenerState(state) }
-        }
-        self.listener = listener
-        listener.start(queue: networkQueue)
-        isRunning = true
-        status = "Démarrage de la télécommande…"
-        startSnapshotLoop()
     }
 
     public func stop() {
@@ -166,6 +170,13 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
 
     public func rotatePairingCode() {
         pairingCode = pairingAuthority.rotatePairingCode()
+    }
+
+    private func providerFailure(_ error: Error) {
+        listener = nil
+        isRunning = false
+        provider = nil
+        status = "Échec télécommande : \(error.localizedDescription)"
     }
 
     private func applyListenerState(_ state: NWListener.State) {
