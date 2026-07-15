@@ -4,6 +4,7 @@ import MixPilotCore
 private struct CombinedSimulationReport: Codable {
     var stateMachine: SimulationReport
     var transitionRuntime: RuntimeStressReport
+    var failureMatrix: FailureScenarioMatrixReport
     var succeeded: Bool
 }
 
@@ -14,7 +15,13 @@ struct MixPilotSimulatorCLI {
         let count = argumentValue("--tracks", in: arguments).flatMap(Int.init) ?? 50
         let injectFailures = arguments.contains("--inject-failures")
         let failures: [Int: IncidentKind] = injectFailures
-            ? [8: .slowLoad, 27: .wrongTrack, 61: .internetLoss, 118: .audioSilence]
+            ? [
+                8: .slowLoad,
+                27: .wrongTrack,
+                61: .internetLoss,
+                93: .audioClipping,
+                118: .audioSilence,
+            ]
             : [:]
 
         do {
@@ -26,10 +33,14 @@ struct MixPilotSimulatorCLI {
                 trackCount: count,
                 framesPerSecond: 30
             )
+            let failureMatrix = await FailureScenarioSuite().run(
+                trackCount: min(max(12, count), 30)
+            )
             let report = CombinedSimulationReport(
                 stateMachine: stateReport,
                 transitionRuntime: runtimeReport,
-                succeeded: stateReport.succeeded && runtimeReport.succeeded
+                failureMatrix: failureMatrix,
+                succeeded: stateReport.succeeded && runtimeReport.succeeded && failureMatrix.succeeded
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
