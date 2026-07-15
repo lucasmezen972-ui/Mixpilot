@@ -1,21 +1,18 @@
 #if os(macOS)
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 @MainActor
-public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
+public final class EmergencyAudioPlayer {
     private var player: AVAudioPlayer?
 
     public private(set) var currentURL: URL?
     public private(set) var isPlaying = false
 
-    public override init() {
-        super.init()
-    }
+    public init() {}
 
     public func prepare(url: URL) throws {
         let preparedPlayer = try AVAudioPlayer(contentsOf: url)
-        preparedPlayer.delegate = self
         preparedPlayer.prepareToPlay()
         player = preparedPlayer
         currentURL = url
@@ -39,10 +36,6 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
             playerToStop.stop()
             self.isPlaying = false
         }
-    }
-
-    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        isPlaying = false
     }
 }
 #endif
