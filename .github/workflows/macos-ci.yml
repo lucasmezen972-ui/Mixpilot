@@ -41,16 +41,9 @@ jobs:
         run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
       - name: Build macOS application
         run: swift build -c release --product MixPilotAutopilot
-      - name: Package development DMG
-        env:
-          MIXPILOT_VERSION: 0.2.${{ github.run_number }}
-        run: |
-          ./Scripts/build_release.sh
-          ./Scripts/package_dmg.sh
-      - name: Upload installable DMG
+      - name: Upload validation logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-Autopilot-development
-          path: |
-            build/MixPilot-Autopilot.dmg
-            build/MixPilot-Autopilot.dmg.sha256
+          name: MixPilot-validation-${{ github.run_number }}
+          path: unit-test.log
