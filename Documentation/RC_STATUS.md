@@ -5,7 +5,8 @@
 - Version : `0.3.0-rc.2`
 - Branche : `release/0.3.0-rc.2`
 - Base : `develop` consolidé par la PR #14
-- Fusion vers `main` : **interdite avant validation du workflow de release et campagne matérielle**
+- Pull Request : #17 vers `main`
+- Fusion vers `main` : **interdite avant la campagne matérielle guidée**
 
 ## Consolidation effectuée
 
@@ -39,11 +40,13 @@
 - mode démo explicitement identifié comme simulation ;
 - package SwiftPM testant les fichiers de modèles réellement utilisés par l’app.
 
-## Résultats automatisés avant gel
+## Résultats automatisés de la RC2
+
+Commit validé : `b57bec0bc9c2ccc42a676df3ae5b2bf42d4cc82d`.
 
 ### macOS CI
 
-Dernier run vert d’intégration : `29457958857`.
+Run : `29459695495`.
 
 - tests unitaires : `AUTOMATED_SUCCESS` ;
 - simulation 50 titres : `SIMULATED_SUCCESS` ;
@@ -52,11 +55,11 @@ Dernier run vert d’intégration : `29457958857`.
 - build Release probe : `AUTOMATED_SUCCESS` ;
 - package DMG : `AUTOMATED_SUCCESS` ;
 - validation checksum : `AUTOMATED_SUCCESS` ;
-- artifacts : `AUTOMATED_SUCCESS`.
+- artifact `MixPilot-Autopilot-development` : `AUTOMATED_SUCCESS`.
 
 ### iPhone Remote CI
 
-Dernier run vert d’intégration : `29457958882`.
+Run : `29459695476`.
 
 - génération XcodeGen : `AUTOMATED_SUCCESS` ;
 - build iOS Simulator : `AUTOMATED_SUCCESS` ;
@@ -68,24 +71,22 @@ Dernier run vert d’intégration : `29457958882`.
 | Commande | Présence | Statut RC2 |
 |---|---|---|
 | `takeManualControl` | Implémentée et idempotente | `AUTOMATED_SUCCESS`, `REQUIRES_DEVICE_VALIDATION` |
-| `pauseAutopilot` | Implémentée, coopérative | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `resumeAutopilot` | Implémentée avec revalidation | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `skipTransition` | Même titre, transition remplacée | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
+| `pauseAutopilot` | Implémentée, coopérative, sans annuler la Task principale | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
+| `resumeAutopilot` | Implémentée avec revalidation Serato, deck, MIDI et watchdog | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
+| `skipTransition` | Conserve le titre et remplace la technique par un Safe Fade contrôlé | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
 | `safeFade` | Refus explicite | `REQUIRES_DEVICE_VALIDATION` |
 
 ## Release workflow
 
-État : `PENDING` au moment de ce commit.
+Run : `29459693654`.
 
-Le workflow doit encore produire sur cette branche :
-
-- `MixPilot-Autopilot.dmg` ;
-- `MixPilot-Autopilot.dmg.sha256` ;
-- `release-manifest.json` ;
-- détails de signature ;
-- artifact de release `0.3.0-rc.2`.
-
-L’absence de secrets Apple implique une signature ad hoc et aucune notarisation revendiquée.
+- artifact : `MixPilot-Autopilot-0.3.0-rc.2` ;
+- DMG : `AUTOMATED_SUCCESS` ;
+- manifest : `AUTOMATED_SUCCESS` ;
+- checksum SHA-256 : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b` ;
+- signature : ad hoc de développement ;
+- notarisation : non effectuée et non revendiquée ;
+- Developer ID : absent de cette RC interne.
 
 ## Ce qui n’est pas encore `REAL_SUCCESS`
 
@@ -97,8 +98,10 @@ L’absence de secrets Apple implique une signature ad hoc et aucune notarisatio
 - perte et retour Wi-Fi réels ;
 - endurance de deux heures ;
 - Safe Fade distant ;
-- Developer ID et notarisation si les secrets Apple ne sont pas configurés.
+- Developer ID et notarisation.
 
-## Blocage suivant attendu
+## Blocage actuel
 
-Après workflow de release vert et validation du checksum RC2, la seule étape restante sera la campagne humaine unique définie dans `Documentation/FINAL_VALIDATION.md`.
+Tout le travail automatisable prévu pour RC2 est terminé et vert.
+
+Le prochain blocage est matériel : campagne humaine unique définie dans `Documentation/FINAL_VALIDATION.md` sur MacBook Pro M1, Serato DJ Pro, Spotify Premium, système audio réel et iPhone physique.
