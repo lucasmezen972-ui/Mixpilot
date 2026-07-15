@@ -6,6 +6,7 @@ import MixPilotCore
 import MixPilotMIDI
 import MixPilotRuntime
 import MixPilotSystem
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -32,10 +33,24 @@ final class AppModel: ObservableObject {
     @Published private(set) var playlistWarnings: [PlaylistImportWarning] = []
     @Published private(set) var mappingProfile = MIDIMappingProfile.developmentDefault
     @Published private(set) var emergencyStatus = "Aucun fichier sélectionné"
+    @Published private(set) var emergencyDuration: TimeInterval = 0
     @Published private(set) var runtimeStatus = "Inactif"
     @Published private(set) var runtimeEvents: [String] = []
     @Published private(set) var isLiveRunning = false
     @Published private(set) var liveArmed = false
+    @Published private(set) var connectivityStatus = ConnectivityStatus(
+        isAvailable: false,
+        isExpensive: false,
+        interfaceDescription: "Initialisation"
+    )
+    @Published private(set) var powerStatus = PowerStatus(
+        connectedToPower: false,
+        batteryLevel: nil,
+        lowPowerModeEnabled: false
+    )
+    @Published private(set) var preflightReport = PreflightReport(items: [])
+    @Published private(set) var optimizationReport: SetOptimizationReport?
+    @Published private(set) var hasCompletedOnboarding: Bool
     @Published var selectedSection: SidebarSection = .dashboard
 
     private var midiController: CoreMIDIController?
@@ -49,9 +64,13 @@ final class AppModel: ObservableObject {
     private let audioMonitor = AudioLevelMonitor()
     private let audioWatchdog = AudioWatchdog()
     private let emergencyPlayer = EmergencyAudioPlayer()
+    private let connectivityMonitor = ConnectivityMonitor()
+    private let powerProbe = PowerStatusProbe()
+    private let sleepAssertion = SleepAssertionManager()
     private let projectStore: JSONProjectStore
 
     init() {
+        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "MixPilotOnboardingCompleted")
         let supportRoot = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -61,6 +80,13 @@ final class AppModel: ObservableObject {
                 .appendingPathComponent("MixPilot Autopilot", isDirectory: true)
                 .appendingPathComponent("Projects", isDirectory: true)
         )
+
+        connectivityMonitor.start { [weak self] status in
+            Task { @MainActor [weak self] in
+                self?.connectivityStatus = status
+                self?.evaluatePreflight()
+            }
+        }
         refreshEnvironment()
         configureMIDI()
     }
@@ -68,6 +94,20 @@ final class AppModel: ObservableObject {
     deinit {
         liveTask?.cancel()
         audioMonitor.stop()
+        connectivityMonitor.stop()
+        sleepAssertion.release()
+    }
+
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set(true, forKey: "MixPilotOnboardingCompleted")
+        selectedSection = .studio
+    }
+
+    func restartOnboarding() {
+        hasCompletedOnboarding = false
+        UserDefaults.standard.set(false, forKey: "MixPilotOnboardingCompleted")
+        selectedSection = .onboarding
     }
 
     func refreshEnvironment() {
@@ -76,11 +116,15 @@ final class AppModel: ObservableObject {
         seratoStatus = result.isRunning ? "Serato détecté" : "Serato non lancé"
         accessibilityStatus = result.accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : result.audioPermission
-        libraryRowCount = result.accessibilityGranted ? accessibilityBridge.libraryRows(maxRows: 1_000).count : 0
+        libraryRowCount = result.accessibilityGranted
+            ? accessibilityBridge.libraryRows(maxRows: 1_000).count
+            : 0
+        powerStatus = powerProbe.read()
 
         if observation.isRunning && observation.accessibilityGranted {
             runtimeStatus = "Serato observable"
         }
+        evaluatePreflight()
     }
 
     func requestAccessibility() {
@@ -89,6 +133,10 @@ final class AppModel: ObservableObject {
     }
 
     func configureMIDI() {
+        guard midiController == nil else {
+            evaluatePreflight()
+            return
+        }
         do {
             let controller = try CoreMIDIController()
             let store = MIDIMappingProfileStore()
@@ -106,9 +154,11 @@ final class AppModel: ObservableObject {
                     accessibilityBridge: accessibilityBridge
                 )
                 midiStatus = "Port actif • \(Int(profile.completionRatio * 100)) % mappé"
+                evaluatePreflight()
             }
         } catch {
             midiStatus = "Échec : \(error.localizedDescription)"
+            evaluatePreflight()
         }
     }
 
@@ -116,19 +166,36 @@ final class AppModel: ObservableObject {
         mappingProfile = .developmentDefault
         Task {
             await mappedController?.replaceProfile(mappingProfile)
-            try? await mappingStore?.save(mappingProfile)
+            _ = try? await mappingStore?.save(mappingProfile)
             midiStatus = "Port actif • profil par défaut chargé"
+            evaluatePreflight()
         }
     }
 
     func saveMapping() {
         Task {
             do {
-                try await mappingStore?.save(mappingProfile)
+                _ = try await mappingStore?.save(mappingProfile)
                 await mappedController?.replaceProfile(mappingProfile)
                 midiStatus = "Mapping sauvegardé"
+                evaluatePreflight()
             } catch {
                 midiStatus = "Échec sauvegarde : \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func testMapping(_ action: SeratoAction) {
+        Task {
+            do {
+                if let mapping = mappingProfile[action], mapping.kind == .controlChange {
+                    try await mappedController?.set(action, value: 0.5)
+                } else {
+                    try await mappedController?.trigger(action)
+                }
+                midiStatus = "Test envoyé : \(action.rawValue)"
+            } catch {
+                midiStatus = "Échec test \(action.rawValue) : \(error.localizedDescription)"
             }
         }
     }
@@ -148,16 +215,20 @@ final class AppModel: ObservableObject {
             name: "Playlist Serato — \(Date().formatted(date: .abbreviated, time: .shortened))",
             tracks: result.tracks
         )
+        optimizationReport = SetOptimizer().analyze(tracks: result.tracks)
         runtimeStatus = "\(result.tracks.count) titres préparés"
         updateSnapshotForProject()
+        evaluatePreflight()
     }
 
     func createDemoProject() {
         let tracks = SetSimulator().makeTracks(count: 30)
         preparedProject = SetPreparationEngine().prepare(name: "Set de démonstration", tracks: tracks)
+        optimizationReport = SetOptimizer().analyze(tracks: tracks)
         playlistWarnings = []
         runtimeStatus = "Set de démonstration préparé"
         updateSnapshotForProject()
+        evaluatePreflight()
     }
 
     func lockPreparedProject() {
@@ -166,22 +237,30 @@ final class AppModel: ObservableObject {
         preparedProject = project
         Task { try? await projectStore.save(project) }
         runtimeStatus = "Plan verrouillé • prêt pour le préflight"
+        evaluatePreflight()
     }
 
     func selectEmergencyAudio() {
         let panel = NSOpenPanel()
-        panel.title = "Choisir un fichier musical local de secours"
+        panel.title = "Choisir au moins 30 minutes de musique locale de secours"
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedFileTypes = ["mp3", "m4a", "wav", "aiff", "aac", "caf"]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.mp3, .mpeg4Audio, .wav, .aiff, .audio]
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
 
         do {
-            try emergencyPlayer.prepare(url: url)
-            emergencyStatus = "Prêt : \(url.lastPathComponent)"
+            let summary = try emergencyPlayer.prepare(urls: panel.urls)
+            emergencyDuration = summary.totalDuration
+            let minutes = Int(summary.totalDuration / 60)
+            emergencyStatus = "\(summary.fileCount) fichiers • \(minutes) min"
+            if !summary.invalidFiles.isEmpty {
+                emergencyStatus += " • \(summary.invalidFiles.count) invalide(s)"
+            }
         } catch {
+            emergencyDuration = 0
             emergencyStatus = "Erreur : \(error.localizedDescription)"
         }
+        evaluatePreflight()
     }
 
     func playEmergencyAudio() {
@@ -198,33 +277,68 @@ final class AppModel: ObservableObject {
         guard !audioMonitor.isRunning else { return }
         do {
             try audioMonitor.start { [weak self, audioWatchdog] sample in
-                Task {
+                Task { @MainActor [weak self] in
                     let event = await audioWatchdog.ingest(sample)
-                    await MainActor.run {
-                        self?.audioLevelDB = sample.rmsDB
-                        self?.applyAudioEvent(event)
-                    }
+                    self?.audioLevelDB = sample.rmsDB
+                    self?.applyAudioEvent(event)
+                    self?.evaluatePreflight()
                 }
             }
             audioStatus = "Surveillance active"
         } catch {
             audioStatus = "Échec : \(error.localizedDescription)"
         }
+        evaluatePreflight()
     }
 
     func stopAudioMonitoring() {
         audioMonitor.stop()
         audioStatus = "Surveillance arrêtée"
+        evaluatePreflight()
+    }
+
+    func evaluatePreflight() {
+        let project = preparedProject
+        preflightReport = PreflightEvaluator().evaluate(PreflightInput(
+            seratoRunning: environmentProbe.probe().isRunning,
+            accessibilityGranted: accessibilityStatus == "Autorisée",
+            midiAvailable: midiController != nil,
+            mappingCompletion: mappingProfile.completionRatio,
+            audioMonitorRunning: audioMonitor.isRunning,
+            internetAvailable: connectivityStatus.isAvailable,
+            connectedToPower: powerStatus.connectedToPower,
+            batteryLevel: powerStatus.batteryLevel,
+            emergencyAudioReady: emergencyDuration >= 1_800,
+            emergencyDuration: emergencyDuration,
+            projectPrepared: project != nil,
+            projectLocked: project?.locked == true,
+            trackCount: project?.tracks.count ?? 0,
+            transitionCount: project?.transitions.count ?? 0,
+            lowConfidenceTransitionCount: project?.reviewTransitionCount ?? 0
+        ))
     }
 
     func armLive() {
+        refreshEnvironment()
+        guard preflightReport.canStartLive else {
+            liveArmed = false
+            runtimeStatus = "Préflight incomplet : \(preflightReport.failedItems.count) blocage(s)"
+            selectedSection = .preflight
+            return
+        }
         liveArmed.toggle()
         runtimeStatus = liveArmed ? "Mode Live armé" : "Mode Live désarmé"
     }
 
     func startLive() {
+        refreshEnvironment()
         guard liveArmed else {
             runtimeStatus = "Arme le mode Live avant le lancement"
+            return
+        }
+        guard preflightReport.canStartLive else {
+            runtimeStatus = "Le préflight contient encore des erreurs critiques"
+            selectedSection = .preflight
             return
         }
         guard let project = preparedProject, project.locked else {
@@ -233,6 +347,11 @@ final class AppModel: ObservableObject {
         }
         guard let coordinator = runtimeCoordinator, !isLiveRunning else { return }
 
+        do {
+            try sleepAssertion.acquire()
+        } catch {
+            runtimeStatus = "Avertissement veille : \(error.localizedDescription)"
+        }
         isLiveRunning = true
         runtimeEvents = []
         runtimeStatus = "Démarrage du préflight"
@@ -250,6 +369,7 @@ final class AppModel: ObservableObject {
             }
             isLiveRunning = false
             liveArmed = false
+            sleepAssertion.release()
         }
     }
 
@@ -257,6 +377,7 @@ final class AppModel: ObservableObject {
         liveTask?.cancel()
         liveTask = nil
         Task { await runtimeCoordinator?.requestManualControl() }
+        sleepAssertion.release()
         isLiveRunning = false
         liveArmed = false
         snapshot.state = .manualControl
@@ -409,9 +530,11 @@ final class AppModel: ObservableObject {
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {
+    case onboarding = "Configuration"
     case dashboard = "Tableau de bord"
     case studio = "Studio"
     case mapping = "Mapping MIDI"
+    case preflight = "Préflight"
     case live = "Live"
     case feasibility = "Feasibility Lab"
     case diagnostics = "Diagnostics"
@@ -420,9 +543,11 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .onboarding: "wand.and.stars"
         case .dashboard: "rectangle.grid.2x2"
         case .studio: "waveform.path.ecg"
         case .mapping: "slider.horizontal.3"
+        case .preflight: "checkmark.shield"
         case .live: "play.circle"
         case .feasibility: "checklist"
         case .diagnostics: "stethoscope"
