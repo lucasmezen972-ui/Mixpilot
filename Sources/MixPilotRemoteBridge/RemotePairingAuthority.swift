@@ -155,13 +155,18 @@ final class MixPilotRemotePairingAuthority {
         let status = withUnsafeMutableBytes(of: &value) { buffer in
             SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
         }
-        guard status == errSecSuccess else { return String(format: "%06d", Int.random(in: 0...999_999)) }
+        guard status == errSecSuccess else {
+            return String(format: "%06d", Int.random(in: 0...999_999))
+        }
         return String(format: "%06d", Int(value % 1_000_000))
     }
 
     private static func secureToken() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+        let status = bytes.withUnsafeMutableBytes { buffer in
+            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+        }
+        guard status == errSecSuccess else {
             throw MixPilotRemotePairingError.randomGeneration
         }
         return Data(bytes).base64EncodedString()
