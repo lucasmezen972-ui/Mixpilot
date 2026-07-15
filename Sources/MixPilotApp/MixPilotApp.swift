@@ -1,9 +1,12 @@
 #if os(macOS)
+import AppKit
+import MixPilotRemoteBridge
 import SwiftUI
 
 @main
 struct MixPilotAutopilotApp: App {
     @StateObject private var model = AppModel()
+    @StateObject private var remoteBridge = MixPilotRemoteBridge()
 
     var body: some Scene {
         WindowGroup("MixPilot Autopilot") {
@@ -32,6 +35,28 @@ struct MixPilotAutopilotApp: App {
 
                 Divider()
 
+                Button(remoteBridge.isRunning
+                       ? "Désactiver la télécommande iPhone"
+                       : "Activer la télécommande iPhone") {
+                    if remoteBridge.isRunning {
+                        remoteBridge.stop()
+                    } else {
+                        remoteBridge.start(provider: model)
+                        showPairingCode()
+                    }
+                }
+
+                Button("Afficher un nouveau code d’appairage…") {
+                    remoteBridge.rotatePairingCode()
+                    showPairingCode()
+                }
+                .disabled(!remoteBridge.isRunning)
+
+                Button("État : \(remoteBridge.status)") {}
+                    .disabled(true)
+
+                Divider()
+
                 Button("Exporter un diagnostic…") {
                     model.exportDiagnostics()
                 }
@@ -50,6 +75,15 @@ struct MixPilotAutopilotApp: App {
             RehearsalWorkspace(model: model)
         }
         .defaultSize(width: 1_180, height: 780)
+    }
+
+    private func showPairingCode() {
+        let alert = NSAlert()
+        alert.messageText = "Appairer MixPilot Remote"
+        alert.informativeText = "Sur l’iPhone, sélectionne ce Mac puis saisis le code \(remoteBridge.pairingCode). Il expire dans deux minutes."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
 
