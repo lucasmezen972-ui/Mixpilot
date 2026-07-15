@@ -4,6 +4,16 @@ on:
   pull_request:
     paths:
       - "Mobile/MixPilotRemote/**"
+      - "Shared/RemoteProtocolV1/**"
+      - ".github/workflows/iphone-remote-ci.yml"
+  push:
+    branches:
+      - develop
+      - "integration/**"
+      - "release/**"
+    paths:
+      - "Mobile/MixPilotRemote/**"
+      - "Shared/RemoteProtocolV1/**"
       - ".github/workflows/iphone-remote-ci.yml"
   workflow_dispatch:
 
@@ -11,9 +21,9 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -41,10 +51,41 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build | tee iphone-remote-build.log
 
-      - name: Upload build log
+      - name: Select an available iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime, devices in data.get("devices", {}).items():
+              for device in devices:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit(0)
+          raise SystemExit("No available iPhone simulator")
+          ')
+          echo "id=$device_id" >> "$GITHUB_OUTPUT"
+          echo "Selected simulator: $device_id"
+
+      - name: Run protocol contract tests
+        working-directory: Mobile/MixPilotRemote
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination 'id=${{ steps.simulator.outputs.id }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee iphone-remote-test.log
+
+      - name: Upload iPhone logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iphone-remote-build-log
-          path: Mobile/MixPilotRemote/iphone-remote-build.log
+          name: iphone-remote-validation-logs
+          path: |
+            Mobile/MixPilotRemote/iphone-remote-build.log
+            Mobile/MixPilotRemote/iphone-remote-test.log
           if-no-files-found: warn
