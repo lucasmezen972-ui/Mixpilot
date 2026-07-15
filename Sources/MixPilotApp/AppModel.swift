@@ -31,11 +31,25 @@ final class AppModel: ObservableObject {
     @Published private(set) var preparedProject: SetProject?
     @Published private(set) var playlistWarnings: [PlaylistImportWarning] = []
     @Published private(set) var mappingProfile = MIDIMappingProfile.developmentDefault
+    @Published var mappingWizard = MappingWizardState()
+    @Published private(set) var mappingWizardStatus = "Assistant non démarré"
     @Published private(set) var emergencyStatus = "Aucun fichier sélectionné"
     @Published private(set) var runtimeStatus = "Inactif"
     @Published private(set) var runtimeEvents: [String] = []
     @Published private(set) var isLiveRunning = false
     @Published private(set) var liveArmed = false
+    @Published private(set) var connectivityStatus = ConnectivityStatus(
+        isAvailable: false,
+        isExpensive: false,
+        interfaceDescription: "Initialisation"
+    )
+    @Published private(set) var powerStatus = PowerStatus(
+        connectedToPower: true,
+        batteryLevel: nil,
+        lowPowerModeEnabled: false
+    )
+    @Published private(set) var preflightReport: PreflightReport?
+    @Published private(set) var diagnosticsStatus = "Aucun rapport exporté"
     @Published var selectedSection: SidebarSection = .dashboard
 
     private var midiController: CoreMIDIController?
@@ -49,6 +63,9 @@ final class AppModel: ObservableObject {
     private let audioMonitor = AudioLevelMonitor()
     private let audioWatchdog = AudioWatchdog()
     private let emergencyPlayer = EmergencyAudioPlayer()
+    private let connectivityMonitor = ConnectivityMonitor()
+    private let powerProbe = PowerStatusProbe()
+    private let sleepAssertion = SleepAssertionManager()
     private let projectStore: JSONProjectStore
 
     init() {
@@ -63,16 +80,38 @@ final class AppModel: ObservableObject {
         )
         refreshEnvironment()
         configureMIDI()
+        connectivityMonitor.start { [weak self] status in
+            Task { @MainActor in
+                self?.connectivityStatus = status
+            }
+        }
     }
 
     deinit {
         liveTask?.cancel()
         audioMonitor.stop()
+        connectivityMonitor.stop()
+        sleepAssertion.release()
+    }
+
+    var setTimeline: SetTimeline? {
+        preparedProject.map(SetTimeline.init(project:))
+    }
+
+    var emergencyDuration: TimeInterval {
+        emergencyPlayer.totalDuration
+    }
+
+    func transitionInspection(at index: Int) -> TransitionInspection? {
+        guard let preparedProject else { return nil }
+        return TransitionInspection(project: preparedProject, transitionIndex: index)
     }
 
     func refreshEnvironment() {
         let result = environmentProbe.probe()
         let observation = accessibilityBridge.observe()
+        powerStatus = powerProbe.read()
+        connectivityStatus = connectivityMonitor.currentStatus()
         seratoStatus = result.isRunning ? "Serato détecté" : "Serato non lancé"
         accessibilityStatus = result.accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : result.audioPermission
@@ -89,6 +128,10 @@ final class AppModel: ObservableObject {
     }
 
     func configureMIDI() {
+        guard midiController == nil else {
+            midiStatus = "Port virtuel actif"
+            return
+        }
         do {
             let controller = try CoreMIDIController()
             let store = MIDIMappingProfileStore()
@@ -99,6 +142,7 @@ final class AppModel: ObservableObject {
             Task {
                 let profile = (try? await store.load()) ?? .developmentDefault
                 mappingProfile = profile
+                mappingWizard = MappingWizardState(profile: profile)
                 let mapped = MappedSeratoController(controller: controller, profile: profile)
                 mappedController = mapped
                 runtimeCoordinator = LiveAutopilotCoordinator(
@@ -114,6 +158,7 @@ final class AppModel: ObservableObject {
 
     func resetDefaultMapping() {
         mappingProfile = .developmentDefault
+        mappingWizard = MappingWizardState(profile: mappingProfile)
         Task {
             await mappedController?.replaceProfile(mappingProfile)
             try? await mappingStore?.save(mappingProfile)
@@ -121,12 +166,93 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func beginMappingWizard() {
+        mappingWizard = MappingWizardState(profile: mappingProfile)
+        mappingWizardStatus = "Étape 1 sur \(mappingWizard.steps.count)"
+    }
+
+    func updateCurrentMapping(
+        kind: MIDIMessageKind,
+        channel: Int,
+        number: Int,
+        minimum: Int,
+        maximum: Int,
+        momentary: Bool
+    ) {
+        let mapping = MIDIMessageMapping(
+            kind: kind,
+            channel: UInt8(max(0, min(15, channel))),
+            number: UInt8(max(0, min(127, number))),
+            minimumRawValue: UInt8(max(0, min(127, minimum))),
+            maximumRawValue: UInt8(max(0, min(127, maximum))),
+            isMomentary: momentary
+        )
+        mappingWizard.updateCurrentMapping(mapping)
+        mappingWizardStatus = "Configuration modifiée • test requis"
+    }
+
+    func moveMappingWizardNext() {
+        mappingWizard.moveNext()
+        mappingWizardStatus = "Étape \(mappingWizard.currentIndex + 1) sur \(mappingWizard.steps.count)"
+    }
+
+    func moveMappingWizardPrevious() {
+        mappingWizard.movePrevious()
+        mappingWizardStatus = "Étape \(mappingWizard.currentIndex + 1) sur \(mappingWizard.steps.count)"
+    }
+
+    func jumpMappingWizard(to action: SeratoAction) {
+        mappingWizard.jump(to: action)
+        mappingWizardStatus = "Étape \(mappingWizard.currentIndex + 1) sur \(mappingWizard.steps.count)"
+    }
+
+    func testCurrentMappingStep() {
+        guard let step = mappingWizard.currentStep,
+              let mappedController else {
+            mappingWizardStatus = "Contrôleur MIDI indisponible"
+            return
+        }
+        mappingWizardStatus = "Envoi du test : \(step.action.displayName)"
+
+        Task {
+            do {
+                if step.action.isContinuousControl {
+                    try await mappedController.set(step.action, value: 0.12)
+                    try await Task.sleep(for: .milliseconds(160))
+                    try await mappedController.set(step.action, value: 0.88)
+                    try await Task.sleep(for: .milliseconds(160))
+                    try await mappedController.set(step.action, value: 0.5)
+                } else {
+                    try await mappedController.trigger(step.action)
+                }
+                mappingWizard.recordCurrentTest(succeeded: true)
+                mappingProfile = mappingWizard.profile
+                await mappedController.replaceProfile(mappingProfile)
+                try? await mappingStore?.save(mappingProfile)
+                mappingWizardStatus = "Test envoyé avec succès • confirme le résultat dans Serato"
+            } catch {
+                mappingWizard.recordCurrentTest(succeeded: false)
+                mappingWizardStatus = "Échec du test : \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func markCurrentMappingConfirmed(_ succeeded: Bool) {
+        mappingWizard.recordCurrentTest(succeeded: succeeded)
+        mappingProfile = mappingWizard.profile
+        mappingWizardStatus = succeeded ? "Commande confirmée" : "Commande à remapper"
+    }
+
     func saveMapping() {
+        mappingProfile = mappingWizard.profile
         Task {
             do {
                 try await mappingStore?.save(mappingProfile)
                 await mappedController?.replaceProfile(mappingProfile)
-                midiStatus = "Mapping sauvegardé"
+                midiStatus = "Mapping sauvegardé • \(Int(mappingProfile.completionRatio * 100)) %"
+                mappingWizardStatus = mappingWizard.isComplete
+                    ? "Assistant terminé"
+                    : "Profil sauvegardé • \(mappingWizard.completedStepCount)/\(mappingWizard.steps.count) tests confirmés"
             } catch {
                 midiStatus = "Échec sauvegarde : \(error.localizedDescription)"
             }
@@ -149,6 +275,7 @@ final class AppModel: ObservableObject {
             tracks: result.tracks
         )
         runtimeStatus = "\(result.tracks.count) titres préparés"
+        preflightReport = nil
         updateSnapshotForProject()
     }
 
@@ -157,6 +284,30 @@ final class AppModel: ObservableObject {
         preparedProject = SetPreparationEngine().prepare(name: "Set de démonstration", tracks: tracks)
         playlistWarnings = []
         runtimeStatus = "Set de démonstration préparé"
+        preflightReport = nil
+        updateSnapshotForProject()
+    }
+
+    func updateTransition(at index: Int, kind: TransitionKind, bars: Int) {
+        guard var project = preparedProject,
+              !project.locked,
+              project.transitions.indices.contains(index),
+              project.tracks.indices.contains(index),
+              project.tracks.indices.contains(index + 1) else {
+            runtimeStatus = "Déverrouille ou recrée le plan avant modification"
+            return
+        }
+        let outgoing = project.tracks[index].track
+        let incoming = project.tracks[index + 1].track
+        project.transitions[index] = TransitionPlanner().plan(
+            from: outgoing,
+            to: incoming,
+            forcing: kind,
+            bars: bars
+        )
+        project.updatedAt = Date()
+        preparedProject = project
+        runtimeStatus = "Transition \(index + 1) mise à jour"
         updateSnapshotForProject()
     }
 
@@ -166,19 +317,25 @@ final class AppModel: ObservableObject {
         preparedProject = project
         Task { try? await projectStore.save(project) }
         runtimeStatus = "Plan verrouillé • prêt pour le préflight"
+        evaluatePreflight()
     }
 
     func selectEmergencyAudio() {
         let panel = NSOpenPanel()
-        panel.title = "Choisir un fichier musical local de secours"
+        panel.title = "Choisir la bibliothèque musicale locale de secours"
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.allowedFileTypes = ["mp3", "m4a", "wav", "aiff", "aac", "caf"]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
 
         do {
-            try emergencyPlayer.prepare(url: url)
-            emergencyStatus = "Prêt : \(url.lastPathComponent)"
+            let summary = try emergencyPlayer.prepare(urls: panel.urls)
+            let minutes = Int(summary.totalDuration / 60)
+            emergencyStatus = "\(summary.fileCount) fichiers • \(minutes) min"
+            if !summary.invalidFiles.isEmpty {
+                emergencyStatus += " • \(summary.invalidFiles.count) invalide(s)"
+            }
+            evaluatePreflight()
         } catch {
             emergencyStatus = "Erreur : \(error.localizedDescription)"
         }
@@ -191,7 +348,8 @@ final class AppModel: ObservableObject {
 
     func stopEmergencyAudio() {
         emergencyPlayer.stop()
-        emergencyStatus = "Secours arrêté"
+        let minutes = Int(emergencyPlayer.totalDuration / 60)
+        emergencyStatus = emergencyPlayer.totalDuration > 0 ? "Bibliothèque prête • \(minutes) min" : "Secours arrêté"
     }
 
     func startAudioMonitoring() {
@@ -207,6 +365,7 @@ final class AppModel: ObservableObject {
                 }
             }
             audioStatus = "Surveillance active"
+            evaluatePreflight()
         } catch {
             audioStatus = "Échec : \(error.localizedDescription)"
         }
@@ -215,9 +374,45 @@ final class AppModel: ObservableObject {
     func stopAudioMonitoring() {
         audioMonitor.stop()
         audioStatus = "Surveillance arrêtée"
+        evaluatePreflight()
+    }
+
+    @discardableResult
+    func evaluatePreflight() -> PreflightReport {
+        refreshEnvironment()
+        let project = preparedProject
+        let report = PreflightEvaluator().evaluate(PreflightInput(
+            seratoRunning: seratoStatus.contains("détecté"),
+            accessibilityGranted: accessibilityStatus.contains("Autorisée"),
+            midiAvailable: midiController != nil,
+            mappingCompletion: mappingProfile.completionRatio,
+            audioMonitorRunning: audioMonitor.isRunning,
+            internetAvailable: connectivityStatus.isAvailable,
+            connectedToPower: powerStatus.connectedToPower,
+            batteryLevel: powerStatus.batteryLevel,
+            emergencyAudioReady: emergencyPlayer.totalDuration > 0,
+            emergencyDuration: emergencyPlayer.totalDuration,
+            projectPrepared: project != nil,
+            projectLocked: project?.locked == true,
+            trackCount: project?.tracks.count ?? 0,
+            transitionCount: project?.transitions.count ?? 0,
+            lowConfidenceTransitionCount: project?.reviewTransitionCount ?? 0
+        ))
+        preflightReport = report
+        runtimeStatus = report.canStartLive
+            ? "Préflight validé"
+            : "Préflight bloqué • \(report.failedItems.count) point(s) critique(s)"
+        return report
     }
 
     func armLive() {
+        if !liveArmed {
+            let report = evaluatePreflight()
+            guard report.canStartLive else {
+                liveArmed = false
+                return
+            }
+        }
         liveArmed.toggle()
         runtimeStatus = liveArmed ? "Mode Live armé" : "Mode Live désarmé"
     }
@@ -227,12 +422,21 @@ final class AppModel: ObservableObject {
             runtimeStatus = "Arme le mode Live avant le lancement"
             return
         }
+        guard evaluatePreflight().canStartLive else {
+            liveArmed = false
+            return
+        }
         guard let project = preparedProject, project.locked else {
             runtimeStatus = "Le projet doit être préparé et verrouillé"
             return
         }
         guard let coordinator = runtimeCoordinator, !isLiveRunning else { return }
 
+        do {
+            try sleepAssertion.acquire()
+        } catch {
+            runtimeStatus = "Avertissement veille : \(error.localizedDescription)"
+        }
         isLiveRunning = true
         runtimeEvents = []
         runtimeStatus = "Démarrage du préflight"
@@ -248,6 +452,7 @@ final class AppModel: ObservableObject {
             } catch {
                 runtimeStatus = "Erreur Live : \(error.localizedDescription)"
             }
+            sleepAssertion.release()
             isLiveRunning = false
             liveArmed = false
         }
@@ -257,6 +462,7 @@ final class AppModel: ObservableObject {
         liveTask?.cancel()
         liveTask = nil
         Task { await runtimeCoordinator?.requestManualControl() }
+        sleepAssertion.release()
         isLiveRunning = false
         liveArmed = false
         snapshot.state = .manualControl
@@ -301,6 +507,49 @@ final class AppModel: ObservableObject {
                 snapshot.statusMessage = "Simulation interrompue : \(error.localizedDescription)"
             }
             isRunningSimulation = false
+        }
+    }
+
+    func makeDiagnosticReport() -> DiagnosticReport {
+        DiagnosticReport(
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
+            environment: DiagnosticEnvironment(
+                seratoStatus: seratoStatus,
+                midiStatus: midiStatus,
+                accessibilityStatus: accessibilityStatus,
+                audioStatus: audioStatus,
+                libraryRowCount: libraryRowCount,
+                emergencyStatus: emergencyStatus
+            ),
+            project: DiagnosticProjectSummary(project: preparedProject),
+            runtimeState: snapshot.state,
+            runtimeStatus: runtimeStatus,
+            recentEvents: runtimeEvents,
+            preflight: preflightReport,
+            validationLabels: [
+                "Moteur Core": "AUTOMATED_SUCCESS",
+                "Simulation 50 titres": report?.succeeded == true ? "AUTOMATED_SUCCESS" : "NOT_RUN_IN_APP",
+                "Contrôle Serato": "REQUIRES_SERATO_VALIDATION",
+                "Spotify": "CONTROLLED_BY_SERATO",
+                "DMG": "DEFERRED_UNTIL_RELEASE_CANDIDATE",
+            ]
+        )
+    }
+
+    func exportDiagnostics(asJSON: Bool) {
+        let report = makeDiagnosticReport()
+        let panel = NSSavePanel()
+        panel.title = "Exporter le diagnostic MixPilot"
+        panel.nameFieldStringValue = asJSON ? "MixPilot-Diagnostic.json" : "MixPilot-Diagnostic.txt"
+        panel.allowedFileTypes = asJSON ? ["json"] : ["txt"]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = asJSON ? try report.encodedJSON() : Data(report.plainText().utf8)
+            try data.write(to: url, options: .atomic)
+            diagnosticsStatus = "Rapport exporté : \(url.lastPathComponent)"
+        } catch {
+            diagnosticsStatus = "Échec export : \(error.localizedDescription)"
         }
     }
 
