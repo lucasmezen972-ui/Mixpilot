@@ -34,16 +34,14 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+      - path: Sources/RemoteModels.swift
+      - path: Sources/RemoteSnapshotSequencePolicy.swift
       - path: ../../Shared/RemoteProtocolV1/Fixtures
         buildPhase: resources
-    dependencies:
-      - target: MixPilotRemote
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
         CODE_SIGNING_ALLOWED: NO
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MixPilot Remote.app/MixPilot Remote"
-        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
   MixPilotRemote:
     build:
