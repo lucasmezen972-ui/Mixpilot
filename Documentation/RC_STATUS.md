@@ -14,7 +14,8 @@
 - PR #9 remplacée après port manuel de ses éléments utiles ;
 - PR #11 reprise et consolidée pour l’iPhone ;
 - PR #12 RC1 fermée comme obsolète ;
-- PR #13 reprise et enrichie pour le bridge Mac.
+- PR #13 reprise et enrichie pour le bridge Mac ;
+- PR #18 fusionnée dans `develop` au commit `67237855deb3da8e7543ed6e9b562957dce139b2` pour corriger la validation des checksums.
 
 ## Composants réellement présents
 
@@ -42,11 +43,11 @@
 
 ## Résultats automatisés de la RC2
 
-Commit validé : `b57bec0bc9c2ccc42a676df3ae5b2bf42d4cc82d`.
+Commit technique figé : `d0ce9c08559b491b47d7b478f99d87449519f955`.
 
 ### macOS CI
 
-Run : `29459695495`.
+Run : `29459910562`.
 
 - tests unitaires : `AUTOMATED_SUCCESS` ;
 - simulation 50 titres : `SIMULATED_SUCCESS` ;
@@ -59,7 +60,7 @@ Run : `29459695495`.
 
 ### iPhone Remote CI
 
-Run : `29459695476`.
+Run : `29459910656`.
 
 - génération XcodeGen : `AUTOMATED_SUCCESS` ;
 - build iOS Simulator : `AUTOMATED_SUCCESS` ;
@@ -78,15 +79,17 @@ Run : `29459695476`.
 
 ## Release workflow
 
-Run : `29459693654`.
+Run final : `29459907907`.
 
 - artifact : `MixPilot-Autopilot-0.3.0-rc.2` ;
 - DMG : `AUTOMATED_SUCCESS` ;
 - manifest : `AUTOMATED_SUCCESS` ;
-- checksum SHA-256 : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b` ;
+- checksum SHA-256 : `cab6e3a3252a9e138edccacd52c35abcb7d66bd361c7fcfbcc3ac756d363e100` ;
 - signature : ad hoc de développement ;
 - notarisation : non effectuée et non revendiquée ;
 - Developer ID : absent de cette RC interne.
+
+Les commits documentaires ultérieurs ne redéclenchent plus la fabrication du DMG.
 
 ## Ce qui n’est pas encore `REAL_SUCCESS`
 
