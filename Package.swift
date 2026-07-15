@@ -20,6 +20,7 @@ var targets: [Target] = [
 
 #if os(macOS)
 products.append(.executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]))
+products.append(.executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]))
 targets.append(
     .target(
         name: "MixPilotMIDI",
@@ -47,13 +48,41 @@ targets.append(
     )
 )
 targets.append(
+    .target(
+        name: "MixPilotRemoteBridge",
+        dependencies: ["MixPilotCore"],
+        linkerSettings: [
+            .linkedFramework("Network"),
+            .linkedFramework("Security"),
+        ]
+    )
+)
+targets.append(
+    .executableTarget(
+        name: "MixPilotHardwareProbeCLI",
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
+    )
+)
+targets.append(
     .executableTarget(
         name: "MixPilotApp",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem", "MixPilotRuntime"],
+        dependencies: [
+            "MixPilotCore",
+            "MixPilotMIDI",
+            "MixPilotSystem",
+            "MixPilotRuntime",
+            "MixPilotRemoteBridge",
+        ],
         linkerSettings: [
             .linkedFramework("SwiftUI"),
             .linkedFramework("AppKit"),
         ]
+    )
+)
+targets.append(
+    .testTarget(
+        name: "MixPilotRemoteBridgeTests",
+        dependencies: ["MixPilotRemoteBridge"]
     )
 )
 #endif

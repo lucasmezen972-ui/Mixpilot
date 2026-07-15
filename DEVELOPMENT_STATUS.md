@@ -4,69 +4,93 @@ Dernière mise à jour : 2026-07-15
 
 ## État global
 
-**Phase 5 — Runtime Autopilot préparé, préflight et robustesse**
+**Phase 7 — Intégration RC2 automatisée, validation matérielle différée**
 
-## Réalisé
+Branche active : `integration/0.3.0-rc.2`
 
-- [x] Dépôt GitHub public sécurisé par `.gitignore` et politique de sécurité
-- [x] Package Swift 6 modulaire
-- [x] Application native SwiftUI macOS 14+
+Pull Request d’intégration : **#14** vers `develop`.
+
+## Réalisé sur macOS
+
+- [x] Package Swift 6 modulaire et application SwiftUI macOS 14+
 - [x] Port virtuel CoreMIDI `MixPilot Virtual Controller`
-- [x] Profil MIDI versionné, persistant et contrôleur mappé
-- [x] Génération beat-par-beat des automations MIDI
-- [x] Exécution des courbes crossfader, volumes, EQ, filtre et effet
-- [x] Moteur de préparation des cue markers et transitions
-- [x] Profils Rap, Afro, Amapiano, Zouk, Kompa, Dancehall, Shatta, Bouyon et familial
-- [x] Analyse audio locale : onsets, BPM, beat phase, énergie et sections
-- [x] Capture PCM temporaire en mémoire pour la préparation, sans conservation du flux brut
-- [x] Observation Accessibilité de la fenêtre Serato
-- [x] Lecture heuristique des lignes visibles de bibliothèque Serato
-- [x] Import d’une playlist observée et génération d’un plan de set
-- [x] Optimiseur non destructif de l’ordre de playlist
-- [x] Moteur de répétition et comparaison de variantes de transition
-- [x] Coordinateur Live avec alternance des decks
-- [x] Préchargement, validation du titre et exécution de transition
-- [x] Watchdog audio silence, clipping et perte de source
-- [x] Bibliothèque locale de secours multi-fichiers avec enchaînement automatique
-- [x] Préflight bloquant avant mode Live
-- [x] Checkpoint de session et stratégie de reprise après crash
-- [x] Simulateur de machine à états sur 50 titres
-- [x] Stress-test des commandes générées sur 49 transitions
-- [x] CI macOS : tests, simulation longue, build Release et DMG
-- [x] Scripts de construction `.app` et `.dmg`
+- [x] Assistant de mapping avec confirmations réelles séparées du simple profil
+- [x] Génération et exécution beat-par-beat des automations MIDI
+- [x] Préparation des cue markers, transitions et timeline de set
+- [x] Analyse audio locale temporaire sans conservation du flux brut
+- [x] Optimisation non destructive de playlist
+- [x] Répétition mesurée et inspecteur de variantes de transition
+- [x] Coordinateur Live avec alternance des decks et checkpoints persistants
+- [x] Pause coopérative sans annulation de la Task principale
+- [x] Reprise protégée par observation Serato, checkpoint, MIDI et watchdog
+- [x] Skip Transition remplaçant uniquement la technique par un Safe Fade contrôlé
+- [x] Contrôle manuel distant idempotent
+- [x] Watchdog silence, clipping et perte de source
+- [x] Bibliothèque locale de secours multi-fichiers
+- [x] Préflight bloquant
+- [x] Centre de récupération prudent après interruption
+- [x] Diagnostics anonymisés et journal d’incidents
+- [x] Matrice automatisée de treize scénarios de panne
+- [x] Probe matériel `MixPilotHardwareProbeCLI`
+- [x] Workflow Serato pour runner Mac auto-hébergé
+- [x] Build Release, `.app`, `.dmg` et checksum en CI
 
-## Validation automatisée
+## Réalisé pour l’iPhone et le bridge
 
-- `SUCCESS` : tests unitaires du moteur Core.
-- `SUCCESS` : simulation de 50 titres avec incidents injectés.
-- `SUCCESS` : génération de toutes les commandes de 49 transitions dans les limites normalisées.
-- `IN_PROGRESS` : compilation Release et génération du DMG du lot Runtime.
+- [x] Application iOS 17 isolée dans `Mobile/MixPilotRemote`
+- [x] Génération XcodeGen et compilation iOS Simulator
+- [x] Déclaration Réseau local et Bonjour `_mixpilot._tcp`
+- [x] Découverte locale et client WebSocket v1
+- [x] Jetons stockés dans les Trousseaux iOS et macOS
+- [x] Bridge macOS dans le target séparé `MixPilotRemoteBridge`
+- [x] Bridge désactivé par défaut et activation explicite sur le Mac
+- [x] Code à six chiffres limité à deux minutes
+- [x] Jetons aléatoires de 256 bits
+- [x] Appareil principal et appareils secondaires en lecture seule
+- [x] Refus des commandes anciennes, dupliquées ou non authentifiées
+- [x] Protection stricte contre les snapshots anciens et dupliqués
+- [x] Fixtures JSON Remote v1 décodées côté Mac et côté iPhone
+- [x] Perte réseau sans commande métier ni modification automatique du Live Mac
+- [x] Safe Fade distant maintenu verrouillé jusqu’à validation audio réelle
 
-## Validation différée jusqu’à la version candidate finale
+## Validation automatisée vérifiée
 
-- `REQUIRES_SERATO_VALIDATION` : visibilité du port CoreMIDI dans Serato.
-- `REQUIRES_SERATO_VALIDATION` : mapping réel des commandes Serato.
-- `REQUIRES_SERATO_VALIDATION` : sélection et chargement automatique d’un titre Spotify précis.
-- `REQUIRES_SERATO_VALIDATION` : contenu réellement exposé par AXUIElement selon la version et la disposition Serato.
-- `REQUIRES_DEVICE_VALIDATION` : routage audio du master Serato vers le watchdog.
-- `REQUIRES_DEVICE_VALIDATION` : latence réelle sur MacBook Pro M1.
+Résultats du commit d’intégration `aa49c80cd09bd1690c377a7aca4bbe45800348e5` :
 
-## Prochaines étapes automatiques
+- `AUTOMATED_SUCCESS` : `swift test --parallel` sur macOS.
+- `SIMULATED_SUCCESS` : set de 50 titres avec incidents injectés.
+- `SIMULATED_SUCCESS` : set de 250 titres avec incidents injectés.
+- `AUTOMATED_SUCCESS` : build Release `MixPilotAutopilot`.
+- `AUTOMATED_SUCCESS` : build Release `MixPilotHardwareProbeCLI`.
+- `AUTOMATED_SUCCESS` : création du DMG de développement.
+- `AUTOMATED_SUCCESS` : validation du checksum SHA-256.
+- `AUTOMATED_SUCCESS` : génération XcodeGen et build iOS Simulator.
+- `AUTOMATED_SUCCESS` : contrats Remote v1 et ordre des snapshots.
 
-1. Obtenir une CI entièrement verte pour le lot Runtime.
-2. Intégrer le lot dans `develop`.
-3. Ajouter l’onboarding et l’assistant guidé de mapping MIDI.
-4. Ajouter la timeline détaillée et l’inspecteur de transition.
-5. Ajouter l’exécution de répétitions automatisées depuis l’interface Studio.
-6. Ajouter les diagnostics exportables et le journal d’incidents.
-7. Renforcer les simulations longues et les scénarios de panne.
-8. Produire une version candidate installable avant les tests réels.
+Artifacts GitHub produits :
 
-## Checkpoints humains différés
+- `MixPilot-Autopilot-development` ;
+- `MixPilot-Validation-Reports` ;
+- `iphone-remote-validation-logs`.
 
-- H002 : installation et ouverture de la version candidate sur le MacBook Pro M1.
-- H003 : Serato DJ Pro lancé et Spotify connecté.
-- H004 : permissions Accessibilité et capture audio accordées.
-- H005 : mapping MIDI réel validé.
-- H006 : routage audio Serato/BlackHole validé si nécessaire.
-- H007 : bibliothèque locale de secours sélectionnée.
+## Limitations encore réelles
+
+- `REQUIRES_SERATO_VALIDATION` : visibilité et mapping du port CoreMIDI dans Serato.
+- `REQUIRES_SERATO_VALIDATION` : chargement répétable du bon titre Spotify sur le bon deck.
+- `REQUIRES_SERATO_VALIDATION` : données réellement exposées par AXUIElement selon la version et la disposition Serato.
+- `REQUIRES_SERATO_VALIDATION` : Pause, Reprise et Skip Transition avec l’état réel des decks.
+- `REQUIRES_DEVICE_VALIDATION` : routage du master Serato vers le watchdog.
+- `REQUIRES_DEVICE_VALIDATION` : absence de blanc lors du secours et du Safe Fade.
+- `REQUIRES_DEVICE_VALIDATION` : découverte Bonjour, appairage et perte Wi-Fi sur Mac/iPhone physiques.
+- `REQUIRES_DEVICE_VALIDATION` : endurance de deux heures sur MacBook Pro M1.
+- `REQUIRES_DEVICE_VALIDATION` : Safe Fade distant, qui reste refusé en RC2 tant que le routage réel n’est pas validé.
+
+## Prochaines étapes
+
+1. Mettre les documents de statut et les README en cohérence.
+2. Fusionner la PR #14 entièrement verte dans `develop`.
+3. Fermer ou marquer comme remplacées les PR #9, #11, #12 et #13.
+4. Créer `release/0.3.0-rc.2` depuis le nouveau `develop`.
+5. Exécuter le workflow de release et vérifier le DMG, le manifest et le checksum.
+6. Ouvrir une PR RC2 vers `main` sans la fusionner.
+7. Déclencher une seule campagne humaine MacBook Pro M1 + Serato + iPhone.
