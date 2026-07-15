@@ -1,47 +1,81 @@
 # MixPilot Remote pour iPhone
 
-Cette application iOS est développée dans un espace entièrement isolé du moteur macOS actuel.
+MixPilot Remote est une application iOS 17 isolée du moteur macOS. Elle surveille MixPilot sur le réseau local et envoie uniquement des intentions de haut niveau. Le Mac reste la source de vérité et le seul composant autorisé à contrôler Serato ou à envoyer du MIDI.
 
-## Objectif
+## Fonctions présentes
 
-Permettre de surveiller et contrôler MixPilot depuis un iPhone lorsque Serato et le moteur Autopilot tournent sur le Mac :
+- découverte Bonjour `_mixpilot._tcp` ;
+- connexion WebSocket locale Remote Protocol v1 ;
+- appairage par code à six chiffres ;
+- jeton stocké dans le Trousseau iOS ;
+- affichage du morceau actuel, du prochain titre, de la transition et des alertes ;
+- snapshots séquencés ;
+- rejet des snapshots anciens et dupliqués, y compris après reconnexion ;
+- état de déconnexion visible ;
+- confirmation des commandes critiques ;
+- mode démo clairement identifié comme simulation.
 
-- voir le titre en cours et le prochain titre ;
-- suivre l’état du set et de la transition ;
-- mettre l’autopilote en pause ou le reprendre ;
-- demander un Safe Fade ;
-- passer la prochaine transition ;
-- reprendre immédiatement le contrôle manuel ;
-- recevoir les alertes importantes.
+## Commandes RC2
+
+- **Reprendre le contrôle manuel** : implémentée et idempotente ;
+- **Pause** : demande une pause coopérative au prochain point sûr ;
+- **Reprendre** : le Mac revalide Serato, le checkpoint, le MIDI et le watchdog ;
+- **Skip Transition** : ne saute pas de titre ; la transition suivante vers le même morceau devient un Safe Fade contrôlé ;
+- **Safe Fade direct** : reste verrouillé tant que le routage audio réel n’est pas validé.
+
+Une commande refusée par le Mac affiche le refus exact ; l’app ne simule jamais un succès.
 
 ## Isolation
 
-Cette branche ne modifie aucun fichier du moteur MixPilot existant. Le dossier `Mobile/MixPilotRemote` forme un projet Xcode indépendant. La connexion au Mac reposera sur un petit bridge conforme au protocole documenté dans `Documentation/REMOTE_PROTOCOL_V1.md`.
+Le projet XcodeGen se trouve uniquement dans :
 
-Le Mac reste la source de vérité et le seul composant autorisé à envoyer des commandes MIDI à Serato. L’iPhone n’envoie que des intentions haut niveau, validées par les protections du Mac.
+```text
+Mobile/MixPilotRemote
+```
 
-## Générer le projet Xcode
+Le moteur Swift macOS ne dépend pas du projet iOS. Les modèles Remote testables utilisent les mêmes fichiers Swift que l’application, via le package SwiftPM local.
 
-Le projet utilise XcodeGen afin d’éviter de commiter un fichier `.xcodeproj` volumineux et conflictuel.
+## Générer et compiler
 
 ```bash
 brew install xcodegen
 cd Mobile/MixPilotRemote
 xcodegen generate
-open MixPilotRemote.xcodeproj
+xcodebuild \
+  -project MixPilotRemote.xcodeproj \
+  -scheme MixPilotRemote \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
-Sélectionner ensuite une équipe de signature dans Xcode et lancer l’application sur un iPhone sous iOS 17 ou supérieur.
+Pour installer sur un iPhone physique, sélectionner une équipe de signature dans Xcode.
 
-## Mode démo
+## Tests de contrat
 
-Le bouton **Essayer le mode démo** permet de tester l’interface sans Mac ni Serato. La découverte réelle attend un service Bonjour `_mixpilot._tcp` exposé par le futur bridge macOS.
+```bash
+cd Mobile/MixPilotRemote
+swift test --parallel
+```
 
-## Sécurité prévue
+Ces tests décodent les fixtures partagées de `Shared/RemoteProtocolV1/Fixtures` et vérifient également l’ordre strict des snapshots.
 
-- découverte uniquement sur le réseau local ;
-- appairage initial par code à six chiffres affiché sur le Mac ;
-- jeton conservé dans le Trousseau iOS ;
-- identifiant unique par commande pour empêcher les doubles exécutions ;
-- confirmations obligatoires pour Safe Fade et contrôle manuel ;
-- déconnexion automatique visible, sans prétendre que le Mac est encore contrôlé.
+## Sécurité
+
+- réseau local uniquement ;
+- aucun MIDI brut ;
+- code d’appairage limité dans le temps ;
+- jeton 256 bits dans le Trousseau ;
+- appareil principal et appareils secondaires en lecture seule ;
+- UUID de commande dédupliqués ;
+- commandes anciennes refusées ;
+- aucune modification du Live Mac lors d’une perte Wi-Fi ou de la fermeture de l’app ;
+- aucun jeton, code réel ou mot de passe dans les logs.
+
+## Validation
+
+- XcodeGen et build iOS Simulator : `AUTOMATED_SUCCESS` ;
+- contrats Remote v1 et ordre des snapshots : `AUTOMATED_SUCCESS` ;
+- découverte, appairage et perte Wi-Fi sur appareils physiques : `REQUIRES_DEVICE_VALIDATION` ;
+- concordance avec Serato réel : `REQUIRES_SERATO_VALIDATION`.
