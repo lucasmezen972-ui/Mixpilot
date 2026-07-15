@@ -51,7 +51,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee iphone-remote-build.log
 
-      - name: Select an available iPhone simulator
+      - name: Select and boot an available iPhone simulator
         id: simulator
         shell: bash
         run: |
@@ -67,6 +67,8 @@ jobs:
           ')
           echo "id=$device_id" >> "$GITHUB_OUTPUT"
           echo "Selected simulator: $device_id"
+          xcrun simctl boot "$device_id" || true
+          xcrun simctl bootstatus "$device_id" -b
 
       - name: Run protocol contract tests
         working-directory: Mobile/MixPilotRemote
@@ -77,6 +79,10 @@ jobs:
             -scheme MixPilotRemote \
             -configuration Debug \
             -destination 'id=${{ steps.simulator.outputs.id }}' \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 30 \
+            -maximum-test-execution-time-allowance 60 \
             CODE_SIGNING_ALLOWED=NO \
             test 2>&1 | tee iphone-remote-test.log
 
