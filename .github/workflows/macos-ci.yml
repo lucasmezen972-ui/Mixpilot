@@ -15,13 +15,14 @@ permissions:
 jobs:
   test-and-build:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: |
           xcodebuild -version
           swift --version
+          chmod +x Scripts/*.sh
       - name: Unit tests
         id: unit-tests
         shell: bash
@@ -37,16 +38,30 @@ jobs:
         with:
           name: unit-test-log
           path: unit-test.log
-      - name: Long simulation
-        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
-      - name: Build macOS application
-        run: swift build -c release --product MixPilotAutopilot
+      - name: Long simulation and failure matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 50 --inject-failures | tee simulation-report.json
+      - name: Build macOS products
+        run: |
+          swift build -c release --product MixPilotAutopilot
+          swift build -c release --product MixPilotHardwareProbeCLI
       - name: Package development DMG
         env:
-          MIXPILOT_VERSION: 0.2.${{ github.run_number }}
+          MIXPILOT_VERSION: 0.3.${{ github.run_number }}
         run: |
           ./Scripts/build_release.sh
           ./Scripts/package_dmg.sh
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-Validation-Reports
+          path: |
+            simulation-report.json
+            unit-test.log
+          if-no-files-found: warn
       - name: Upload installable DMG
         uses: actions/upload-artifact@v4
         with:
