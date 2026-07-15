@@ -1,14 +1,19 @@
-# MixPilot 0.3.0-rc.2 — Statut vérifié
+# MixPilot 0.3.0-rc.2 — Statut de release candidate
 
-## Nature de ce document
+## Identité
 
-Ce fichier décrit l’état réel de la branche d’intégration avant création de la branche `release/0.3.0-rc.2`.
+- Version : `0.3.0-rc.2`
+- Branche : `release/0.3.0-rc.2`
+- Base : `develop` consolidé par la PR #14
+- Fusion vers `main` : **interdite avant validation du workflow de release et campagne matérielle**
 
-Branche actuelle : `integration/0.3.0-rc.2`
+## Consolidation effectuée
 
-PR d’intégration : **#14** vers `develop`.
-
-La RC2 n’est pas encore publiée et aucune fusion vers `main` n’a été effectuée.
+- PR #14 fusionnée dans `develop` au commit `06e980d068b86cf0c06237ffa563d5b31f2d35ef` ;
+- PR #9 remplacée après port manuel de ses éléments utiles ;
+- PR #11 reprise et consolidée pour l’iPhone ;
+- PR #12 RC1 fermée comme obsolète ;
+- PR #13 reprise et enrichie pour le bridge Mac.
 
 ## Composants réellement présents
 
@@ -17,28 +22,28 @@ La RC2 n’est pas encore publiée et aucune fusion vers `main` n’a été effe
 - target `MixPilotAutopilot` ;
 - target `MixPilotHardwareProbeCLI` ;
 - target `MixPilotRemoteBridge` ;
-- préparation de set et transitions ;
-- mapping MIDI et confirmations ;
+- préparation de set, analyse et transitions ;
+- mapping MIDI avec confirmations ;
 - préflight, watchdog et secours ;
 - répétition, inspecteur et analyse de préparation ;
 - checkpoints, récupération et diagnostics ;
-- contrôles distants de haut niveau avec protections.
+- commandes distantes de haut niveau protégées.
 
 ### iPhone
 
 - projet XcodeGen `Mobile/MixPilotRemote` ;
 - iOS 17+ ;
 - Réseau local et Bonjour `_mixpilot._tcp` ;
-- Keychain ;
+- stockage Keychain ;
 - découverte, appairage, authentification et snapshots ;
-- mode démo explicitement identifié ;
-- tests SwiftPM portant sur les fichiers de modèles réellement compilés par l’app.
+- mode démo explicitement identifié comme simulation ;
+- package SwiftPM testant les fichiers de modèles réellement utilisés par l’app.
 
-## Résultats exacts de CI
+## Résultats automatisés avant gel
 
 ### macOS CI
 
-Run GitHub Actions : `29457501030`
+Dernier run vert d’intégration : `29457958857`.
 
 - tests unitaires : `AUTOMATED_SUCCESS` ;
 - simulation 50 titres : `SIMULATED_SUCCESS` ;
@@ -46,44 +51,54 @@ Run GitHub Actions : `29457501030`
 - build Release application : `AUTOMATED_SUCCESS` ;
 - build Release probe : `AUTOMATED_SUCCESS` ;
 - package DMG : `AUTOMATED_SUCCESS` ;
-- checksum : `AUTOMATED_SUCCESS` ;
+- validation checksum : `AUTOMATED_SUCCESS` ;
 - artifacts : `AUTOMATED_SUCCESS`.
 
 ### iPhone Remote CI
 
-Run GitHub Actions : `29457501093`
+Dernier run vert d’intégration : `29457958882`.
 
 - génération XcodeGen : `AUTOMATED_SUCCESS` ;
 - build iOS Simulator : `AUTOMATED_SUCCESS` ;
 - contrats Remote v1 : `AUTOMATED_SUCCESS` ;
-- protection snapshots anciens/dupliqués : `AUTOMATED_SUCCESS`.
+- snapshots anciens/dupliqués : `AUTOMATED_SUCCESS`.
 
 ## Commandes distantes
 
-| Commande | Présence | Statut réel |
+| Commande | Présence | Statut RC2 |
 |---|---|---|
-| `takeManualControl` | Implémentée | `AUTOMATED_SUCCESS`, `REQUIRES_DEVICE_VALIDATION` |
+| `takeManualControl` | Implémentée et idempotente | `AUTOMATED_SUCCESS`, `REQUIRES_DEVICE_VALIDATION` |
 | `pauseAutopilot` | Implémentée, coopérative | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `resumeAutopilot` | Implémentée avec vérifications | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `skipTransition` | Implémentée sans saut de titre | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
+| `resumeAutopilot` | Implémentée avec revalidation | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
+| `skipTransition` | Même titre, transition remplacée | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
 | `safeFade` | Refus explicite | `REQUIRES_DEVICE_VALIDATION` |
 
-## Ce qui n’est pas encore un succès réel
+## Release workflow
 
-- aucun test Serato réel n’a été exécuté par un runner public ;
-- aucun compte Spotify n’a été utilisé dans la CI ;
-- le port MIDI n’a pas encore été mappé dans Serato sur le Mac cible ;
-- le routage audio réel n’est pas validé ;
-- l’appairage n’a pas encore été testé sur les deux appareils physiques ;
-- l’endurance de deux heures n’est pas encore validée ;
-- aucune signature Developer ID ou notarisation n’est affirmée sans secrets Apple.
+État : `PENDING` au moment de ce commit.
 
-## Conditions de création de la RC2
+Le workflow doit encore produire sur cette branche :
 
-1. PR #14 fusionnée dans `develop` après CI verte ;
-2. anciennes PR marquées comme reprises ou remplacées ;
-3. branche `release/0.3.0-rc.2` créée depuis ce `develop` ;
-4. workflow de release exécuté avec `version=0.3.0-rc.2` ;
-5. DMG, manifest et checksum produits ;
-6. PR RC2 ouverte vers `main` et laissée non fusionnée ;
-7. campagne humaine unique déclenchée selon `FINAL_VALIDATION.md`.
+- `MixPilot-Autopilot.dmg` ;
+- `MixPilot-Autopilot.dmg.sha256` ;
+- `release-manifest.json` ;
+- détails de signature ;
+- artifact de release `0.3.0-rc.2`.
+
+L’absence de secrets Apple implique une signature ad hoc et aucune notarisation revendiquée.
+
+## Ce qui n’est pas encore `REAL_SUCCESS`
+
+- mapping et contrôle Serato réels ;
+- chargement Spotify répétable ;
+- routage audio réel ;
+- absence de blanc sur le système de son cible ;
+- appairage Mac/iPhone physiques ;
+- perte et retour Wi-Fi réels ;
+- endurance de deux heures ;
+- Safe Fade distant ;
+- Developer ID et notarisation si les secrets Apple ne sont pas configurés.
+
+## Blocage suivant attendu
+
+Après workflow de release vert et validation du checksum RC2, la seule étape restante sera la campagne humaine unique définie dans `Documentation/FINAL_VALIDATION.md`.
