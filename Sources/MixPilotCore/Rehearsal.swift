@@ -100,11 +100,19 @@ public struct RehearsalEngine: Sendable {
             ))
         }
         if plan.bars > 4 {
-            var shortened = plan
-            shortened.id = UUID()
-            shortened.bars = max(4, plan.bars / 2)
-            shortened.reasons.append("Durée raccourcie pour limiter la superposition")
-            output.append(RehearsalVariant(plan: shortened, label: "Variante courte"))
+            output.append(RehearsalVariant(
+                plan: TransitionPlan(
+                    outgoingTrackID: plan.outgoingTrackID,
+                    incomingTrackID: plan.incomingTrackID,
+                    kind: plan.kind,
+                    bars: max(4, plan.bars / 2),
+                    targetBPM: plan.targetBPM,
+                    confidence: plan.confidence,
+                    reasons: plan.reasons + ["Durée raccourcie pour limiter la superposition"],
+                    lanes: plan.lanes
+                ),
+                label: "Variante courte"
+            ))
         }
         return output
     }
@@ -178,6 +186,7 @@ public struct RehearsalEngine: Sendable {
         kind: TransitionKind,
         bars: Int
     ) -> TransitionPlan {
+        let bpmOffset: Double = kind == .echoExit ? 15 : (kind == .safeFade ? 8 : 0)
         let syntheticOutgoing = Track(
             id: plan.outgoingTrackID,
             title: "Outgoing",
@@ -192,20 +201,23 @@ public struct RehearsalEngine: Sendable {
             id: plan.incomingTrackID,
             title: "Incoming",
             artist: "",
-            bpm: plan.targetBPM,
+            bpm: plan.targetBPM + bpmOffset,
             duration: 180,
             energy: 0.6,
             vocalDensity: kind == .rapSwitch ? 0.8 : 0.4,
             profile: profile(for: kind)
         )
-        var replacement = TransitionPlanner().plan(from: syntheticOutgoing, to: syntheticIncoming)
-        replacement.id = UUID()
-        replacement.kind = kind
-        replacement.bars = bars
-        replacement.targetBPM = plan.targetBPM
-        replacement.confidence = max(plan.confidence, kind == .safeFade || kind == .echoExit ? 78 : plan.confidence)
-        replacement.reasons = plan.reasons + ["Variante générée pendant la répétition"]
-        return replacement
+        let generated = TransitionPlanner().plan(from: syntheticOutgoing, to: syntheticIncoming)
+        return TransitionPlan(
+            outgoingTrackID: plan.outgoingTrackID,
+            incomingTrackID: plan.incomingTrackID,
+            kind: kind,
+            bars: bars,
+            targetBPM: plan.targetBPM,
+            confidence: max(plan.confidence, kind == .safeFade || kind == .echoExit ? 78 : plan.confidence),
+            reasons: plan.reasons + ["Variante générée pendant la répétition"],
+            lanes: generated.lanes
+        )
     }
 
     private func profile(for kind: TransitionKind) -> MusicalProfile {
