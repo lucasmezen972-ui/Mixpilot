@@ -1,61 +1,100 @@
-# Bridge Mac pour MixPilot Remote
+# Bridge MixPilot Mac–iPhone
 
-## État
+## Architecture vérifiée
 
-Le bridge est développé dans un module séparé `MixPilotRemoteBridge` et reste désactivé par défaut.
+Le bridge se trouve dans le target macOS séparé :
 
-Il ne démarre que lorsque l’utilisateur choisit **MixPilot → Activer la télécommande iPhone**. Sa désactivation ferme immédiatement le listener et toutes les connexions.
+```text
+Sources/MixPilotRemoteBridge/
+```
 
-## Réseau
+L’application iPhone reste indépendante :
 
-- découverte Bonjour : `_mixpilot._tcp` ;
-- WebSocket local ;
-- sous-protocole : `mixpilot-remote-v1` ;
-- messages JSON versionnés ;
-- aucune ouverture vers Internet ;
-- aucun MIDI brut dans le protocole.
+```text
+Mobile/MixPilotRemote/
+```
 
-## Appairage
+Le moteur `MixPilotCore` ne dépend pas du projet iOS. Le bridge ne reçoit que des intentions de haut niveau et ne connaît aucune commande MIDI brute.
 
-- code aléatoire à six chiffres ;
-- validité de deux minutes ;
-- jeton aléatoire de 256 bits ;
-- jeton conservé dans le Trousseau macOS ;
-- premier iPhone appairé déclaré contrôleur principal ;
-- autres appareils en lecture seule.
+## Activation
 
-## Protections
+Le bridge est désactivé au lancement. Il est activé explicitement depuis le menu MixPilot sur le Mac. L’activation :
 
+- crée un listener Network.framework local ;
+- publie `_mixpilot._tcp` par Bonjour ;
+- génère un code d’appairage à six chiffres ;
+- démarre l’envoi périodique des snapshots.
+
+La désactivation ferme le listener et toutes les sessions. Elle ne modifie pas le Live.
+
+## Sécurité réellement implémentée
+
+- code d’appairage valable deux minutes ;
+- comparaison du code et des jetons en temps constant ;
+- jeton aléatoire de 32 octets, soit 256 bits ;
+- stockage dans le Trousseau macOS et iOS ;
+- premier appareil principal ;
+- appareils secondaires en lecture seule ;
 - commandes de plus de dix secondes refusées ;
-- identifiants de commandes dédupliqués ;
-- commande refusée si le Mac n’est pas dans un état compatible ;
-- aucune modification automatique du Live lors d’une perte réseau ;
-- le Mac reste la seule source de vérité ;
-- bridge inactif par défaut.
+- UUID déjà reçu refusé ;
+- JSON invalide et version inconnue refusés ;
+- commande avant authentification refusée ;
+- snapshots séquencés ;
+- aucun code ou jeton dans le journal applicatif.
 
-## Commandes v1
+## Commandes
 
-### Active
+### Contrôle manuel
 
-- `takeManualControl` : annule l’autopilote et rend immédiatement le contrôle au Mac.
+La commande est idempotente. Elle demande au coordinateur de cesser toute future automation. Lorsqu’une courbe de transition est déjà engagée, celle-ci peut se terminer afin d’éviter une rupture sonore, puis aucune nouvelle commande n’est émise.
 
-### Présentes dans le protocole mais volontairement verrouillées
+### Pause
 
-- `pauseAutopilot` ;
-- `resumeAutopilot` ;
-- `skipTransition` ;
-- `safeFade`.
+La Pause est coopérative :
 
-Ces commandes sont refusées avec une explication tant que leur comportement réel n’est pas validé avec Serato, le checkpoint et le routage audio. Elles ne sont jamais simulées comme si elles avaient réussi.
+- elle n’annule pas la Task principale ;
+- elle n’interrompt pas une courbe MIDI active ;
+- elle est acceptée uniquement en lecture stable ou en attente de transition ;
+- elle sauvegarde un checkpoint `.paused` ;
+- les attentes du coordinateur cessent de progresser tant que la pause est active.
 
-## Validation avant utilisation
+### Reprise
 
-1. Compiler et lancer MixPilot sur le Mac.
-2. Activer la télécommande depuis le menu MixPilot.
-3. Vérifier que l’iPhone découvre le Mac.
-4. Saisir le code affiché.
-5. Vérifier les snapshots en lecture seule.
-6. Tester `takeManualControl` uniquement sur un set de test.
-7. Couper le Wi-Fi et confirmer que le Live Mac continue sans changement.
+La Reprise exige :
 
-La télécommande ne doit pas être utilisée en prestation avant validation de ces étapes sur le Mac réel.
+- un checkpoint de pause ;
+- le morceau attendu visible dans Serato ;
+- le même deck interne que le checkpoint ;
+- un mapping MIDI réellement confirmé ;
+- un watchdog audio actif ;
+- aucun arrêt au milieu d’une courbe MIDI.
+
+Un échec de vérification produit un `ack` refusé.
+
+### Skip Transition
+
+En RC2, Skip ne saute aucun titre. Il remplace la transition planifiée vers le même morceau entrant par un Safe Fade contrôlé. Il est refusé tant que le morceau entrant n’est pas confirmé ou que le moteur n’est pas en attente de transition.
+
+### Safe Fade distant
+
+La commande directe reste verrouillée avec le statut `REQUIRES_DEVICE_VALIDATION`. Elle ne sera activée qu’après validation du routage audio réel, de la préparation du titre entrant ou du secours local, et de l’absence de blanc.
+
+## Perte réseau
+
+Une déconnexion, l’arrêt du listener, le verrouillage de l’iPhone ou une perte Wi-Fi :
+
+- supprime uniquement la session distante ;
+- n’appelle aucune commande métier ;
+- ne met pas le Live en pause ;
+- ne change pas de titre ;
+- ne déclenche pas le secours ;
+- n’envoie aucun MIDI.
+
+Le Mac continue selon son état local.
+
+## Validation
+
+- compilation et tests publics : `AUTOMATED_SUCCESS` ;
+- politiques de commandes : `AUTOMATED_SUCCESS` ;
+- découverte Bonjour, appairage physique et perte Wi-Fi : `REQUIRES_DEVICE_VALIDATION` ;
+- concordance réelle avec Serato : `REQUIRES_SERATO_VALIDATION`.
