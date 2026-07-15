@@ -5,14 +5,14 @@ Ce registre liste uniquement les actions qui ne peuvent pas être validées de m
 | ID | Phase | Action | Statut | Vérification prévue |
 |---|---|---|---|---|
 | H001 | Dépôt | Passer le dépôt en privé si nécessaire | SKIPPED_WITH_LIMITATION | Décision du propriétaire : dépôt public conservé |
-| H002 | RC2 réelle | Installer et valider la RC2 sur MacBook Pro M1 avec Serato, audio et iPhone | NOT_REQUIRED_YET | Campagne unique définie dans `Documentation/FINAL_VALIDATION.md` |
-| H003 | Serato | Connecter Spotify et valider chargement, decks et transitions | NOT_REQUIRED_YET | Probe strict, playlist locale puis Spotify |
-| H004 | Permissions | Accorder Accessibilité, capture et dossiers | NOT_REQUIRED_YET | Préflight et Feasibility Lab |
-| H005 | MIDI | Mapper et confirmer toutes les commandes dans Serato | NOT_REQUIRED_YET | Réaction réellement observée pour chaque action critique |
-| H006 | Audio | Valider routage master, watchdog, latence et absence de blanc | NOT_REQUIRED_YET | Niveaux PCM, silence, secours et Safe Fade |
-| H007 | Secours | Sélectionner au moins 30 minutes de musique locale | NOT_REQUIRED_YET | Formats, durée, sortie réelle et enchaînement |
-| H008 | Réseau réel | Valider Bonjour, appairage, lecture seule et perte Wi-Fi | NOT_REQUIRED_YET | Mac et iPhone physiques sur le même réseau local |
-| H009 | Endurance | Exécuter un set autonome de deux heures | NOT_REQUIRED_YET | Aucun crash, blanc, veille ou incident non récupéré |
+| H002 | RC2 réelle | Installer et valider la RC2 sur MacBook Pro M1 avec Serato, audio et iPhone | WAITING_FOR_HUMAN | Campagne unique définie dans `Documentation/FINAL_VALIDATION.md` |
+| H003 | Serato | Connecter Spotify et valider chargement, decks et transitions | WAITING_FOR_HUMAN | Probe strict, playlist locale puis Spotify |
+| H004 | Permissions | Accorder Accessibilité, capture et dossiers | WAITING_FOR_HUMAN | Préflight et Feasibility Lab |
+| H005 | MIDI | Mapper et confirmer toutes les commandes dans Serato | WAITING_FOR_HUMAN | Réaction réellement observée pour chaque action critique |
+| H006 | Audio | Valider routage master, watchdog, latence et absence de blanc | WAITING_FOR_HUMAN | Niveaux PCM, silence, secours et Safe Fade |
+| H007 | Secours | Sélectionner au moins 30 minutes de musique locale | WAITING_FOR_HUMAN | Formats, durée, sortie réelle et enchaînement |
+| H008 | Réseau réel | Valider Bonjour, appairage, lecture seule et perte Wi-Fi | WAITING_FOR_HUMAN | Mac et iPhone physiques sur le même réseau local |
+| H009 | Endurance | Exécuter un set autonome de deux heures | WAITING_FOR_HUMAN | Aucun crash, blanc, veille ou incident non récupéré |
 | H010 | Distribution publique | Ajouter Developer ID et notarisation si distribution externe | NOT_REQUIRED_YET | `codesign`, `notarytool`, `stapler` et Gatekeeper |
 
 ## H001 — Visibilité du dépôt
@@ -32,24 +32,27 @@ Mesures obligatoires :
 
 ## H002 — Campagne humaine finale RC2
 
-**Statut actuel : `NOT_REQUIRED_YET`**
+**Statut actuel : `WAITING_FOR_HUMAN`**
 
-Cette action ne devient `WAITING_FOR_HUMAN` qu’après :
+Les conditions automatiques sont remplies :
 
-1. fusion de la branche d’intégration verte dans `develop` ;
-2. création de `release/0.3.0-rc.2` ;
-3. génération du DMG RC2 ;
-4. validation réelle du checksum ;
-5. ouverture de la PR RC2 vers `main`.
+1. `develop` consolidé via la PR #14 ;
+2. branche `release/0.3.0-rc.2` créée ;
+3. PR #17 ouverte vers `main` ;
+4. macOS CI verte : run `29459695495` ;
+5. iPhone Remote CI verte : run `29459695476` ;
+6. workflow de release vert : run `29459693654` ;
+7. artifact `MixPilot-Autopilot-0.3.0-rc.2` généré ;
+8. checksum validé : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b`.
 
-La campagne regroupera H003 à H009 afin de ne solliciter l’utilisateur qu’une seule fois.
+La campagne regroupe H003 à H009 afin de solliciter l’utilisateur une seule fois.
 
 ## Résultats ne nécessitant plus d’action humaine
 
 - `AUTOMATED_SUCCESS` : tests Swift Mac et bridge ;
 - `SIMULATED_SUCCESS` : simulations 50 et 250 titres ;
 - `AUTOMATED_SUCCESS` : application Mac et probe en Release ;
-- `AUTOMATED_SUCCESS` : DMG de branche d’intégration et checksum ;
+- `AUTOMATED_SUCCESS` : DMG RC2, manifest et checksum ;
 - `AUTOMATED_SUCCESS` : application iPhone compilée pour simulateur ;
 - `AUTOMATED_SUCCESS` : contrats Remote v1 et ordre des snapshots.
 
