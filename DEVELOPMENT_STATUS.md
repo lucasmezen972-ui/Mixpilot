@@ -6,7 +6,7 @@ Dernière mise à jour : 2026-07-15
 
 **Phase 0 — Initialisation du dépôt**
 
-Le dépôt a été initialisé et la structure de gouvernance du développement est en cours de création.
+Le dépôt a été initialisé. La gouvernance technique, le cahier des charges et le protocole des interventions humaines sont désormais versionnés sur la branche de fondation.
 
 ## Branches
 
@@ -21,8 +21,10 @@ Le dépôt a été initialisé et la structure de gouvernance du développement 
 - [x] Branche `develop` créée
 - [x] Branche de fondation créée
 - [x] Règles Claude ajoutées
-- [ ] Registre des checkpoints humains
-- [ ] Cahier des charges versionné dans le dépôt
+- [x] Registre des checkpoints humains
+- [x] Cahier des charges versionné dans le dépôt
+- [x] Pull Request de fondation ouverte
+- [x] Visibilité publique confirmée comme décision volontaire
 - [ ] Structure Swift/Xcode
 - [ ] Feasibility Lab
 - [ ] Simulateur Serato
@@ -32,14 +34,15 @@ Le dépôt a été initialisé et la structure de gouvernance du développement 
 
 ## Prochaine étape automatique
 
-1. Ajouter le cahier des charges technique versionné.
-2. Ajouter les checkpoints humains.
-3. Ouvrir une Pull Request vers `develop`.
-4. Préparer l’initialisation du projet macOS.
+1. Ajouter un `.gitignore` adapté à Xcode, macOS et aux secrets.
+2. Ajouter la politique de sécurité du dépôt public.
+3. Préparer les workflows GitHub Actions de validation.
+4. Initialiser le squelette Swift/Xcode depuis un environnement macOS disposant de Xcode.
+5. Construire le Feasibility Lab et le simulateur.
 
 ## Risques ouverts
 
-- Le dépôt est actuellement public.
+- Le dépôt est public par décision du propriétaire : aucun secret ni contenu audio protégé ne doit être commité.
 - Aucun test réel Serato n’a encore été effectué.
 - Aucun projet Xcode n’est encore présent.
 - Aucun runner Mac privé n’est encore configuré.
