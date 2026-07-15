@@ -35,13 +35,21 @@ targets.append(
             .linkedFramework("AppKit"),
             .linkedFramework("ApplicationServices"),
             .linkedFramework("AVFoundation"),
+            .linkedFramework("Network"),
+            .linkedFramework("IOKit"),
         ]
+    )
+)
+targets.append(
+    .target(
+        name: "MixPilotRuntime",
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
     )
 )
 targets.append(
     .executableTarget(
         name: "MixPilotApp",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"],
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem", "MixPilotRuntime"],
         linkerSettings: [
             .linkedFramework("SwiftUI"),
             .linkedFramework("AppKit"),

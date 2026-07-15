@@ -4,47 +4,69 @@ Dernière mise à jour : 2026-07-15
 
 ## État global
 
-**Phase 2 — Premier MVP natif et prototype vertical**
+**Phase 5 — Runtime Autopilot préparé, préflight et robustesse**
 
 ## Réalisé
 
-- [x] Dépôt et branches initialisés
-- [x] Règles Claude et sécurité du dépôt public
-- [x] Cahier des charges versionné
+- [x] Dépôt GitHub public sécurisé par `.gitignore` et politique de sécurité
 - [x] Package Swift 6 modulaire
-- [x] Application SwiftUI macOS
-- [x] Moteur de génération de transitions
-- [x] Machine à états Autopilot
-- [x] Simulateur CLI
-- [x] Six tests du moteur validés localement
-- [x] Simulation de 50 titres et 49 transitions validée localement
-- [x] Récupération de quatre incidents injectés validée localement
-- [x] Port virtuel CoreMIDI implémenté
-- [x] Détection du processus Serato implémentée
-- [x] Lecteur audio local de secours implémenté
-- [x] Feasibility Lab initial
-- [x] CI macOS et simulation longue
+- [x] Application native SwiftUI macOS 14+
+- [x] Port virtuel CoreMIDI `MixPilot Virtual Controller`
+- [x] Profil MIDI versionné, persistant et contrôleur mappé
+- [x] Génération beat-par-beat des automations MIDI
+- [x] Exécution des courbes crossfader, volumes, EQ, filtre et effet
+- [x] Moteur de préparation des cue markers et transitions
+- [x] Profils Rap, Afro, Amapiano, Zouk, Kompa, Dancehall, Shatta, Bouyon et familial
+- [x] Analyse audio locale : onsets, BPM, beat phase, énergie et sections
+- [x] Capture PCM temporaire en mémoire pour la préparation, sans conservation du flux brut
+- [x] Observation Accessibilité de la fenêtre Serato
+- [x] Lecture heuristique des lignes visibles de bibliothèque Serato
+- [x] Import d’une playlist observée et génération d’un plan de set
+- [x] Optimiseur non destructif de l’ordre de playlist
+- [x] Moteur de répétition et comparaison de variantes de transition
+- [x] Coordinateur Live avec alternance des decks
+- [x] Préchargement, validation du titre et exécution de transition
+- [x] Watchdog audio silence, clipping et perte de source
+- [x] Bibliothèque locale de secours multi-fichiers avec enchaînement automatique
+- [x] Préflight bloquant avant mode Live
+- [x] Checkpoint de session et stratégie de reprise après crash
+- [x] Simulateur de machine à états sur 50 titres
+- [x] Stress-test des commandes générées sur 49 transitions
+- [x] CI macOS : tests, simulation longue, build Release et DMG
 - [x] Scripts de construction `.app` et `.dmg`
 
-## Validation
+## Validation automatisée
 
-- `SIMULATED` : moteur de transitions, Autopilot et récupération.
-- `REQUIRES_SERATO_VALIDATION` : CoreMIDI dans Serato, chargement de titres, observation de decks et capture audio.
-- `REQUIRES_MACOS_CI` : compilation des cibles Apple spécifiques.
+- `SUCCESS` : tests unitaires du moteur Core.
+- `SUCCESS` : simulation de 50 titres avec incidents injectés.
+- `SUCCESS` : génération de toutes les commandes de 49 transitions dans les limites normalisées.
+- `IN_PROGRESS` : compilation Release et génération du DMG du lot Runtime.
+
+## Validation différée jusqu’à la version candidate finale
+
+- `REQUIRES_SERATO_VALIDATION` : visibilité du port CoreMIDI dans Serato.
+- `REQUIRES_SERATO_VALIDATION` : mapping réel des commandes Serato.
+- `REQUIRES_SERATO_VALIDATION` : sélection et chargement automatique d’un titre Spotify précis.
+- `REQUIRES_SERATO_VALIDATION` : contenu réellement exposé par AXUIElement selon la version et la disposition Serato.
+- `REQUIRES_DEVICE_VALIDATION` : routage audio du master Serato vers le watchdog.
+- `REQUIRES_DEVICE_VALIDATION` : latence réelle sur MacBook Pro M1.
 
 ## Prochaines étapes automatiques
 
-1. Exécuter la CI macOS sur la Pull Request.
-2. Corriger toute erreur Swift/CoreMIDI/SwiftUI remontée par Xcode.
-3. Ajouter le mapping MIDI persistant.
-4. Ajouter le pilote Accessibilité pour la bibliothèque Serato.
-5. Ajouter la capture audio et le watchdog de silence.
-6. Produire le premier DMG de développement.
+1. Obtenir une CI entièrement verte pour le lot Runtime.
+2. Intégrer le lot dans `develop`.
+3. Ajouter l’onboarding et l’assistant guidé de mapping MIDI.
+4. Ajouter la timeline détaillée et l’inspecteur de transition.
+5. Ajouter l’exécution de répétitions automatisées depuis l’interface Studio.
+6. Ajouter les diagnostics exportables et le journal d’incidents.
+7. Renforcer les simulations longues et les scénarios de panne.
+8. Produire une version candidate installable avant les tests réels.
 
-## Checkpoints humains à venir
+## Checkpoints humains différés
 
-- H002 : disposer d’un Mac avec Xcode pour les tests réels.
-- H003 : lancer Serato DJ Pro et connecter Spotify.
-- H004 : accorder les permissions macOS.
-- H005 : mapper les commandes MIDI.
-- H007 : sélectionner la musique locale de secours.
+- H002 : installation et ouverture de la version candidate sur le MacBook Pro M1.
+- H003 : Serato DJ Pro lancé et Spotify connecté.
+- H004 : permissions Accessibilité et capture audio accordées.
+- H005 : mapping MIDI réel validé.
+- H006 : routage audio Serato/BlackHole validé si nécessaire.
+- H007 : bibliothèque locale de secours sélectionnée.

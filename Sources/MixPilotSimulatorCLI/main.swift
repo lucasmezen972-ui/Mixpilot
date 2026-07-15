@@ -1,6 +1,12 @@
 import Foundation
 import MixPilotCore
 
+private struct CombinedSimulationReport: Codable {
+    var stateMachine: SimulationReport
+    var transitionRuntime: RuntimeStressReport
+    var succeeded: Bool
+}
+
 @main
 struct MixPilotSimulatorCLI {
     static func main() async {
@@ -12,7 +18,19 @@ struct MixPilotSimulatorCLI {
             : [:]
 
         do {
-            let report = try await SetSimulator().run(trackCount: count, injectedIncidents: failures)
+            let stateReport = try await SetSimulator().run(
+                trackCount: count,
+                injectedIncidents: failures
+            )
+            let runtimeReport = RuntimeStressSimulator().run(
+                trackCount: count,
+                framesPerSecond: 30
+            )
+            let report = CombinedSimulationReport(
+                stateMachine: stateReport,
+                transitionRuntime: runtimeReport,
+                succeeded: stateReport.succeeded && runtimeReport.succeeded
+            )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(report)
@@ -25,7 +43,8 @@ struct MixPilotSimulatorCLI {
     }
 
     private static func argumentValue(_ name: String, in arguments: [String]) -> String? {
-        guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
+        guard let index = arguments.firstIndex(of: name),
+              arguments.indices.contains(index + 1) else { return nil }
         return arguments[index + 1]
     }
 }
