@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version à empaqueter, par exemple 0.3.0-rc.1"
+        description: "Version à empaqueter, par exemple 0.3.0-rc.2"
         required: false
         type: string
   push:
@@ -25,7 +25,7 @@ env:
 jobs:
   package:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +38,14 @@ jobs:
       - name: Unit tests
         run: swift test --parallel
 
-      - name: Long simulation and runtime stress test
+      - name: Simulation 50 tracks with failures
         run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+
+      - name: Simulation 250 tracks with failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --inject-failures
+
+      - name: Build hardware probe
+        run: swift build -c release --product MixPilotHardwareProbeCLI
 
       - name: Import Developer ID certificate
         if: env.HAS_SIGNING_CERT == 'true'
@@ -81,7 +87,15 @@ jobs:
             "commit": "${GITHUB_SHA}",
             "signedWithDeveloperID": ${HAS_SIGNING_CERT},
             "notarized": $([[ "${HAS_SIGNING_CERT}" == "true" && "${HAS_NOTARIZATION}" == "true" ]] && echo true || echo false),
-            "runner": "${RUNNER_OS}-${RUNNER_ARCH}"
+            "runner": "${RUNNER_OS}-${RUNNER_ARCH}",
+            "validation": {
+              "unitTests": "AUTOMATED_SUCCESS",
+              "simulation50": "AUTOMATED_SUCCESS",
+              "simulation250": "AUTOMATED_SUCCESS",
+              "hardwareProbeBuild": "AUTOMATED_SUCCESS",
+              "seratoReal": "REQUIRES_SERATO_VALIDATION",
+              "deviceAudio": "REQUIRES_DEVICE_VALIDATION"
+            }
           }
           JSON
 
