@@ -55,7 +55,7 @@ Pull Request de release : **#17** vers `main`.
 
 ## Validation automatisée vérifiée
 
-Commit RC2 validé : `b57bec0bc9c2ccc42a676df3ae5b2bf42d4cc82d`.
+Commit technique RC2 figé : `d0ce9c08559b491b47d7b478f99d87449519f955`.
 
 - `AUTOMATED_SUCCESS` : `swift test --parallel` sur macOS.
 - `SIMULATED_SUCCESS` : set de 50 titres avec incidents injectés.
@@ -69,13 +69,14 @@ Commit RC2 validé : `b57bec0bc9c2ccc42a676df3ae5b2bf42d4cc82d`.
 
 Runs GitHub :
 
-- macOS CI : `29459695495` ;
-- iPhone Remote CI : `29459695476` ;
-- Build DMG RC2 : `29459693654`.
+- macOS CI : `29459910562` ;
+- iPhone Remote CI : `29459910656` ;
+- Build DMG RC2 : `29459907907` ;
+- backport checksum vers `develop` : PR #18, CI `29459964526`, fusion `67237855deb3da8e7543ed6e9b562957dce139b2`.
 
 Artifact RC2 : `MixPilot-Autopilot-0.3.0-rc.2`.
 
-SHA-256 : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b`.
+SHA-256 : `cab6e3a3252a9e138edccacd52c35abcb7d66bd361c7fcfbcc3ac756d363e100`.
 
 ## Limitations encore réelles
 
