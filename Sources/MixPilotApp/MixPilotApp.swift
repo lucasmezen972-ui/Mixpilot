@@ -49,6 +49,11 @@ struct MixPilotAutopilotApp: App {
             TransitionInspectorView(model: model)
         }
         .defaultSize(width: 1120, height: 760)
+
+        WindowGroup("Centre de récupération", id: "recovery-center") {
+            RecoveryCenterView()
+        }
+        .defaultSize(width: 820, height: 620)
     }
 }
 #endif
