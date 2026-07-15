@@ -48,6 +48,16 @@ targets.append(
     )
 )
 targets.append(
+    .target(
+        name: "MixPilotRemoteBridge",
+        dependencies: ["MixPilotCore"],
+        linkerSettings: [
+            .linkedFramework("Network"),
+            .linkedFramework("Security"),
+        ]
+    )
+)
+targets.append(
     .executableTarget(
         name: "MixPilotHardwareProbeCLI",
         dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
@@ -56,11 +66,23 @@ targets.append(
 targets.append(
     .executableTarget(
         name: "MixPilotApp",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem", "MixPilotRuntime"],
+        dependencies: [
+            "MixPilotCore",
+            "MixPilotMIDI",
+            "MixPilotSystem",
+            "MixPilotRuntime",
+            "MixPilotRemoteBridge",
+        ],
         linkerSettings: [
             .linkedFramework("SwiftUI"),
             .linkedFramework("AppKit"),
         ]
+    )
+)
+targets.append(
+    .testTarget(
+        name: "MixPilotRemoteBridgeTests",
+        dependencies: ["MixPilotRemoteBridge"]
     )
 )
 #endif
