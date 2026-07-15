@@ -20,6 +20,7 @@ var targets: [Target] = [
 
 #if os(macOS)
 products.append(.executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]))
+products.append(.executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]))
 targets.append(
     .target(
         name: "MixPilotMIDI",
@@ -43,6 +44,12 @@ targets.append(
 targets.append(
     .target(
         name: "MixPilotRuntime",
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
+    )
+)
+targets.append(
+    .executableTarget(
+        name: "MixPilotHardwareProbeCLI",
         dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
     )
 )
