@@ -92,6 +92,7 @@ public struct MIDIMessageMapping: Codable, Hashable, Sendable {
 
 public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     public static let currentSchemaVersion = 1
+    public static let confirmationDefaultsKey = "MixPilotMappingConfirmationsV1"
 
     public let id: UUID
     public var schemaVersion: Int
@@ -124,10 +125,25 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
         }
     }
 
-    public var completionRatio: Double {
+    public var configuredRatio: Double {
         guard !SeratoAction.allCases.isEmpty else { return 1 }
         let configured = SeratoAction.allCases.filter { self[$0] != nil }.count
         return Double(configured) / Double(SeratoAction.allCases.count)
+    }
+
+    public var confirmationRatio: Double {
+        guard !SeratoAction.allCases.isEmpty else { return 1 }
+        let confirmations = UserDefaults.standard.dictionary(forKey: Self.confirmationDefaultsKey) as? [String: Bool] ?? [:]
+        let confirmed = SeratoAction.allCases.filter { action in
+            self[action] != nil && confirmations[action.rawValue] == true
+        }.count
+        return Double(confirmed) / Double(SeratoAction.allCases.count)
+    }
+
+    /// A mapping is considered ready only when the MIDI message exists and the user
+    /// has confirmed the corresponding Serato control actually reacted as expected.
+    public var completionRatio: Double {
+        min(configuredRatio, confirmationRatio)
     }
 
     public static var developmentDefault: MIDIMappingProfile {
