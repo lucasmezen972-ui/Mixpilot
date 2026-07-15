@@ -1,5 +1,4 @@
 import Foundation
-@testable import MixPilotRemote
 import XCTest
 
 final class RemoteProtocolContractTests: XCTestCase {
