@@ -49,7 +49,7 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            build | tee iphone-remote-build.log
+            build 2>&1 | tee iphone-remote-build.log
 
       - name: Select an available iPhone simulator
         id: simulator
@@ -78,7 +78,7 @@ jobs:
             -configuration Debug \
             -destination 'id=${{ steps.simulator.outputs.id }}' \
             CODE_SIGNING_ALLOWED=NO \
-            test | tee iphone-remote-test.log
+            test 2>&1 | tee iphone-remote-test.log
 
       - name: Upload iPhone logs
         if: always()
