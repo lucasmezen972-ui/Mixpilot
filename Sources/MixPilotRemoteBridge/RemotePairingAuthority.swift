@@ -86,7 +86,7 @@ final class MixPilotRemotePairingAuthority {
     private(set) var pairingCode = "------"
     private(set) var pairingExpiresAt = Date.distantPast
     private var seenCommands: [UUID: Date] = [:]
-    private let primaryDeviceKey = "MixPilotRemotePrimaryDeviceID"
+    private let primaryDeviceAccount = "__mixpilot_primary_device__"
 
     init(tokenStore: any MixPilotRemoteTokenStoring = MixPilotRemoteKeychainStore()) {
         self.tokenStore = tokenStore
@@ -104,8 +104,8 @@ final class MixPilotRemotePairingAuthority {
         guard Self.constantTimeEqual(pin, pairingCode) else { throw MixPilotRemotePairingError.invalidCode }
         let token = try Self.secureToken()
         try tokenStore.save(token, deviceID: deviceID)
-        if UserDefaults.standard.string(forKey: primaryDeviceKey) == nil {
-            UserDefaults.standard.set(deviceID, forKey: primaryDeviceKey)
+        if tokenStore.read(deviceID: primaryDeviceAccount) == nil {
+            try tokenStore.save(deviceID, deviceID: primaryDeviceAccount)
         }
         rotatePairingCode(now: now)
         return token
@@ -117,7 +117,7 @@ final class MixPilotRemotePairingAuthority {
     }
 
     func isPrimary(deviceID: String) -> Bool {
-        UserDefaults.standard.string(forKey: primaryDeviceKey) == deviceID
+        tokenStore.read(deviceID: primaryDeviceAccount) == deviceID
     }
 
     func authorize(command: MixPilotRemoteCommand, deviceID: String, now: Date = Date()) -> CommandAuthorization {
@@ -138,7 +138,7 @@ final class MixPilotRemotePairingAuthority {
     func revoke(deviceID: String) throws {
         try tokenStore.remove(deviceID: deviceID)
         if isPrimary(deviceID: deviceID) {
-            UserDefaults.standard.removeObject(forKey: primaryDeviceKey)
+            try tokenStore.remove(deviceID: primaryDeviceAccount)
         }
     }
 
