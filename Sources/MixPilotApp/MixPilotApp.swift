@@ -12,6 +12,38 @@ struct MixPilotAutopilotApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1180, height: 780)
+        .commands {
+            CommandMenu("MixPilot") {
+                Button("Ouvrir le Studio") {
+                    model.selectedSection = .studio
+                }
+                .keyboardShortcut("1", modifiers: [.command])
+
+                Button("Ouvrir le Préflight") {
+                    model.selectedSection = .preflight
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+
+                Button("Ouvrir le Live") {
+                    model.selectedSection = .live
+                }
+                .keyboardShortcut("3", modifiers: [.command])
+
+                Divider()
+
+                Button("Exporter un diagnostic…") {
+                    model.exportDiagnostics()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Reprendre immédiatement le contrôle", role: .destructive) {
+                    model.takeManualControl()
+                }
+                .keyboardShortcut(.escape, modifiers: [.command])
+            }
+        }
     }
 }
 #endif

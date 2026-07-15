@@ -66,20 +66,31 @@ public actor LiveAutopilotCoordinator {
     private let controller: MappedSeratoController
     private let transitionExecutor: TransitionExecutor
     private let accessibilityBridge: SeratoAccessibilityBridge
+    private let checkpointStore: LiveCheckpointStore?
     private var activeDeck: DeckID = .a
     private var manualControlRequested = false
 
     public init(
         controller: MappedSeratoController,
-        accessibilityBridge: SeratoAccessibilityBridge
+        accessibilityBridge: SeratoAccessibilityBridge,
+        checkpointStore: LiveCheckpointStore? = LiveAutopilotCoordinator.makeDefaultCheckpointStore()
     ) {
         self.controller = controller
         self.transitionExecutor = TransitionExecutor(sender: controller)
         self.accessibilityBridge = accessibilityBridge
+        self.checkpointStore = checkpointStore
     }
 
     public func requestManualControl() {
         manualControlRequested = true
+    }
+
+    public func currentCheckpoint() async -> LiveCheckpoint? {
+        try? await checkpointStore?.load()
+    }
+
+    public func clearCheckpoint() async {
+        try? await checkpointStore?.clear()
     }
 
     public func run(
@@ -92,6 +103,15 @@ public actor LiveAutopilotCoordinator {
         manualControlRequested = false
         activeDeck = .a
 
+        await saveCheckpoint(
+            project: project,
+            currentTrackIndex: 0,
+            completedTransitions: 0,
+            nextTransitionIndex: project.transitions.isEmpty ? nil : 0,
+            state: .preflight,
+            confirmedTrackID: nil,
+            lastCommand: nil
+        )
         await onEvent(.preparing(projectName: project.name))
         let initialObservation = await MainActor.run { accessibilityBridge.observe() }
         await onEvent(.seratoObserved(initialObservation))
@@ -102,6 +122,15 @@ public actor LiveAutopilotCoordinator {
         let first = project.tracks[0].track
         await onEvent(.loading(trackIndex: 0, track: first, deck: .a))
         try await controller.trigger(.load(deck: .a))
+        await saveCheckpoint(
+            project: project,
+            currentTrackIndex: 0,
+            completedTransitions: 0,
+            nextTransitionIndex: project.transitions.isEmpty ? nil : 0,
+            state: .loadingInitialTrack,
+            confirmedTrackID: nil,
+            lastCommand: SeratoAction.loadA.rawValue
+        )
         try await scaledSleep(configuration.loadSettleSeconds, multiplier: configuration.speedMultiplier)
         let firstVerified = await verify(track: first)
         await onEvent(.loaded(trackIndex: 0, track: first, deck: .a, verified: firstVerified))
@@ -109,11 +138,29 @@ public actor LiveAutopilotCoordinator {
             throw LiveRuntimeError.trackValidationFailed(first.title)
         }
         try await controller.trigger(.play(deck: .a))
+        await saveCheckpoint(
+            project: project,
+            currentTrackIndex: 0,
+            completedTransitions: 0,
+            nextTransitionIndex: project.transitions.isEmpty ? nil : 0,
+            state: .playing,
+            confirmedTrackID: firstVerified ? first.id : nil,
+            lastCommand: SeratoAction.playA.rawValue
+        )
         await onEvent(.playing(trackIndex: 0, track: first, deck: .a))
 
         for index in project.transitions.indices {
             try Task.checkCancellation()
             if manualControlRequested {
+                await saveCheckpoint(
+                    project: project,
+                    currentTrackIndex: index,
+                    completedTransitions: index,
+                    nextTransitionIndex: index,
+                    state: .manualControl,
+                    confirmedTrackID: project.tracks[index].id,
+                    lastCommand: nil
+                )
                 await onEvent(.manualControl)
                 return
             }
@@ -128,6 +175,15 @@ public actor LiveAutopilotCoordinator {
             try await scaledSleep(beforePreload, multiplier: configuration.speedMultiplier)
             try Task.checkCancellation()
             if manualControlRequested {
+                await saveCheckpoint(
+                    project: project,
+                    currentTrackIndex: index,
+                    completedTransitions: index,
+                    nextTransitionIndex: index,
+                    state: .manualControl,
+                    confirmedTrackID: currentPrepared.id,
+                    lastCommand: nil
+                )
                 await onEvent(.manualControl)
                 return
             }
@@ -139,6 +195,15 @@ public actor LiveAutopilotCoordinator {
             ))
             try await controller.trigger(.browserDown)
             try await controller.trigger(.load(deck: incomingDeck))
+            await saveCheckpoint(
+                project: project,
+                currentTrackIndex: index,
+                completedTransitions: index,
+                nextTransitionIndex: index,
+                state: .preloadingNextTrack,
+                confirmedTrackID: currentPrepared.id,
+                lastCommand: SeratoAction.load(deck: incomingDeck).rawValue
+            )
             try await scaledSleep(configuration.loadSettleSeconds, multiplier: configuration.speedMultiplier)
 
             let verified = await verify(track: incomingPrepared.track)
@@ -158,6 +223,15 @@ public actor LiveAutopilotCoordinator {
             let remainingLead = max(0, preloadLead - configuration.loadSettleSeconds)
             try await scaledSleep(remainingLead, multiplier: configuration.speedMultiplier)
             let plan = project.transitions[index]
+            await saveCheckpoint(
+                project: project,
+                currentTrackIndex: index,
+                completedTransitions: index,
+                nextTransitionIndex: index,
+                state: .transitioning,
+                confirmedTrackID: currentPrepared.id,
+                lastCommand: "transition:\(plan.id.uuidString)"
+            )
             await onEvent(.transitionStarted(index: index, plan: plan, outgoingDeck: activeDeck))
 
             let summary = try await transitionExecutor.execute(
@@ -167,6 +241,15 @@ public actor LiveAutopilotCoordinator {
                 speedMultiplier: configuration.speedMultiplier
             )
             activeDeck = activeDeck.opposite
+            await saveCheckpoint(
+                project: project,
+                currentTrackIndex: index + 1,
+                completedTransitions: index + 1,
+                nextTransitionIndex: project.transitions.indices.contains(index + 1) ? index + 1 : nil,
+                state: .playing,
+                confirmedTrackID: verified ? incomingPrepared.id : nil,
+                lastCommand: SeratoAction.play(deck: activeDeck).rawValue
+            )
             await onEvent(.transitionCompleted(index: index, summary: summary))
             await onEvent(.playing(
                 trackIndex: index + 1,
@@ -175,11 +258,59 @@ public actor LiveAutopilotCoordinator {
             ))
         }
 
+        await saveCheckpoint(
+            project: project,
+            currentTrackIndex: max(0, project.tracks.count - 1),
+            completedTransitions: project.transitions.count,
+            nextTransitionIndex: nil,
+            state: .completed,
+            confirmedTrackID: project.tracks.last?.id,
+            lastCommand: nil
+        )
         await onEvent(.completed)
     }
 
+    public static func makeDefaultCheckpointStore() -> LiveCheckpointStore {
+        let root = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.homeDirectoryForCurrentUser
+        return LiveCheckpointStore(
+            fileURL: root
+                .appendingPathComponent("MixPilot Autopilot", isDirectory: true)
+                .appendingPathComponent("live-checkpoint.json", isDirectory: false)
+        )
+    }
+
+    private func saveCheckpoint(
+        project: SetProject,
+        currentTrackIndex: Int,
+        completedTransitions: Int,
+        nextTransitionIndex: Int?,
+        state: AutopilotState,
+        confirmedTrackID: UUID?,
+        lastCommand: String?
+    ) async {
+        guard let checkpointStore else { return }
+        let checkpoint = LiveCheckpoint(
+            projectID: project.id,
+            projectName: project.name,
+            currentTrackIndex: currentTrackIndex,
+            activeDeck: activeDeck,
+            completedTransitionCount: completedTransitions,
+            nextTransitionIndex: nextTransitionIndex,
+            state: state,
+            lastConfirmedTrackID: confirmedTrackID,
+            lastCommand: lastCommand,
+            emergencyPlaybackActive: false
+        )
+        try? await checkpointStore.save(checkpoint)
+    }
+
     private func verify(track: Track) async -> Bool {
-        let observation = await MainActor.run { accessibilityBridge.observe(maxDepth: 6, maximumStrings: 400) }
+        let observation = await MainActor.run {
+            accessibilityBridge.observe(maxDepth: 6, maximumStrings: 400)
+        }
         let titleFound = observation.contains(text: track.title)
         let artistFound = track.artist.isEmpty || observation.contains(text: track.artist)
         return observation.isRunning && observation.accessibilityGranted && titleFound && artistFound
