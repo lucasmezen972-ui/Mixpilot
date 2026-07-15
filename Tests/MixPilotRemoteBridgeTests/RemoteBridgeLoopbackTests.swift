@@ -35,6 +35,25 @@ private final class LoopbackStateProvider: MixPilotRemoteStateProvider {
     }
 }
 
+private final class OneShotContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+
+    func resume(
+        _ continuation: CheckedContinuation<Void, any Error>,
+        result: Result<Void, any Error>
+    ) {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        lock.unlock()
+        continuation.resume(with: result)
+    }
+}
+
 private final class LoopbackWebSocketClient: @unchecked Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "com.mixpilot.tests.loopback-client")
@@ -52,23 +71,16 @@ private final class LoopbackWebSocketClient: @unchecked Sendable {
     }
 
     func start() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let lock = NSLock()
-            var resumed = false
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            let oneShot = OneShotContinuation()
             connection.stateUpdateHandler = { state in
-                lock.lock()
-                defer { lock.unlock() }
-                guard !resumed else { return }
                 switch state {
                 case .ready:
-                    resumed = true
-                    continuation.resume()
+                    oneShot.resume(continuation, result: .success(()))
                 case .failed(let error):
-                    resumed = true
-                    continuation.resume(throwing: error)
+                    oneShot.resume(continuation, result: .failure(error))
                 case .cancelled:
-                    resumed = true
-                    continuation.resume(throwing: CancellationError())
+                    oneShot.resume(continuation, result: .failure(CancellationError()))
                 default:
                     break
                 }
@@ -83,21 +95,21 @@ private final class LoopbackWebSocketClient: @unchecked Sendable {
             identifier: UUID().uuidString,
             metadata: [metadata]
         )
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             connection.send(
                 content: data,
                 contentContext: context,
                 isComplete: true,
                 completion: .contentProcessed { error in
                     if let error { continuation.resume(throwing: error) }
-                    else { continuation.resume() }
+                    else { continuation.resume(returning: ()) }
                 }
             )
         }
     }
 
     func receive() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, any Error>) in
             connection.receiveMessage { data, _, _, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let data { continuation.resume(returning: data) }
