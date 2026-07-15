@@ -4,7 +4,7 @@ Ce registre liste les actions qui ne peuvent pas être réalisées de manière f
 
 | ID | Phase | Action | Statut | Vérification prévue |
 |---|---|---|---|---|
-| H001 | Dépôt | Passer le dépôt GitHub en privé si le code ne doit pas être public | WAITING_FOR_HUMAN | Vérifier la visibilité via l’API GitHub |
+| H001 | Dépôt | Passer le dépôt GitHub en privé si le code ne doit pas être public | SKIPPED_WITH_LIMITATION | Décision du propriétaire : dépôt public conservé |
 | H002 | Environnement | Installer Xcode et accepter sa licence sur le Mac de développement | NOT_REQUIRED_YET | `xcodebuild -version` et compilation minimale |
 | H003 | Serato | Installer Serato DJ Pro, connecter Spotify et ouvrir une playlist de test | NOT_REQUIRED_YET | Détection du processus et de la fenêtre Serato |
 | H004 | Permissions | Accorder Accessibilité et Capture d’écran/audio à MixPilot | NOT_REQUIRED_YET | Vérification des statuts macOS et test d’observation |
@@ -16,26 +16,25 @@ Ce registre liste les actions qui ne peuvent pas être réalisées de manière f
 
 ## H001 — Visibilité du dépôt
 
-**Statut : `WAITING_FOR_HUMAN`**
+**Statut : `SKIPPED_WITH_LIMITATION`**
 
-### Objectif
+### Décision
 
-Éviter que le code source, l’architecture et les futurs détails techniques du produit soient publics par défaut.
+Le propriétaire du projet a décidé le 15 juillet 2026 de conserver le dépôt GitHub public.
 
-### Action
+### Limitation acceptée
 
-Dans GitHub :
+Le code source, l’architecture et la documentation non sensibles pourront être consultés publiquement.
 
-1. Ouvrir `Settings` du dépôt `Mixpilot`.
-2. Descendre jusqu’à `Danger Zone`.
-3. Choisir `Change repository visibility`.
-4. Passer le dépôt en `Private`.
-5. Confirmer le nom du dépôt si GitHub le demande.
+### Mesures obligatoires
 
-### Réponse attendue
+- Ne jamais committer de clé API, token, certificat, mot de passe ou secret.
+- Stocker les secrets de CI uniquement dans GitHub Secrets.
+- Ajouter et maintenir un fichier `.gitignore` strict.
+- Anonymiser les diagnostics et journaux exportés.
+- Ne jamais ajouter de fichiers audio protégés ou de données Spotify sensibles.
+- Activer la détection de secrets dans la CI lorsque possible.
 
-`ACTION H001 TERMINÉE`
+### Vérification
 
-### Vérification automatique
-
-Relire les métadonnées du dépôt et vérifier que `visibility` vaut `private`.
+La visibilité publique est volontaire et ne bloque plus le développement.
