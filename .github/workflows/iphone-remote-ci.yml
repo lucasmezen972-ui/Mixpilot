@@ -1,0 +1,50 @@
+name: iPhone Remote CI
+
+on:
+  pull_request:
+    paths:
+      - "Mobile/MixPilotRemote/**"
+      - ".github/workflows/iphone-remote-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate isolated iOS project
+        working-directory: Mobile/MixPilotRemote
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        working-directory: Mobile/MixPilotRemote
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee iphone-remote-build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphone-remote-build-log
+          path: Mobile/MixPilotRemote/iphone-remote-build.log
+          if-no-files-found: warn

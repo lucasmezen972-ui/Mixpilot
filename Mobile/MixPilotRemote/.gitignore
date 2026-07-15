@@ -1,0 +1,5 @@
+MixPilotRemote.xcodeproj/
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
