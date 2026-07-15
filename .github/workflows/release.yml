@@ -2,35 +2,105 @@ name: Build DMG
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à empaqueter, par exemple 0.3.0-rc.1"
+        required: false
+        type: string
   push:
     tags: ["v*"]
+
+concurrency:
+  group: mixpilot-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
+env:
+  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+  HAS_SIGNING_CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+  HAS_NOTARIZATION: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+
 jobs:
   package:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          chmod +x Scripts/*.sh
+
+      - name: Unit tests
+        run: swift test --parallel
+
+      - name: Long simulation and runtime stress test
+        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+
+      - name: Import Developer ID certificate
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: ./Scripts/import_signing_certificate.sh
+
       - name: Build application
         env:
-          MIXPILOT_VERSION: ${{ github.ref_name }}
+          MIXPILOT_VERSION: ${{ env.RELEASE_VERSION }}
         run: ./Scripts/build_release.sh
+
+      - name: Verify application signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          codesign -d --verbose=4 "build/MixPilot Autopilot.app" 2>&1 | tee build/codesign-details.txt
+
       - name: Package DMG
         run: ./Scripts/package_dmg.sh
+
+      - name: Notarize and staple DMG
+        if: env.HAS_SIGNING_CERT == 'true' && env.HAS_NOTARIZATION == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: ./Scripts/notarize_dmg.sh
+
+      - name: Verify checksum
+        run: shasum -a 256 -c build/MixPilot-Autopilot.dmg.sha256
+
+      - name: Write release manifest
+        run: |
+          cat > build/release-manifest.json <<JSON
+          {
+            "version": "${RELEASE_VERSION}",
+            "commit": "${GITHUB_SHA}",
+            "signedWithDeveloperID": ${HAS_SIGNING_CERT},
+            "notarized": $([[ "${HAS_SIGNING_CERT}" == "true" && "${HAS_NOTARIZATION}" == "true" ]] && echo true || echo false),
+            "runner": "${RUNNER_OS}-${RUNNER_ARCH}"
+          }
+          JSON
+
       - uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-Autopilot-${{ github.ref_name }}
+          name: MixPilot-Autopilot-${{ env.RELEASE_VERSION }}
           path: |
             build/MixPilot-Autopilot.dmg
             build/MixPilot-Autopilot.dmg.sha256
+            build/release-manifest.json
+            build/codesign-details.txt
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
           files: |
             build/MixPilot-Autopilot.dmg
             build/MixPilot-Autopilot.dmg.sha256
+            build/release-manifest.json
           generate_release_notes: true
