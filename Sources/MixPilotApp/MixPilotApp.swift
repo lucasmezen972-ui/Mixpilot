@@ -44,6 +44,11 @@ struct MixPilotAutopilotApp: App {
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
+
+        WindowGroup("Inspecteur de transitions", id: "transition-inspector") {
+            TransitionInspectorView(model: model)
+        }
+        .defaultSize(width: 1120, height: 760)
     }
 }
 #endif
