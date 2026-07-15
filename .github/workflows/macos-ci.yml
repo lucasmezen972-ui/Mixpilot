@@ -8,6 +8,7 @@ on:
       - main
       - develop
       - "feature/**"
+      - "integration/**"
       - "release/**"
 
 concurrency:
@@ -20,7 +21,7 @@ permissions:
 jobs:
   test-and-build:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -47,11 +48,17 @@ jobs:
           name: unit-test-log
           path: unit-test.log
 
-      - name: Long simulation, runtime stress and failure matrix
+      - name: Simulation 50 tracks with failures
         shell: bash
         run: |
           set -o pipefail
-          swift run MixPilotSimulatorCLI --tracks 50 --inject-failures | tee simulation-report.json
+          swift run MixPilotSimulatorCLI --tracks 50 --inject-failures | tee simulation-50-report.json
+
+      - name: Simulation 250 tracks with failures
+        shell: bash
+        run: |
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 250 --inject-failures | tee simulation-250-report.json
 
       - name: Build macOS products
         run: |
@@ -74,7 +81,8 @@ jobs:
         with:
           name: MixPilot-Validation-Reports
           path: |
-            simulation-report.json
+            simulation-50-report.json
+            simulation-250-report.json
             unit-test.log
           if-no-files-found: warn
 
