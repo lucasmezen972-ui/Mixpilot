@@ -28,7 +28,8 @@ final class RemoteProtocolContractTests: XCTestCase {
         let command = try decodeClient("command")
         XCTAssertEqual(command.command?.kind, .takeManualControl)
         XCTAssertEqual(command.command?.id.uuidString.lowercased(), "22222222-2222-2222-2222-222222222222")
-        XCTAssertEqual(command.command?.issuedAt.timeIntervalSince1970, 1_752_618_665, accuracy: 1)
+        let issuedAt = try XCTUnwrap(command.command?.issuedAt)
+        XCTAssertEqual(issuedAt.timeIntervalSince1970, 1_752_618_665, accuracy: 1)
     }
 
     func testServerFixturesDecodeWithExactFields() throws {
