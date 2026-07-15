@@ -56,18 +56,17 @@ public final class CoreMIDIController: @unchecked Sendable {
 
         var packetList = MIDIPacketList()
         let sent = withUnsafeMutablePointer(to: &packetList) { listPointer -> Bool in
-            var packetPointer = MIDIPacketListInit(listPointer)
+            let packetPointer = MIDIPacketListInit(listPointer)
             return bytes.withUnsafeBufferPointer { bytePointer in
                 guard let baseAddress = bytePointer.baseAddress else { return false }
-                guard let addedPacket = MIDIPacketListAdd(
+                _ = MIDIPacketListAdd(
                     listPointer,
                     MemoryLayout<MIDIPacketList>.size,
                     packetPointer,
                     0,
                     bytes.count,
                     baseAddress
-                ) else { return false }
-                packetPointer = addedPacket
+                )
                 return MIDIReceived(source, listPointer) == noErr
             }
         }
