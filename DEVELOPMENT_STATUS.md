@@ -4,11 +4,11 @@ Dernière mise à jour : 2026-07-15
 
 ## État global
 
-**Phase 7 — Intégration RC2 automatisée, validation matérielle différée**
+**Phase 8 — Release candidate RC2 automatisée, validation matérielle requise**
 
-Branche active : `integration/0.3.0-rc.2`
+Branche active : `release/0.3.0-rc.2`
 
-Pull Request d’intégration : **#14** vers `develop`.
+Pull Request de release : **#17** vers `main`.
 
 ## Réalisé sur macOS
 
@@ -33,7 +33,7 @@ Pull Request d’intégration : **#14** vers `develop`.
 - [x] Matrice automatisée de treize scénarios de panne
 - [x] Probe matériel `MixPilotHardwareProbeCLI`
 - [x] Workflow Serato pour runner Mac auto-hébergé
-- [x] Build Release, `.app`, `.dmg` et checksum en CI
+- [x] Build Release, `.app`, `.dmg`, manifest et checksum en CI
 
 ## Réalisé pour l’iPhone et le bridge
 
@@ -55,23 +55,27 @@ Pull Request d’intégration : **#14** vers `develop`.
 
 ## Validation automatisée vérifiée
 
-Résultats du commit d’intégration `aa49c80cd09bd1690c377a7aca4bbe45800348e5` :
+Commit RC2 validé : `b57bec0bc9c2ccc42a676df3ae5b2bf42d4cc82d`.
 
 - `AUTOMATED_SUCCESS` : `swift test --parallel` sur macOS.
 - `SIMULATED_SUCCESS` : set de 50 titres avec incidents injectés.
 - `SIMULATED_SUCCESS` : set de 250 titres avec incidents injectés.
 - `AUTOMATED_SUCCESS` : build Release `MixPilotAutopilot`.
 - `AUTOMATED_SUCCESS` : build Release `MixPilotHardwareProbeCLI`.
-- `AUTOMATED_SUCCESS` : création du DMG de développement.
+- `AUTOMATED_SUCCESS` : création du DMG RC2.
 - `AUTOMATED_SUCCESS` : validation du checksum SHA-256.
 - `AUTOMATED_SUCCESS` : génération XcodeGen et build iOS Simulator.
 - `AUTOMATED_SUCCESS` : contrats Remote v1 et ordre des snapshots.
 
-Artifacts GitHub produits :
+Runs GitHub :
 
-- `MixPilot-Autopilot-development` ;
-- `MixPilot-Validation-Reports` ;
-- `iphone-remote-validation-logs`.
+- macOS CI : `29459695495` ;
+- iPhone Remote CI : `29459695476` ;
+- Build DMG RC2 : `29459693654`.
+
+Artifact RC2 : `MixPilot-Autopilot-0.3.0-rc.2`.
+
+SHA-256 : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b`.
 
 ## Limitations encore réelles
 
@@ -84,13 +88,10 @@ Artifacts GitHub produits :
 - `REQUIRES_DEVICE_VALIDATION` : découverte Bonjour, appairage et perte Wi-Fi sur Mac/iPhone physiques.
 - `REQUIRES_DEVICE_VALIDATION` : endurance de deux heures sur MacBook Pro M1.
 - `REQUIRES_DEVICE_VALIDATION` : Safe Fade distant, qui reste refusé en RC2 tant que le routage réel n’est pas validé.
+- `REQUIRES_DEVICE_VALIDATION` : Developer ID et notarisation, absents de la RC interne.
 
-## Prochaines étapes
+## Prochaine étape
 
-1. Mettre les documents de statut et les README en cohérence.
-2. Fusionner la PR #14 entièrement verte dans `develop`.
-3. Fermer ou marquer comme remplacées les PR #9, #11, #12 et #13.
-4. Créer `release/0.3.0-rc.2` depuis le nouveau `develop`.
-5. Exécuter le workflow de release et vérifier le DMG, le manifest et le checksum.
-6. Ouvrir une PR RC2 vers `main` sans la fusionner.
-7. Déclencher une seule campagne humaine MacBook Pro M1 + Serato + iPhone.
+La PR #17 reste ouverte et ne doit pas être fusionnée vers `main`.
+
+Le prochain travail indispensable est la campagne matérielle unique décrite dans `Documentation/FINAL_VALIDATION.md` : MacBook Pro M1, Serato DJ Pro, Spotify Premium, système audio réel et iPhone physique.
