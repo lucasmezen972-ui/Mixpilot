@@ -145,13 +145,20 @@ public enum AutopilotState: String, Codable, Sendable {
     case failed
 }
 
-public enum IncidentKind: String, Codable, Sendable {
+public enum IncidentKind: String, Codable, CaseIterable, Sendable {
     case slowLoad
+    case loadTimeout
     case wrongTrack
+    case transitionMismatch
     case internetLoss
     case audioSilence
+    case audioSourceLost
+    case audioClipping
     case midiUnavailable
     case seratoUnavailable
+    case powerDisconnected
+    case checkpointMismatch
+    case emergencyPlayerFailure
 }
 
 public struct Incident: Identifiable, Codable, Hashable, Sendable {
