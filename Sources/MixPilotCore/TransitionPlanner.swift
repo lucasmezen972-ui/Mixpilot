@@ -15,35 +15,81 @@ public struct TransitionPlanner: Sendable {
             bpmDelta: bpmDelta,
             vocalOverlapRisk: vocalOverlapRisk
         )
-        let bars = bars(for: kind)
-        let confidence = confidenceScore(
+        return makePlan(
+            outgoing: outgoing,
+            incoming: incoming,
+            normalizedIncomingBPM: normalizedIncomingBPM,
             bpmDelta: bpmDelta,
             energyDelta: energyDelta,
             vocalOverlapRisk: vocalOverlapRisk,
-            kind: kind
+            kind: kind,
+            bars: bars(for: kind),
+            additionalReason: nil
         )
-        let reasons = reasons(
+    }
+
+    public func plan(
+        from outgoing: Track,
+        to incoming: Track,
+        forcing kind: TransitionKind,
+        bars requestedBars: Int? = nil
+    ) -> TransitionPlan {
+        let normalizedIncomingBPM = normalizeBPM(incoming.bpm, around: outgoing.bpm)
+        let bpmDelta = abs(outgoing.bpm - normalizedIncomingBPM)
+        let energyDelta = incoming.energy - outgoing.energy
+        let vocalOverlapRisk = max(outgoing.vocalDensity, incoming.vocalDensity)
+        let selectedBars = max(1, requestedBars ?? bars(for: kind))
+        return makePlan(
+            outgoing: outgoing,
+            incoming: incoming,
+            normalizedIncomingBPM: normalizedIncomingBPM,
+            bpmDelta: bpmDelta,
+            energyDelta: energyDelta,
+            vocalOverlapRisk: vocalOverlapRisk,
+            kind: kind,
+            bars: selectedBars,
+            additionalReason: "Transition ajustée dans l’inspecteur"
+        )
+    }
+
+    public func planSet(_ tracks: [Track]) -> [TransitionPlan] {
+        zip(tracks, tracks.dropFirst()).map(plan)
+    }
+
+    private func makePlan(
+        outgoing: Track,
+        incoming: Track,
+        normalizedIncomingBPM: Double,
+        bpmDelta: Double,
+        energyDelta: Double,
+        vocalOverlapRisk: Double,
+        kind: TransitionKind,
+        bars: Int,
+        additionalReason: String?
+    ) -> TransitionPlan {
+        var explanation = reasons(
             outgoing: outgoing,
             incoming: incoming,
             bpmDelta: bpmDelta,
             energyDelta: energyDelta,
             kind: kind
         )
-
+        if let additionalReason { explanation.append(additionalReason) }
         return TransitionPlan(
             outgoingTrackID: outgoing.id,
             incomingTrackID: incoming.id,
             kind: kind,
             bars: bars,
             targetBPM: round(((outgoing.bpm + normalizedIncomingBPM) / 2) * 10) / 10,
-            confidence: confidence,
-            reasons: reasons,
+            confidence: confidenceScore(
+                bpmDelta: bpmDelta,
+                energyDelta: energyDelta,
+                vocalOverlapRisk: vocalOverlapRisk,
+                kind: kind
+            ),
+            reasons: explanation,
             lanes: automationLanes(kind: kind, bars: bars)
         )
-    }
-
-    public func planSet(_ tracks: [Track]) -> [TransitionPlan] {
-        zip(tracks, tracks.dropFirst()).map(plan)
     }
 
     private func chooseKind(
