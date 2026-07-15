@@ -4,6 +4,24 @@ import Network
 @testable import MixPilotRemoteBridge
 import XCTest
 
+private struct LoopbackTimeout: Error {}
+
+private func withLoopbackTimeout<T: Sendable>(
+    _ duration: Duration = .seconds(5),
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(for: duration)
+            throw LoopbackTimeout()
+        }
+        guard let result = try await group.next() else { throw LoopbackTimeout() }
+        group.cancelAll()
+        return result
+    }
+}
+
 @MainActor
 private final class LoopbackStateProvider: MixPilotRemoteStateProvider {
     private(set) var commandCount = 0
@@ -133,19 +151,24 @@ final class RemoteBridgeLoopbackTests: XCTestCase {
 
         let port = try await waitForPort(bridge)
         let client = LoopbackWebSocketClient(port: port)
-        try await client.start()
+        try await withLoopbackTimeout { try await client.start() }
         defer { client.close() }
 
-        let greeting = try decodeServer(try await client.receive())
+        let greetingData = try await withLoopbackTimeout { try await client.receive() }
+        let greeting = try decodeServer(greetingData)
         XCTAssertEqual(greeting.type, "hello")
 
-        try await client.send(Data("{not-json".utf8))
-        let invalidJSON = try decodeServer(try await client.receive())
+        try await withLoopbackTimeout { try await client.send(Data("{not-json".utf8)) }
+        let invalidJSONData = try await withLoopbackTimeout { try await client.receive() }
+        let invalidJSON = try decodeServer(invalidJSONData)
         XCTAssertEqual(invalidJSON.type, "error")
         XCTAssertTrue(invalidJSON.message?.contains("JSON invalide") == true)
 
-        try await client.send(Data(#"{"version":99,"type":"hello"}"#.utf8))
-        let wrongVersion = try decodeServer(try await client.receive())
+        try await withLoopbackTimeout {
+            try await client.send(Data(#"{"version":99,"type":"hello"}"#.utf8))
+        }
+        let wrongVersionData = try await withLoopbackTimeout { try await client.receive() }
+        let wrongVersion = try decodeServer(wrongVersionData)
         XCTAssertEqual(wrongVersion.type, "error")
         XCTAssertTrue(wrongVersion.message?.contains("Version") == true)
 
@@ -154,8 +177,9 @@ final class RemoteBridgeLoopbackTests: XCTestCase {
         let unauthenticated = """
         {"version":1,"type":"command","command":{"id":"\(commandID.uuidString)","kind":"takeManualControl","issuedAt":"\(issuedAt)"}}
         """
-        try await client.send(Data(unauthenticated.utf8))
-        let commandError = try decodeServer(try await client.receive())
+        try await withLoopbackTimeout { try await client.send(Data(unauthenticated.utf8)) }
+        let commandErrorData = try await withLoopbackTimeout { try await client.receive() }
+        let commandError = try decodeServer(commandErrorData)
         XCTAssertEqual(commandError.type, "error")
         XCTAssertTrue(commandError.message?.contains("non authentifiée") == true)
         XCTAssertEqual(provider.commandCount, 0)
@@ -174,7 +198,7 @@ final class RemoteBridgeLoopbackTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTFail("Le listener WebSocket n’a pas publié son port")
-        throw CancellationError()
+        throw LoopbackTimeout()
     }
 
     private func decodeServer(_ data: Data) throws -> MixPilotRemoteServerMessage {
