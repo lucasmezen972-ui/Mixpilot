@@ -1,0 +1,52 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Unit tests
+        id: unit-tests
+        shell: bash
+        run: |
+          set +e
+          swift test --parallel > unit-test.log 2>&1
+          status=$?
+          cat unit-test.log
+          exit $status
+      - name: Upload unit-test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-log
+          path: unit-test.log
+      - name: Long simulation
+        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+      - name: Build macOS application
+        run: swift build -c release --product MixPilotAutopilot
+      - name: Package development DMG
+        env:
+          MIXPILOT_VERSION: 0.1.${{ github.run_number }}
+        run: |
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+      - name: Upload installable DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-Autopilot-development
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256

@@ -1,0 +1,91 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+DerivedData/
+build/
+.build/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+
+# Apple signing and notarization
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.key
+*.pem
+*.csr
+*.p8
+*.pfx
+AuthKey_*.p8
+
+# Application artifacts
+*.app
+*.dmg
+*.pkg
+*.xcarchive
+*.ipa
+artifacts/
+release/
+
+# Logs and diagnostics
+*.log
+Logs/
+Diagnostics/
+crash-reports/
+
+# Audio and media supplied by users
+*.mp3
+*.m4a
+*.aac
+*.wav
+*.aiff
+*.aif
+*.flac
+*.ogg
+*.alac
+*.mp4
+*.mov
+EmergencyMusic/
+TestMusic/
+UserMedia/
+
+# Spotify / Serato local or sensitive data
+SeratoData/
+SpotifyData/
+UserPlaylists/
+*.crate
+*.subcrate
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+.tmp/
+
+# Local configuration
+LocalConfig.swift
+DeveloperSettings.xcconfig
+Signing.xcconfig
