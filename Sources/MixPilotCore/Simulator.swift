@@ -9,6 +9,24 @@ public struct SimulationReport: Codable, Sendable {
     public var recoveredIncidentCount: Int
     public var minimumConfidence: Int
 
+    public init(
+        trackCount: Int,
+        transitionCount: Int,
+        completedTransitions: Int,
+        finalState: AutopilotState,
+        incidentCount: Int,
+        recoveredIncidentCount: Int,
+        minimumConfidence: Int
+    ) {
+        self.trackCount = trackCount
+        self.transitionCount = transitionCount
+        self.completedTransitions = completedTransitions
+        self.finalState = finalState
+        self.incidentCount = incidentCount
+        self.recoveredIncidentCount = recoveredIncidentCount
+        self.minimumConfidence = minimumConfidence
+    }
+
     public var succeeded: Bool {
         finalState == .completed && completedTransitions == transitionCount &&
             incidentCount == recoveredIncidentCount
