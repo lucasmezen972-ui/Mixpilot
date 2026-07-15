@@ -127,34 +127,28 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
         self.provider = provider
         pairingCode = pairingAuthority.rotatePairingCode()
 
-        do {
-            let parameters = NWParameters.tcp
-            let webSocketOptions = NWProtocolWebSocket.Options()
-            webSocketOptions.autoReplyPing = true
-            webSocketOptions.maximumMessageSize = 64 * 1_024
-            webSocketOptions.subprotocols = ["mixpilot-remote-v1"]
-            parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
+        let parameters = NWParameters.tcp
+        let webSocketOptions = NWProtocolWebSocket.Options()
+        webSocketOptions.autoReplyPing = true
+        webSocketOptions.maximumMessageSize = 64 * 1_024
+        parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
 
-            let listener = try NWListener(using: parameters, on: .any)
-            listener.service = NWListener.Service(
-                name: Host.current().localizedName ?? "MixPilot",
-                type: "_mixpilot._tcp"
-            )
-            listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor [weak self] in self?.accept(connection) }
-            }
-            listener.stateUpdateHandler = { [weak self] state in
-                Task { @MainActor [weak self] in self?.applyListenerState(state) }
-            }
-            self.listener = listener
-            listener.start(queue: networkQueue)
-            isRunning = true
-            status = "Démarrage de la télécommande…"
-            startSnapshotLoop()
-        } catch {
-            isRunning = false
-            status = "Échec télécommande : \(error.localizedDescription)"
+        let listener = NWListener(using: parameters, on: .any)
+        listener.service = NWListener.Service(
+            name: ProcessInfo.processInfo.hostName,
+            type: "_mixpilot._tcp"
+        )
+        listener.newConnectionHandler = { [weak self] connection in
+            Task { @MainActor [weak self] in self?.accept(connection) }
         }
+        listener.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor [weak self] in self?.applyListenerState(state) }
+        }
+        self.listener = listener
+        listener.start(queue: networkQueue)
+        isRunning = true
+        status = "Démarrage de la télécommande…"
+        startSnapshotLoop()
     }
 
     public func stop() {
