@@ -2,6 +2,7 @@
 import Foundation
 import MixPilotCore
 import MixPilotRemoteBridge
+import MixPilotRuntime
 
 @MainActor
 extension AppModel: MixPilotRemoteStateProvider {
@@ -16,12 +17,16 @@ extension AppModel: MixPilotRemoteStateProvider {
         let transition = preparedProject?.transitions.indices.contains(transitionIndex) == true
             ? preparedProject?.transitions[transitionIndex]
             : nil
-        let alert = snapshot.incidents.last(where: { !$0.recovered })?.message
+        let control = LiveRuntimeControlMirror.shared
+        let unresolvedIncident = snapshot.incidents.last(where: { !$0.recovered })?.message
+        let controlMessage = control.phase == .paused || control.phase == .manualControl
+            ? control.message
+            : nil
 
         return MixPilotRemoteSnapshot(
             sequence: sequence,
             updatedAt: now,
-            mode: remoteMode(for: snapshot.state),
+            mode: remoteMode(for: control.phase, fallback: snapshot.state),
             setName: preparedProject?.name ?? "Aucun set préparé",
             currentTrack: current,
             nextTrack: next,
@@ -29,65 +34,75 @@ extension AppModel: MixPilotRemoteStateProvider {
             duration: snapshot.currentTrack?.duration ?? 0,
             transitionLabel: transition.map { "\($0.kind.rawValue) • \($0.bars) mesures" },
             transitionConfidence: transition?.confidence,
-            alert: alert,
-            canPause: false,
-            canResume: false,
-            canSkipTransition: false,
+            alert: unresolvedIncident ?? controlMessage,
+            canPause: isLiveRunning && [.playing, .waitingForTransition].contains(control.phase),
+            canResume: isLiveRunning && control.phase == .paused,
+            canSkipTransition: isLiveRunning && control.phase == .waitingForTransition && control.incomingTrackVerified,
             canSafeFade: false,
-            canTakeManualControl: isLiveRunning && snapshot.state != .manualControl
+            canTakeManualControl: isLiveRunning && control.phase != .manualControl
         )
     }
 
     func handleRemoteCommand(_ kind: MixPilotRemoteCommandKind) async -> MixPilotRemoteCommandDecision {
+        let decision: LiveRuntimeCommandDecision
         switch kind {
         case .takeManualControl:
-            guard isLiveRunning else {
-                return .init(accepted: false, message: "Aucun Live actif à reprendre.")
-            }
-            takeManualControl()
-            return .init(accepted: true, message: "Contrôle manuel repris sur le Mac.")
+            decision = await LiveRuntimeCoordinatorRegistry.shared.requestManualControl()
 
         case .pauseAutopilot:
-            return .init(
-                accepted: false,
-                message: "Pause distante verrouillée tant que la reprise exacte n’est pas validée."
-            )
+            decision = await LiveRuntimeCoordinatorRegistry.shared.requestPause()
 
         case .resumeAutopilot:
-            return .init(
-                accepted: false,
-                message: "Reprise distante verrouillée tant que la restauration du checkpoint n’est pas validée."
+            decision = await LiveRuntimeCoordinatorRegistry.shared.requestResume(
+                midiReady: mappingProfile.completionRatio >= 0.95 && !midiStatus.localizedCaseInsensitiveContains("échec"),
+                audioWatchdogReady: audioStatus.localizedCaseInsensitiveContains("active")
             )
 
         case .skipTransition:
-            return .init(
-                accepted: false,
-                message: "Passage de transition verrouillé pour éviter une commande de deck incohérente."
-            )
+            decision = await LiveRuntimeCoordinatorRegistry.shared.requestSkipTransition()
 
         case .safeFade:
             return .init(
                 accepted: false,
-                message: "Safe Fade distant verrouillé jusqu’à validation du routage audio réel."
+                message: "Safe Fade distant verrouillé : REQUIRES_DEVICE_VALIDATION pour le routage audio réel."
             )
         }
+        return .init(accepted: decision.accepted, message: decision.message)
     }
 
-    private func remoteMode(for state: AutopilotState) -> MixPilotRemoteMode {
+    private func remoteMode(
+        for phase: LiveRuntimePhase,
+        fallback state: AutopilotState
+    ) -> MixPilotRemoteMode {
+        switch phase {
+        case .paused:
+            return .paused
+        case .manualControl:
+            return .manualControl
+        case .preflight, .loading:
+            return .preflight
+        case .playing, .preloading, .waitingForTransition, .transitioning:
+            return .live
+        case .failed:
+            return .recovery
+        case .idle, .completed:
+            break
+        }
+
         switch state {
         case .idle, .completed, .failed:
-            .idle
+            return .idle
         case .preflight, .loadingInitialTrack, .validatingNextTrack:
-            .preflight
+            return .preflight
         case .paused:
-            .paused
+            return .paused
         case .manualControl:
-            .manualControl
+            return .manualControl
         case .recovering, .emergencyPlayback:
-            .recovery
+            return .recovery
         case .playing, .preloadingNextTrack, .waitingForTransition, .transitioning,
              .validatingTransition, .cleaningOutgoingDeck:
-            .live
+            return .live
         }
     }
 }
