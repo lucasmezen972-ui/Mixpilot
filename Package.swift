@@ -36,6 +36,7 @@ targets.append(
             .linkedFramework("ApplicationServices"),
             .linkedFramework("AVFoundation"),
             .linkedFramework("Network"),
+            .linkedFramework("IOKit"),
         ]
     )
 )
