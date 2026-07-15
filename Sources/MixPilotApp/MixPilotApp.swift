@@ -13,6 +13,7 @@ struct MixPilotAutopilotApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: 1_360, height: 900)
         .commands {
+            RehearsalWindowCommands()
             CommandMenu("MixPilot") {
                 Button("Ouvrir le Studio") {
                     model.selectedSection = .studio
@@ -43,6 +44,24 @@ struct MixPilotAutopilotApp: App {
                 }
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
+        }
+
+        Window("Répétition des transitions", id: "rehearsal") {
+            RehearsalWorkspace(model: model)
+        }
+        .defaultSize(width: 1_180, height: 780)
+    }
+}
+
+private struct RehearsalWindowCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Ouvrir la répétition des transitions") {
+                openWindow(id: "rehearsal")
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
         }
     }
 }
