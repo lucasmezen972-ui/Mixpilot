@@ -1,4 +1,5 @@
 import Foundation
+@testable import MixPilotRemoteProtocol
 import XCTest
 
 final class RemoteProtocolContractTests: XCTestCase {
@@ -64,12 +65,14 @@ final class RemoteProtocolContractTests: XCTestCase {
     }
 
     private func fixtureDictionary() throws -> [String: Any] {
-        let fixtureURL = try XCTUnwrap(
-            Bundle(for: Self.self).url(
-                forResource: "protocol-v1-fixtures",
-                withExtension: "json"
-            )
-        )
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixtureURL = repositoryRoot
+            .appendingPathComponent("Shared/RemoteProtocolV1/Fixtures/protocol-v1-fixtures.json")
         let object = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL))
         let root = try XCTUnwrap(object as? [String: Any])
         XCTAssertEqual(root["protocolVersion"] as? Int, 1)
