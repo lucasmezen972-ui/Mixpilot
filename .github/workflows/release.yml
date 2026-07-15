@@ -12,7 +12,10 @@ on:
       - "release/**"
     tags:
       - "v*"
-
+    paths-ignore:
+      - "**/*.md"
+      - "Documentation/**"
+  
 concurrency:
   group: mixpilot-release-${{ github.ref }}
   cancel-in-progress: true
