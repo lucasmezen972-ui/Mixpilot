@@ -36,6 +36,21 @@ public struct SeratoWindowObservation: Hashable, Sendable {
     }
 }
 
+public struct SeratoLibraryRow: Identifiable, Hashable, Sendable {
+    public var id: Int { index }
+    public var index: Int
+    public var fields: [String]
+
+    public init(index: Int, fields: [String]) {
+        self.index = index
+        self.fields = fields
+    }
+
+    public var displayText: String {
+        fields.joined(separator: " • ")
+    }
+}
+
 public enum SeratoAccessibilityError: Error, LocalizedError {
     case seratoNotRunning
     case accessibilityNotGranted
@@ -90,8 +105,7 @@ public final class SeratoAccessibilityBridge {
         }
 
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
-        let focusedWindow = elementAttribute(appElement, attribute: kAXFocusedWindowAttribute)
-        let mainWindow = focusedWindow ?? elementAttribute(appElement, attribute: kAXMainWindowAttribute)
+        let mainWindow = preferredWindow(for: appElement)
         let title = mainWindow.flatMap { stringAttribute($0, attribute: kAXTitleAttribute) }
 
         var strings: [String] = []
@@ -105,9 +119,7 @@ public final class SeratoAccessibilityBridge {
             )
         }
 
-        let normalized = Array(Set(strings.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }))
-            .sorted()
-
+        let normalized = normalizedStrings(strings)
         return SeratoWindowObservation(
             isRunning: true,
             processIdentifier: application.processIdentifier,
@@ -117,11 +129,70 @@ public final class SeratoAccessibilityBridge {
         )
     }
 
+    public func libraryRows(maxRows: Int = 500) -> [SeratoLibraryRow] {
+        guard AXIsProcessTrusted(), let application = seratoApplication() else { return [] }
+        let appElement = AXUIElementCreateApplication(application.processIdentifier)
+        guard let window = preferredWindow(for: appElement) else { return [] }
+
+        var rowElements: [AXUIElement] = []
+        collectRows(
+            from: window,
+            depth: 0,
+            maxDepth: 12,
+            maxRows: max(1, maxRows),
+            into: &rowElements
+        )
+
+        return rowElements.enumerated().compactMap { index, element in
+            var strings: [String] = []
+            collectStrings(
+                from: element,
+                depth: 0,
+                maxDepth: 5,
+                maximumStrings: 30,
+                into: &strings
+            )
+            let fields = normalizedStrings(strings)
+            guard !fields.isEmpty else { return nil }
+            return SeratoLibraryRow(index: index, fields: fields)
+        }
+    }
+
     private func seratoApplication() -> NSRunningApplication? {
         NSWorkspace.shared.runningApplications.first { application in
             let name = application.localizedName?.lowercased() ?? ""
             let bundle = application.bundleIdentifier?.lowercased() ?? ""
             return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+        }
+    }
+
+    private func preferredWindow(for appElement: AXUIElement) -> AXUIElement? {
+        elementAttribute(appElement, attribute: kAXFocusedWindowAttribute) ??
+            elementAttribute(appElement, attribute: kAXMainWindowAttribute)
+    }
+
+    private func collectRows(
+        from element: AXUIElement,
+        depth: Int,
+        maxDepth: Int,
+        maxRows: Int,
+        into rows: inout [AXUIElement]
+    ) {
+        guard depth <= maxDepth, rows.count < maxRows else { return }
+        if stringAttribute(element, attribute: kAXRoleAttribute) == kAXRowRole as String {
+            rows.append(element)
+            if rows.count >= maxRows { return }
+        }
+        guard let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
+        for child in children {
+            collectRows(
+                from: child,
+                depth: depth + 1,
+                maxDepth: maxDepth,
+                maxRows: maxRows,
+                into: &rows
+            )
+            if rows.count >= maxRows { return }
         }
     }
 
@@ -154,12 +225,23 @@ public final class SeratoAccessibilityBridge {
         }
     }
 
+    private func normalizedStrings(_ strings: [String]) -> [String] {
+        var seen = Set<String>()
+        return strings.compactMap { value in
+            let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty, seen.insert(cleaned).inserted else { return nil }
+            return cleaned
+        }
+    }
+
     private func elementAttribute(_ element: AXUIElement, attribute: String) -> AXUIElement? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value,
+              CFGetTypeID(value) == AXUIElementGetTypeID() else {
             return nil
         }
-        return value as! AXUIElement?
+        return unsafeBitCast(value, to: AXUIElement.self)
     }
 
     private func stringAttribute(_ element: AXUIElement, attribute: String) -> String? {
