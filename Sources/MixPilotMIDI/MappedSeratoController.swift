@@ -56,7 +56,7 @@ public actor MIDIMappingProfileStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    public init(fileURL: URL = Self.defaultFileURL()) {
+    public init(fileURL: URL = MIDIMappingProfileStore.defaultFileURL()) {
         self.fileURL = fileURL
         encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
