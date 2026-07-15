@@ -39,11 +39,12 @@ Les conditions automatiques sont remplies :
 1. `develop` consolidé via la PR #14 ;
 2. branche `release/0.3.0-rc.2` créée ;
 3. PR #17 ouverte vers `main` ;
-4. macOS CI verte : run `29459695495` ;
-5. iPhone Remote CI verte : run `29459695476` ;
-6. workflow de release vert : run `29459693654` ;
+4. macOS CI verte : run `29459910562` ;
+5. iPhone Remote CI verte : run `29459910656` ;
+6. workflow de release vert : run `29459907907` ;
 7. artifact `MixPilot-Autopilot-0.3.0-rc.2` généré ;
-8. checksum validé : `22bddc049c82ae990bb4229de820fa9964fc81886101598c77aef12113dbff8b`.
+8. checksum validé : `cab6e3a3252a9e138edccacd52c35abcb7d66bd361c7fcfbcc3ac756d363e100` ;
+9. correctif checksum backporté dans `develop` via la PR #18, fusion `67237855deb3da8e7543ed6e9b562957dce139b2`.
 
 La campagne regroupe H003 à H009 afin de solliciter l’utilisateur une seule fois.
 
