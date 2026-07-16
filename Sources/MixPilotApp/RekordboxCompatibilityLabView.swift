@@ -4,6 +4,7 @@ import Foundation
 import MixPilotCore
 import MixPilotSystem
 import SwiftUI
+import UniformTypeIdentifiers
 
 private struct RekordboxRowExport: Codable {
     var index: Int
