@@ -30,6 +30,14 @@ Run macOS CI : `29471160734`.
 - probe matériel Release : `AUTOMATED_SUCCESS` ;
 - DMG et checksum : `AUTOMATED_SUCCESS`.
 
+## Parcours rapide actuel
+
+1. choisir Serato ou djay ;
+2. afficher une playlist dans le logiciel choisi ;
+3. ouvrir `Préparer un set rapidement` ;
+4. cliquer sur `Capturer et préparer le set` ;
+5. MixPilot lit les lignes visibles, prépare les transitions, verrouille le plan et ouvre le préflight.
+
 ## Limites actuelles
 
 - MixPilot ne remplit pas encore automatiquement la file Automix de djay ;
