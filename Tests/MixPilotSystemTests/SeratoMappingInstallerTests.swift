@@ -27,7 +27,7 @@ func automaticMappingInstall() throws {
         return
     }
     #expect(version == preset.version)
-    #expect(installedDirectory == directory.path)
+    #expect(URL(fileURLWithPath: installedDirectory).standardizedFileURL.path == directory.standardizedFileURL.path)
 }
 
 @Test("Existing Serato AUTO_SAVE is backed up and restored")
@@ -52,7 +52,9 @@ func existingMappingBackupAndRollback() throws {
     #expect(try String(contentsOf: autoSave, encoding: .utf8) == preset.xml)
 
     let restoredBackup = try installer.rollback(seratoRunning: false)
-    #expect(restoredBackup == result.backupPath)
+    let normalizedRestored = URL(fileURLWithPath: restoredBackup).standardizedFileURL.path
+    let normalizedExpected = result.backupPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+    #expect(normalizedRestored == normalizedExpected)
     #expect(try String(contentsOf: autoSave, encoding: .utf8) == original)
     #expect(!FileManager.default.fileExists(
         atPath: directory.appendingPathComponent(SeratoMappingInstaller.presetFilename).path
