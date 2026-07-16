@@ -10,7 +10,7 @@ struct MixPilotAutopilotApp: App {
 
     var body: some Scene {
         WindowGroup("MixPilot Autopilot") {
-            AdvancedContentView(model: model)
+            BrandedRootView(model: model)
                 .frame(minWidth: 1_180, minHeight: 760)
         }
         .windowStyle(.titleBar)
