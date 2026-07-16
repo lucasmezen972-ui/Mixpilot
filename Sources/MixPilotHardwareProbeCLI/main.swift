@@ -13,6 +13,7 @@ private struct HardwareProbeReport: Codable {
     var visibleTextCount: Int
     var libraryRowCount: Int
     var virtualMIDIPortCreated: Bool
+    var midiPublication: MIDIPublicationDiagnostic?
     var audioMonitorStarted: Bool
     var audioSampleCount: Int
     var connectedToPower: Bool
@@ -39,9 +40,15 @@ struct MixPilotHardwareProbeCLI {
         if strict && rows.isEmpty { failures.append("Aucune ligne de bibliothèque Serato accessible") }
 
         var midiCreated = false
+        var midiPublication: MIDIPublicationDiagnostic?
         do {
-            _ = try CoreMIDIController()
-            midiCreated = true
+            let controller = try CoreMIDIController()
+            let diagnostic = controller.publicationDiagnostic()
+            midiPublication = diagnostic
+            midiCreated = diagnostic.sourcePublished
+            if strict && !diagnostic.isReadyForSerato {
+                failures.append("Publication CoreMIDI incomplète : \(diagnostic.summary)")
+            }
         } catch {
             failures.append("Port MIDI virtuel : \(error.localizedDescription)")
         }
@@ -74,6 +81,7 @@ struct MixPilotHardwareProbeCLI {
             visibleTextCount: observation.visibleText.count,
             libraryRowCount: rows.count,
             virtualMIDIPortCreated: midiCreated,
+            midiPublication: midiPublication,
             audioMonitorStarted: audioStarted,
             audioSampleCount: audioSamples,
             connectedToPower: power.connectedToPower,
