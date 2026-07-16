@@ -145,132 +145,250 @@ struct RehearsalWorkspace: View {
     @StateObject private var rehearsal = RehearsalWorkspaceModel()
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Répétition des transitions").font(.largeTitle.bold())
-                    Text("Charge et positionne les deux titres dans Serato ; MixPilot exécute puis mesure la variante choisie.")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Actualiser") { rehearsal.synchronize(project: model.preparedProject) }
-                Button("Arrêter", role: .destructive) { rehearsal.cancel() }
-                    .disabled(!rehearsal.isRunning)
-            }
-            .padding(26)
+        ZStack {
+            MixPilotPremiumBackground()
 
-            Divider()
+            HStack(spacing: 0) {
+                transitionSidebar
+                Rectangle().fill(.white.opacity(0.09)).frame(width: 1)
+                detail
+            }
+        }
+        .preferredColorScheme(.dark)
+        .frame(minWidth: 1_120, minHeight: 760)
+        .onAppear { rehearsal.synchronize(project: model.preparedProject) }
+    }
+
+    private var transitionSidebar: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("REHEARSAL")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .tracking(1.5)
+                    .foregroundStyle(.orange)
+                Text("Répétitions")
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                Text("Choisis une transition réelle")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.42))
+            }
 
             if let project = model.preparedProject, !project.transitions.isEmpty {
-                HSplitView {
-                    List(selection: Binding(
-                        get: { rehearsal.transitionIndex },
-                        set: { index in
-                            if let index { rehearsal.selectTransition(index, project: project) }
-                        }
-                    )) {
+                MixPilotStatusBadge(
+                    title: "\(project.transitions.count) transitions",
+                    symbol: "arrow.left.arrow.right",
+                    accent: .orange
+                )
+
+                ScrollView {
+                    VStack(spacing: 6) {
                         ForEach(project.transitions.indices, id: \.self) { index in
                             let outgoing = project.tracks[index].track
                             let incoming = project.tracks[index + 1].track
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("\(index + 1). \(outgoing.title)")
-                                    .font(.headline)
-                                Text("→ \(incoming.title)")
-                                    .foregroundStyle(.secondary)
-                                Text("\(project.transitions[index].kind.rawValue) • \(project.transitions[index].confidence) %")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(index)
-                        }
-                    }
-                    .frame(minWidth: 300, idealWidth: 340)
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            HStack {
-                                Picker("Deck sortant", selection: $rehearsal.outgoingDeck) {
-                                    Text("Deck A").tag(DeckID.a)
-                                    Text("Deck B").tag(DeckID.b)
-                                }
-                                .frame(width: 210)
-                                Spacer()
-                                Text(rehearsal.status).foregroundStyle(.secondary)
-                            }
-
-                            ForEach(rehearsal.variants) { variant in
-                                Button {
-                                    rehearsal.selectVariant(variant.id)
-                                } label: {
-                                    HStack(alignment: .top, spacing: 14) {
-                                        Image(systemName: rehearsal.selectedVariantID == variant.id
-                                              ? "largecircle.fill.circle" : "circle")
-                                            .font(.title3)
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            HStack {
-                                                Text(variant.label).font(.headline)
-                                                Spacer()
-                                                if let score = variant.score {
-                                                    Text("\(score.total)/100").font(.title3.bold())
-                                                } else {
-                                                    Text("Non mesurée").foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            Text("\(variant.plan.kind.rawValue) • \(variant.plan.bars) mesures • \(String(format: "%.1f", variant.plan.targetBPM)) BPM")
-                                                .foregroundStyle(.secondary)
-                                            if let score = variant.score {
-                                                Text(score.reasons.joined(separator: " • "))
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
+                            Button {
+                                rehearsal.selectTransition(index, project: project)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Text("#\(index + 1)")
+                                            .font(.caption2.bold())
+                                            .foregroundStyle(.orange)
+                                        Spacer()
+                                        Text("\(project.transitions[index].confidence) %")
+                                            .font(.caption2.bold().monospacedDigit())
+                                            .foregroundStyle(project.transitions[index].confidence >= 75 ? .green : .orange)
                                     }
-                                    .padding(14)
-                                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                                    Text(outgoing.title).font(.caption.bold()).lineLimit(1)
+                                    Text("→ \(incoming.title)")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.47))
+                                        .lineLimit(1)
+                                    Text(project.transitions[index].kind.rawValue)
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(0.34))
                                 }
-                                .buttonStyle(.plain)
-                            }
-
-                            HStack {
-                                Button(rehearsal.isRunning ? "Répétition en cours…" : "Exécuter et mesurer") {
-                                    rehearsal.run(project: project, mappingProfile: model.mappingProfile)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(rehearsal.isRunning || rehearsal.selectedVariant == nil)
-
-                                Text("L’audio brut reste uniquement en mémoire et est supprimé après l’analyse.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            if let record = rehearsal.lastRecord, let score = record.variant.score {
-                                GroupBox("Dernière mesure locale") {
-                                    Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 9) {
-                                        GridRow { Text("Score total"); Text("\(score.total)/100") }
-                                        GridRow { Text("Tempo détecté"); Text(record.analysis.beatGrid.map { String(format: "%.1f BPM", $0.bpm) } ?? "Non détecté") }
-                                        GridRow { Text("Silence maximal"); Text(String(format: "%.2f s", record.observation.silenceDuration)) }
-                                        GridRow { Text("Écart temporel"); Text(String(format: "%.0f ms", record.observation.beatOffsetMilliseconds)) }
-                                        GridRow { Text("Écart de niveau"); Text(String(format: "%.1f dB", record.observation.levelDifferenceDB)) }
-                                        GridRow { Text("Saturation"); Text(record.observation.clippingFrameCount == 0 ? "Non" : "Détectée") }
-                                        GridRow { Text("Validation"); Text(record.validationKind) }
-                                    }
-                                    .padding(8)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(rehearsal.transitionIndex == index ? .white.opacity(0.095) : .clear, in: RoundedRectangle(cornerRadius: 11))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 11)
+                                        .stroke(rehearsal.transitionIndex == index ? .orange.opacity(0.28) : .clear, lineWidth: 1)
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(24)
                     }
                 }
+                .scrollIndicators(.hidden)
             } else {
-                ContentUnavailableView(
-                    "Aucun set à répéter",
-                    systemImage: "waveform.badge.magnifyingglass",
-                    description: Text("Prépare d’abord une playlist dans le Studio.")
-                )
+                Text("Prépare d’abord un set dans le Studio.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+
+            Spacer()
+
+            MixPilotGlassCard(cornerRadius: 14, padding: 12, accent: rehearsal.isRunning ? .red : .orange) {
+                VStack(alignment: .leading, spacing: 7) {
+                    MixPilotStatusBadge(
+                        title: rehearsal.isRunning ? "Mesure en cours" : "État",
+                        symbol: rehearsal.isRunning ? "record.circle.fill" : "gauge.with.dots.needle.67percent",
+                        accent: rehearsal.isRunning ? .red : .orange
+                    )
+                    Text(rehearsal.status)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(4)
+                }
             }
         }
-        .frame(minWidth: 1_050, minHeight: 720)
-        .onAppear { rehearsal.synchronize(project: model.preparedProject) }
+        .padding(20)
+        .frame(width: 315)
+        .background(.black.opacity(0.15))
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let project = model.preparedProject, !project.transitions.isEmpty,
+           project.transitions.indices.contains(rehearsal.transitionIndex) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    let outgoing = project.tracks[rehearsal.transitionIndex].track
+                    let incoming = project.tracks[rehearsal.transitionIndex + 1].track
+
+                    MixPilotSectionHero(
+                        eyebrow: "Mesure réelle",
+                        title: "\(outgoing.title) → \(incoming.title)",
+                        subtitle: "Exécution MIDI, capture temporaire et comparaison des variantes.",
+                        symbol: "waveform.badge.magnifyingglass",
+                        accent: rehearsal.isRunning ? .red : .orange
+                    ) {
+                        Picker("Deck sortant", selection: $rehearsal.outgoingDeck) {
+                            Text("Deck A").tag(DeckID.a)
+                            Text("Deck B").tag(DeckID.b)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 190)
+                        Button("Actualiser") { rehearsal.synchronize(project: model.preparedProject) }
+                            .buttonStyle(MixPilotSecondaryButtonStyle())
+                    }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
+                        ForEach(rehearsal.variants) { variant in
+                            variantCard(variant)
+                        }
+                    }
+
+                    MixPilotGlassCard(accent: rehearsal.isRunning ? .red : .green) {
+                        VStack(alignment: .leading, spacing: 15) {
+                            MixPilotPanelTitle(
+                                title: rehearsal.isRunning ? "Mesure en cours" : "Exécution et analyse",
+                                symbol: rehearsal.isRunning ? "record.circle.fill" : "play.fill",
+                                subtitle: rehearsal.status,
+                                accent: rehearsal.isRunning ? .red : .green
+                            )
+                            HStack {
+                                Button(rehearsal.isRunning ? "RÉPÉTITION EN COURS…" : "EXÉCUTER ET MESURER") {
+                                    rehearsal.run(project: project, mappingProfile: model.mappingProfile)
+                                }
+                                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
+                                .disabled(rehearsal.isRunning || rehearsal.selectedVariant == nil)
+
+                                Button("ARRÊTER") { rehearsal.cancel() }
+                                    .buttonStyle(MixPilotDangerButtonStyle())
+                                    .disabled(!rehearsal.isRunning)
+
+                                Spacer()
+                                Label("Audio brut supprimé après analyse", systemImage: "lock.shield.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.45))
+                            }
+                        }
+                    }
+
+                    if let record = rehearsal.lastRecord, let score = record.variant.score {
+                        MixPilotGlassCard(accent: .green) {
+                            VStack(alignment: .leading, spacing: 15) {
+                                HStack {
+                                    MixPilotPanelTitle(title: "Dernière mesure locale", symbol: "checkmark.seal.fill", subtitle: record.variant.label, accent: .green)
+                                    Spacer()
+                                    Text("\(score.total)/100")
+                                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.green)
+                                        .monospacedDigit()
+                                }
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 10)], spacing: 10) {
+                                    resultMetric("Tempo", record.analysis.beatGrid.map { String(format: "%.1f BPM", $0.bpm) } ?? "Non détecté", "metronome")
+                                    resultMetric("Silence maximal", String(format: "%.2f s", record.observation.silenceDuration), "speaker.slash.fill")
+                                    resultMetric("Écart temporel", String(format: "%.0f ms", record.observation.beatOffsetMilliseconds), "timer")
+                                    resultMetric("Écart de niveau", String(format: "%.1f dB", record.observation.levelDifferenceDB), "speaker.wave.2.fill")
+                                    resultMetric("Saturation", record.observation.clippingFrameCount == 0 ? "Non" : "Détectée", "waveform.badge.exclamationmark")
+                                    resultMetric("Validation", record.validationKind, "checkmark.shield.fill")
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(28)
+                .frame(maxWidth: 1_060, alignment: .topLeading)
+            }
+            .scrollIndicators(.hidden)
+        } else {
+            ContentUnavailableView(
+                "Aucun set à répéter",
+                systemImage: "waveform.badge.magnifyingglass",
+                description: Text("Prépare d’abord une playlist dans le Studio.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func variantCard(_ variant: RehearsalVariant) -> some View {
+        Button {
+            rehearsal.selectVariant(variant.id)
+        } label: {
+            MixPilotGlassCard(cornerRadius: 17, padding: 16, accent: rehearsal.selectedVariantID == variant.id ? .orange : .blue) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: rehearsal.selectedVariantID == variant.id ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(rehearsal.selectedVariantID == variant.id ? .orange : .white.opacity(0.3))
+                        Text(variant.label).font(.headline)
+                        Spacer()
+                        if let score = variant.score {
+                            Text("\(score.total)/100")
+                                .font(.title3.bold().monospacedDigit())
+                                .foregroundStyle(score.total >= 75 ? .green : .orange)
+                        } else {
+                            Text("Non mesurée").font(.caption).foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                    Text("\(variant.plan.kind.rawValue) • \(variant.plan.bars) mesures • \(String(format: "%.1f", variant.plan.targetBPM)) BPM")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.48))
+                    if let score = variant.score {
+                        Text(score.reasons.joined(separator: " • "))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.36))
+                            .lineLimit(3)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 105, alignment: .topLeading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func resultMetric(_ title: String, _ value: String, _ symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol).foregroundStyle(.green)
+            Text(value).font(.headline.monospacedDigit()).lineLimit(2)
+            Text(title.uppercased())
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.36))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
     }
 }
 #endif
