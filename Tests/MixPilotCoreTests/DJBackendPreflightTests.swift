@@ -56,6 +56,20 @@ func seratoStillRequiresDirectControlPrerequisites() {
     #expect(report.items.first { $0.id == "mapping" }?.status == .failed)
 }
 
+@Test("rekordbox direct control remains blocked without MIDI and mapping")
+func rekordboxRequiresDirectControlPrerequisites() {
+    let report = PreflightEvaluator().evaluate(readyInput(
+        software: .rekordbox,
+        midiAvailable: false,
+        mappingCompletion: 0
+    ))
+
+    #expect(!report.canStartLive)
+    #expect(report.items.first { $0.id == "midi" }?.status == .failed)
+    #expect(report.items.first { $0.id == "mapping" }?.status == .failed)
+    #expect(report.items.first { $0.id == "dj-software" }?.title == "rekordbox")
+}
+
 @Test("Battery and local rescue remain warnings for Serato")
 func optionalSafetyItemsNeverBlockSerato() {
     let report = PreflightEvaluator().evaluate(readyInput(
