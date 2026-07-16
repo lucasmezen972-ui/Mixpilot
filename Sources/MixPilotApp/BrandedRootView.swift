@@ -35,6 +35,10 @@ struct BrandedRootView: View {
                         .tracking(1.5)
                         .foregroundStyle(.cyan)
                 }
+                Text("TRADIKOM BY LUCAS MEZEN")
+                    .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                    .tracking(1.05)
+                    .foregroundStyle(.white.opacity(0.42))
                 Text(model.selectedSection.rawValue)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.46))
