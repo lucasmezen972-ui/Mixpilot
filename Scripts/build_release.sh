@@ -10,17 +10,40 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="MixPilot Autopilot"
 EXECUTABLE="MixPilotAutopilot"
 BUILD_DIR="$ROOT/build"
+BRANDING_DIR="$ROOT/Branding"
 VERSION="${MIXPILOT_VERSION:-0.1.0}"
 VERSION="${VERSION#v}"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
+RESOURCES_DIR="$APP_DIR/Contents/Resources"
+ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
+ICON_SOURCE="$BUILD_DIR/MixPilotAppIcon.jpg"
 
 cd "$ROOT"
 swift test
 swift build -c release --product "$EXECUTABLE"
 
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+rm -rf "$APP_DIR" "$ICONSET_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS" "$RESOURCES_DIR" "$ICONSET_DIR"
 cp ".build/release/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
+
+if [[ ! -f "$BRANDING_DIR/MixPilotLogo.jpg.base64" || ! -f "$BRANDING_DIR/MixPilotAppIcon.jpg.base64" ]]; then
+  echo "Branding assets are missing." >&2
+  exit 1
+fi
+
+/usr/bin/base64 -D < "$BRANDING_DIR/MixPilotLogo.jpg.base64" > "$RESOURCES_DIR/MixPilotLogo.jpg"
+/usr/bin/base64 -D < "$BRANDING_DIR/MixPilotAppIcon.jpg.base64" > "$ICON_SOURCE"
+
+for size in 16 32 128 256 512; do
+  /usr/bin/sips -s format png -z "$size" "$size" "$ICON_SOURCE" \
+    --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+  retina=$((size * 2))
+  /usr/bin/sips -s format png -z "$retina" "$retina" "$ICON_SOURCE" \
+    --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+done
+
+/usr/bin/iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/MixPilot.icns"
+rm -rf "$ICONSET_DIR" "$ICON_SOURCE"
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,6 +55,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
