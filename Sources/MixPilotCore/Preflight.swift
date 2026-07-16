@@ -56,6 +56,7 @@ public struct PreflightInput: Codable, Hashable, Sendable {
     public var trackCount: Int
     public var transitionCount: Int
     public var lowConfidenceTransitionCount: Int
+    public var djSoftware: DJSoftware
 
     public init(
         seratoRunning: Bool,
@@ -72,7 +73,8 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         projectLocked: Bool,
         trackCount: Int,
         transitionCount: Int,
-        lowConfidenceTransitionCount: Int
+        lowConfidenceTransitionCount: Int,
+        djSoftware: DJSoftware = .serato
     ) {
         self.seratoRunning = seratoRunning
         self.accessibilityGranted = accessibilityGranted
@@ -89,6 +91,7 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         self.trackCount = max(0, trackCount)
         self.transitionCount = max(0, transitionCount)
         self.lowConfidenceTransitionCount = max(0, lowConfidenceTransitionCount)
+        self.djSoftware = djSoftware
     }
 }
 
@@ -120,40 +123,44 @@ public struct PreflightEvaluator: Sendable {
     public func evaluate(_ input: PreflightInput) -> PreflightReport {
         var items: [PreflightItem] = []
         items.append(booleanItem(
-            id: "serato",
-            title: "Serato DJ Pro",
+            id: "dj-software",
+            title: input.djSoftware.displayName,
             passed: input.seratoRunning,
-            success: "Serato est lancé.",
-            failure: "Serato DJ Pro doit être lancé.",
+            success: "\(input.djSoftware.displayName) est lancé.",
+            failure: "\(input.djSoftware.displayName) doit être lancé.",
             severity: .critical
         ))
         items.append(booleanItem(
             id: "accessibility",
             title: "Permission Accessibilité",
             passed: input.accessibilityGranted,
-            success: "L'interface Serato peut être observée.",
+            success: "L'interface de \(input.djSoftware.shortName) peut être observée.",
             failure: "Autorise MixPilot dans Confidentialité et sécurité → Accessibilité.",
             severity: .critical
         ))
-        items.append(booleanItem(
+
+        let directDeckControl = input.djSoftware.capabilities.preferredExecutionMode == .directDeckControl
+        items.append(capabilityItem(
             id: "midi",
             title: "Port MIDI",
-            passed: input.midiAvailable,
+            available: input.midiAvailable,
+            required: directDeckControl,
             success: "MixPilot Virtual Controller est actif.",
-            failure: "Le port MIDI virtuel n'est pas disponible.",
-            severity: .critical
+            optional: "Optionnel avec la file Automix de djay.",
+            failure: "Le port MIDI virtuel n'est pas disponible."
         ))
 
         let mappingPassed = input.mappingCompletion >= 0.95
-        items.append(PreflightItem(
+        items.append(capabilityItem(
             id: "mapping",
             title: "Mapping MIDI",
-            detail: mappingPassed
-                ? "Les commandes principales sont configurées."
-                : "Seulement \(Int(input.mappingCompletion * 100)) % des commandes sont configurées.",
-            status: mappingPassed ? .passed : .failed,
-            severity: .critical
+            available: mappingPassed,
+            required: directDeckControl,
+            success: "Les commandes principales sont configurées.",
+            optional: "Aucun mapping MIDI n’est requis pour démarrer un set djay Automix.",
+            failure: "Seulement \(Int(input.mappingCompletion * 100)) % des commandes sont configurées."
         ))
+
         items.append(booleanItem(
             id: "audio",
             title: "Surveillance audio",
@@ -187,7 +194,7 @@ public struct PreflightEvaluator: Sendable {
             title: "Musique locale de secours",
             detail: emergencyOK
                 ? "Au moins 30 minutes de secours sont disponibles."
-                : "Aucune musique locale de secours. Le Live reste autorisé, mais une coupure Internet ne pourra pas être couverte automatiquement.",
+                : "Optionnelle : aucun secours local n’est configuré. Une coupure Internet ne pourra pas être couverte automatiquement.",
             status: emergencyOK ? .passed : .warning,
             severity: emergencyOK ? .information : .warning
         ))
@@ -215,6 +222,33 @@ public struct PreflightEvaluator: Sendable {
         ))
 
         return PreflightReport(items: items)
+    }
+
+    private func capabilityItem(
+        id: String,
+        title: String,
+        available: Bool,
+        required: Bool,
+        success: String,
+        optional: String,
+        failure: String
+    ) -> PreflightItem {
+        if available {
+            return PreflightItem(
+                id: id,
+                title: title,
+                detail: success,
+                status: .passed,
+                severity: required ? .critical : .information
+            )
+        }
+        return PreflightItem(
+            id: id,
+            title: title,
+            detail: required ? failure : optional,
+            status: required ? .failed : .warning,
+            severity: required ? .critical : .warning
+        )
     }
 
     private func booleanItem(
