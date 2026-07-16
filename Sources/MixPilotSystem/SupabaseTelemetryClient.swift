@@ -35,7 +35,12 @@ public actor SupabaseTelemetryClient {
         try await queue.enqueue(event)
     }
 
-    public func flush(deviceID: UUID, sessionID: UUID?, limit: Int = 100) async throws -> Int {
+    public func flush(
+        deviceID: UUID,
+        sessionID: UUID?,
+        limit: Int = 100,
+        accessToken: String? = nil
+    ) async throws -> Int {
         let events = await queue.peek(limit: limit)
         guard !events.isEmpty else { return 0 }
 
@@ -59,7 +64,10 @@ public actor SupabaseTelemetryClient {
         )
         request.httpMethod = "POST"
         request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(configuration.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "Bearer \(accessToken ?? configuration.accessToken)",
+            forHTTPHeaderField: "Authorization"
+        )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("resolution=ignore-duplicates", forHTTPHeaderField: "Prefer")
         request.httpBody = try JSONEncoder.supabaseEncoder.encode(rows)
