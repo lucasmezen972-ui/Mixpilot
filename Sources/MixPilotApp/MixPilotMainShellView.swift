@@ -30,12 +30,14 @@ struct MixPilotMainShellView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack {
+            VStack(spacing: 10) {
+                MixPilotCompatibilityWarningBanner(cloud: cloud)
+                MixPilotRemoteMappingBanner(cloud: cloud)
                 MixPilotUpdateBanner(cloud: cloud)
-                    .padding(.horizontal, 22)
-                    .padding(.top, 18)
                 Spacer()
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
 
             navigationDock
                 .padding(.horizontal, 18)
@@ -45,6 +47,9 @@ struct MixPilotMainShellView: View {
         .animation(.snappy(duration: 0.3), value: surface)
         .animation(.snappy(duration: 0.25), value: model.selectedSection)
         .animation(.snappy(duration: 0.3), value: cloud.availableUpdate?.id)
+        .animation(.snappy(duration: 0.3), value: cloud.availableMapping?.id)
+        .animation(.snappy(duration: 0.3), value: cloud.activeCompatibilityOverride?.id)
+        .animation(.snappy(duration: 0.3), value: cloud.stagedMapping?.mappingVersion)
     }
 
     private var navigationDock: some View {
@@ -96,7 +101,7 @@ struct MixPilotMainShellView: View {
                 .padding(.vertical, 8)
             }
             .buttonStyle(.plain)
-            .help("\(cloud.connectionState.label) — cliquer pour vérifier les mises à jour")
+            .help("\(cloud.connectionState.label) — cliquer pour vérifier les mises à jour et mappings")
 
             divider
 
