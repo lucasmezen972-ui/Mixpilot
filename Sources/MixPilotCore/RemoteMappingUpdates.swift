@@ -273,7 +273,20 @@ public struct MixPilotRemoteMappingValidator: Sendable {
     public static func profileSHA256(_ profile: MIDIMappingProfile) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return sha256(try encoder.encode(profile))
+        var canonical = Data("mixpilot-midi-profile-v1\n".utf8)
+
+        for action in SeratoAction.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
+            canonical.append(Data(action.rawValue.utf8))
+            canonical.append(0)
+            if let mapping = profile[action] {
+                canonical.append(try encoder.encode(mapping))
+            } else {
+                canonical.append(Data("null".utf8))
+            }
+            canonical.append(10)
+        }
+
+        return sha256(canonical)
     }
 
     public static func sha256(_ data: Data) -> String {
