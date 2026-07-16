@@ -7,29 +7,40 @@ import SwiftUI
 struct MixPilotAutopilotApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var remoteBridge = MixPilotRemoteBridge()
+    @State private var mainSurface: MixPilotMainSurface = .home
 
     var body: some Scene {
-        WindowGroup("MixPilot Autopilot") {
-            BrandedRootView(model: model)
-                .frame(minWidth: 1_180, minHeight: 760)
+        WindowGroup("MixPilot") {
+            MixPilotMainShellView(model: model, surface: $mainSurface)
+                .frame(minWidth: 1_180, minHeight: 790)
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1_360, height: 900)
+        .defaultSize(width: 1_380, height: 920)
         .commands {
             MixPilotWindowCommands()
             CommandMenu("MixPilot") {
+                Button("Afficher l’accueil premium") {
+                    mainSurface = .home
+                }
+                .keyboardShortcut("0", modifiers: [.command])
+
+                Divider()
+
                 Button("Ouvrir le Studio") {
                     model.selectedSection = .studio
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
                 Button("Ouvrir le Préflight") {
                     model.selectedSection = .preflight
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
                 Button("Ouvrir le Live") {
                     model.selectedSection = .live
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("3", modifiers: [.command])
 
@@ -147,7 +158,7 @@ private struct MixPilotWindowCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
-            Button("Ouvrir Rekordbox Hub") {
+            Button("Ouvrir Rekordbox Hub dans une nouvelle fenêtre") {
                 openWindow(id: "rekordbox-hub")
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
