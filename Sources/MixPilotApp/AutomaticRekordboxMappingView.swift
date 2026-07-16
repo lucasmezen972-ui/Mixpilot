@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import MixPilotCore
+import MixPilotSystem
 import SwiftUI
 import UniformTypeIdentifiers
 
