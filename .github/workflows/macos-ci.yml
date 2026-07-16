@@ -48,6 +48,9 @@ jobs:
           name: unit-test-log
           path: unit-test.log
 
+      - name: Verify immutable GitHub mapping manifest
+        run: ./Scripts/verify_mapping_provenance.sh | tee mapping-provenance-check.json
+
       - name: Live Supabase auth and RLS self-test
         run: ./Scripts/cloud_self_test.sh | tee cloud-self-test.json
 
@@ -98,6 +101,7 @@ jobs:
             simulation-50-report.json
             simulation-250-report.json
             mapping-release-candidate.json
+            mapping-provenance-check.json
             cloud-self-test.json
             unit-test.log
           if-no-files-found: warn
