@@ -21,3 +21,14 @@ func djayCapabilities() {
     #expect(capabilities.preferredExecutionMode == .automixQueue)
     #expect(capabilities.validationStatus == .requiresDeviceValidation)
 }
+
+@Test("rekordbox starts conservatively with direct control requiring device validation")
+func rekordboxCapabilities() {
+    let capabilities = DJSoftware.rekordbox.capabilities
+    #expect(capabilities.spotifyLibrary)
+    #expect(!capabilities.builtInAutomix)
+    #expect(capabilities.customMIDILearn)
+    #expect(!capabilities.detailedDeckAutomation)
+    #expect(capabilities.preferredExecutionMode == .directDeckControl)
+    #expect(capabilities.validationStatus == .requiresDeviceValidation)
+}
