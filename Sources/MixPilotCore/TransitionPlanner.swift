@@ -113,6 +113,7 @@ public struct TransitionPlanner: Sendable {
         output.append(String(format: "Écart BPM normalisé : %.1f", bpmDelta))
         output.append(energyDelta >= 0 ? "Énergie en progression" : "Énergie en diminution")
         output.append("Profil retenu : \(kind.rawValue)")
+        output.append("Faders de volume utilisés comme protection indépendante du crossfader")
         if outgoing.vocalDensity > 0.75 || incoming.vocalDensity > 0.75 {
             output.append("Protection contre le chevauchement vocal")
         }
@@ -136,6 +137,8 @@ public struct TransitionPlanner: Sendable {
                 AutomationPoint(beat: totalBeats, value: 1),
             ]
         )
+        let smoothVolumeFallback = volumeFallback(totalBeats: totalBeats, cutAtEnd: false)
+        let cutVolumeFallback = volumeFallback(totalBeats: totalBeats, cutAtEnd: true)
 
         switch kind {
         case .smoothBlend:
@@ -150,7 +153,7 @@ public struct TransitionPlanner: Sendable {
                     AutomationPoint(beat: 0, value: 1),
                     AutomationPoint(beat: totalBeats * 0.7, value: 0),
                 ]),
-            ]
+            ] + smoothVolumeFallback
         case .bassSwap:
             return [
                 crossfader,
@@ -163,7 +166,7 @@ public struct TransitionPlanner: Sendable {
                     AutomationPoint(beat: 0, value: 1),
                     AutomationPoint(beat: totalBeats * 0.5, value: 0),
                 ]),
-            ]
+            ] + smoothVolumeFallback
         case .rapSwitch, .shattaDrop, .hardCut:
             return [
                 AutomationLane(target: .crossfader, points: [
@@ -171,7 +174,7 @@ public struct TransitionPlanner: Sendable {
                     AutomationPoint(beat: max(1, totalBeats - 1), value: 0),
                     AutomationPoint(beat: totalBeats, value: 1),
                 ])
-            ]
+            ] + cutVolumeFallback
         case .echoExit:
             return [
                 AutomationLane(target: .echoAmount, points: [
@@ -180,10 +183,38 @@ public struct TransitionPlanner: Sendable {
                     AutomationPoint(beat: totalBeats, value: 1),
                 ]),
                 crossfader,
-            ]
+            ] + smoothVolumeFallback
         case .safeFade:
-            return [crossfader]
+            return [crossfader] + smoothVolumeFallback
         }
+    }
+
+    private func volumeFallback(totalBeats: Double, cutAtEnd: Bool) -> [AutomationLane] {
+        if cutAtEnd {
+            return [
+                AutomationLane(target: .incomingVolume, points: [
+                    AutomationPoint(beat: 0, value: 0),
+                    AutomationPoint(beat: max(1, totalBeats - 1), value: 0),
+                    AutomationPoint(beat: totalBeats, value: 1),
+                ]),
+                AutomationLane(target: .outgoingVolume, points: [
+                    AutomationPoint(beat: 0, value: 1),
+                    AutomationPoint(beat: max(1, totalBeats - 1), value: 1),
+                    AutomationPoint(beat: totalBeats, value: 0),
+                ]),
+            ]
+        }
+
+        return [
+            AutomationLane(target: .incomingVolume, points: [
+                AutomationPoint(beat: 0, value: 0),
+                AutomationPoint(beat: totalBeats, value: 1),
+            ]),
+            AutomationLane(target: .outgoingVolume, points: [
+                AutomationPoint(beat: 0, value: 1),
+                AutomationPoint(beat: totalBeats, value: 0),
+            ]),
+        ]
     }
 }
 
