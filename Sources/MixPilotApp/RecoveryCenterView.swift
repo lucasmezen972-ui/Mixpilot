@@ -6,87 +6,134 @@ struct RecoveryCenterView: View {
     @StateObject private var model = RecoveryCenterModel()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Centre de récupération").font(.largeTitle.bold())
-                        Text("Aucune commande n’est envoyée automatiquement depuis cet écran.")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Réexaminer Serato") { model.refresh() }
-                        .buttonStyle(.borderedProminent)
-                }
+        ZStack {
+            MixPilotPremiumBackground()
 
-                GroupBox("Diagnostic") {
-                    HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: decisionSymbol).font(.largeTitle)
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(decisionTitle).font(.title2.bold())
-                            Text(model.status).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    MixPilotSectionHero(
+                        eyebrow: "Sécurité de session",
+                        title: "Centre de récupération",
+                        subtitle: "Analyse le dernier checkpoint sans envoyer automatiquement la moindre commande.",
+                        symbol: "lifepreserver.fill",
+                        accent: decisionColor
+                    ) {
+                        Button("RÉEXAMINER LE LOGICIEL DJ") { model.refresh() }
+                            .buttonStyle(MixPilotPrimaryButtonStyle(accent: decisionColor))
+                    }
+
+                    MixPilotGlassCard(accent: decisionColor) {
+                        HStack(alignment: .top, spacing: 16) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16).fill(decisionColor.opacity(0.14))
+                                Image(systemName: decisionSymbol)
+                                    .font(.system(size: 31, weight: .semibold))
+                                    .foregroundStyle(decisionColor)
+                            }
+                            .frame(width: 64, height: 64)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                MixPilotStatusBadge(title: decisionBadge, symbol: decisionSymbol, accent: decisionColor)
+                                Text(decisionTitle)
+                                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                                Text(model.status)
+                                    .font(.callout)
+                                    .foregroundStyle(.white.opacity(0.54))
+                            }
+                            Spacer()
                         }
-                        Spacer()
                     }
-                    .padding(8)
-                }
 
-                if let checkpoint = model.checkpoint {
-                    GroupBox("Dernier état sauvegardé") {
-                        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 9) {
-                            recoveryRow("Projet", checkpoint.projectName)
-                            recoveryRow("État", checkpoint.state.rawValue)
-                            recoveryRow("Morceau", "\(checkpoint.currentTrackIndex + 1)")
-                            recoveryRow("Deck actif", checkpoint.activeDeck.rawValue)
-                            recoveryRow("Transitions terminées", "\(checkpoint.completedTransitionCount)")
-                            recoveryRow("Dernière commande", checkpoint.lastCommand ?? "Aucune")
-                            recoveryRow("Sauvegardé", checkpoint.updatedAt.formatted(date: .abbreviated, time: .standard))
+                    HStack(alignment: .top, spacing: 16) {
+                        if let checkpoint = model.checkpoint {
+                            MixPilotGlassCard(accent: .purple) {
+                                VStack(alignment: .leading, spacing: 13) {
+                                    MixPilotPanelTitle(title: "Dernier état sauvegardé", symbol: "externaldrive.badge.timemachine", subtitle: checkpoint.projectName, accent: .purple)
+                                    recoveryRow("État", checkpoint.state.rawValue)
+                                    recoveryRow("Morceau", "\(checkpoint.currentTrackIndex + 1)")
+                                    recoveryRow("Deck actif", checkpoint.activeDeck.rawValue)
+                                    recoveryRow("Transitions terminées", "\(checkpoint.completedTransitionCount)")
+                                    recoveryRow("Dernière commande", checkpoint.lastCommand ?? "Aucune")
+                                    recoveryRow("Sauvegardé", checkpoint.updatedAt.formatted(date: .abbreviated, time: .standard))
+                                }
+                            }
+                        } else {
+                            MixPilotGlassCard(accent: .green) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    MixPilotPanelTitle(title: "Aucun checkpoint", symbol: "checkmark.circle.fill", subtitle: "Aucune session interrompue à récupérer.", accent: .green)
+                                    Text("Le centre reste disponible si une future session Live est interrompue.")
+                                        .font(.callout)
+                                        .foregroundStyle(.white.opacity(0.52))
+                                }
+                            }
                         }
-                        .padding(8)
-                    }
-                }
 
-                if let observation = model.observation {
-                    GroupBox("État observé") {
-                        HStack(spacing: 22) {
-                            Label(
-                                observation.isRunning ? "Serato lancé" : "Serato absent",
-                                systemImage: observation.isRunning ? "checkmark.circle" : "xmark.circle"
-                            )
-                            Label(
-                                observation.accessibilityGranted ? "Accessibilité autorisée" : "Accessibilité bloquée",
-                                systemImage: observation.accessibilityGranted ? "hand.thumbsup" : "hand.raised.slash"
-                            )
-                            Text("\(observation.visibleText.count) éléments lisibles")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(8)
-                    }
-                }
-
-                GroupBox("Action recommandée") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(actionExplanation)
-                        if model.checkpoint != nil {
-                            Button("Abandonner cette ancienne session", role: .destructive) {
-                                model.discardCheckpoint()
+                        if let observation = model.observation {
+                            MixPilotGlassCard(accent: .cyan) {
+                                VStack(alignment: .leading, spacing: 13) {
+                                    MixPilotPanelTitle(title: "État observé", symbol: "eye.fill", subtitle: "Lecture uniquement", accent: .cyan)
+                                    observationRow(
+                                        observation.isRunning ? "Application détectée" : "Application absente",
+                                        observation.isRunning,
+                                        "app.badge.checkmark"
+                                    )
+                                    observationRow(
+                                        observation.accessibilityGranted ? "Accessibilité autorisée" : "Accessibilité bloquée",
+                                        observation.accessibilityGranted,
+                                        "hand.raised.fill"
+                                    )
+                                    recoveryRow("Éléments lisibles", "\(observation.visibleText.count)")
+                                }
                             }
                         }
                     }
-                    .padding(8)
+
+                    MixPilotGlassCard(accent: .orange) {
+                        VStack(alignment: .leading, spacing: 13) {
+                            MixPilotPanelTitle(title: "Action recommandée", symbol: "signpost.right.and.left.fill", subtitle: "Décision conservatrice", accent: .orange)
+                            Text(actionExplanation)
+                                .font(.callout)
+                                .foregroundStyle(.white.opacity(0.62))
+                            if model.checkpoint != nil {
+                                Button("ABANDONNER CETTE ANCIENNE SESSION") {
+                                    model.discardCheckpoint()
+                                }
+                                .buttonStyle(MixPilotDangerButtonStyle())
+                            }
+                        }
+                    }
                 }
+                .padding(28)
+                .frame(maxWidth: 900, alignment: .topLeading)
             }
-            .padding(28)
+            .scrollIndicators(.hidden)
         }
-        .frame(minWidth: 760, minHeight: 560)
+        .preferredColorScheme(.dark)
+        .frame(minWidth: 820, minHeight: 620)
         .onAppear { model.refresh() }
     }
 
-    @ViewBuilder
     private func recoveryRow(_ label: String, _ value: String) -> some View {
-        GridRow {
-            Text(label).foregroundStyle(.secondary)
-            Text(value).fontWeight(.medium)
+        HStack(alignment: .top) {
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.46))
+            Spacer()
+            Text(value)
+                .font(.callout.bold())
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func observationRow(_ title: String, _ positive: Bool, _ symbol: String) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: positive ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(positive ? .green : .red)
+            Image(systemName: symbol).foregroundStyle(.cyan)
+            Text(title).font(.callout)
+            Spacer()
         }
     }
 
@@ -101,6 +148,17 @@ struct RecoveryCenterView: View {
         }
     }
 
+    private var decisionBadge: String {
+        switch model.reconciliation?.decision {
+        case .resumeAutomatically: "Reprise contrôlée"
+        case .requireObservation: "À observer"
+        case .requireManualConfirmation: "Action manuelle"
+        case .switchToEmergency: "Mode secours"
+        case .discardCompletedSession: "Session terminée"
+        case nil: "Diagnostic"
+        }
+    }
+
     private var decisionSymbol: String {
         switch model.reconciliation?.decision {
         case .resumeAutomatically: "arrow.clockwise.circle.fill"
@@ -112,20 +170,31 @@ struct RecoveryCenterView: View {
         }
     }
 
+    private var decisionColor: Color {
+        switch model.reconciliation?.decision {
+        case .resumeAutomatically: .green
+        case .requireObservation: .cyan
+        case .requireManualConfirmation: .orange
+        case .switchToEmergency: .red
+        case .discardCompletedSession: .green
+        case nil: .purple
+        }
+    }
+
     private var actionExplanation: String {
         switch model.reconciliation?.decision {
         case .resumeAutomatically:
             "Le titre observé correspond au checkpoint. La reprise devra toutefois être confirmée depuis l’écran Live après vérification audio."
         case .requireObservation:
-            "Le bon titre semble chargé, mais l’audio n’est pas confirmé. Vérifie la sortie et utilise le préflight avant toute reprise."
+            "Le bon titre semble chargé, mais l’audio n’est pas confirmé. Vérifie la sortie et utilise le Préflight avant toute reprise."
         case .requireManualConfirmation:
-            "Ne relance pas l’Autopilot. Replace Serato dans un état connu ou abandonne l’ancienne session."
+            "Ne relance pas l’Autopilot. Replace le logiciel DJ dans un état connu ou abandonne l’ancienne session."
         case .switchToEmergency:
-            "Serato n’est pas disponible. Lance la bibliothèque locale de secours avant toute tentative de réparation."
+            "Le logiciel DJ n’est pas disponible. Lance la bibliothèque locale de secours avant toute tentative de réparation."
         case .discardCompletedSession:
             "Cette session était déjà terminée et peut être supprimée sans risque."
         case nil:
-            model.checkpoint == nil ? "Aucune action n’est nécessaire." : "Inspecte Serato et décide manuellement."
+            model.checkpoint == nil ? "Aucune action n’est nécessaire." : "Inspecte le logiciel DJ et décide manuellement."
         }
     }
 }
