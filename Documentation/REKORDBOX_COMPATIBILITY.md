@@ -1,8 +1,13 @@
-# Compatibilité rekordbox — premier lot
+# Compatibilité rekordbox — contrôle progressif
 
 ## Objectif
 
-Ajouter rekordbox comme troisième logiciel DJ sélectionnable dans MixPilot, sans retirer Serato DJ Pro ni djay Pro et sans revendiquer de contrôle réel non testé.
+Ajouter rekordbox comme troisième logiciel DJ sélectionnable dans MixPilot et permettre à MixPilot d’agir réellement sur l’application, sans retirer Serato DJ Pro ni djay Pro.
+
+Le contrôle est volontairement séparé en deux canaux :
+
+1. **MIDI virtuel** pour le Live et les commandes de decks ;
+2. **Accessibilité macOS** pour les boutons, menus et contrôles réellement exposés par la version installée.
 
 ## Fonctionnalités incluses
 
@@ -12,62 +17,105 @@ Ajouter rekordbox comme troisième logiciel DJ sélectionnable dans MixPilot, sa
 - observation Accessibilité de la fenêtre principale ;
 - lecture générique des lignes visibles de playlist ;
 - préflight adapté au mode de contrôle direct ;
-- laboratoire de compatibilité en lecture seule ;
-- export JSON du diagnostic Accessibilité ;
-- tests du matcher, des capacités et du préflight.
+- centre de contrôle rekordbox accessible avec `⇧⌘K` ;
+- inspection des contrôles Accessibilité et de leurs actions disponibles ;
+- exécution protégée de `AXPress`, `AXConfirm`, `AXIncrement`, `AXDecrement` et `AXShowMenu` ;
+- commandes MIDI de test pour charger, lire, mettre en pause et synchroniser les decks A et B ;
+- navigation dans la bibliothèque par MIDI ;
+- test du crossfader et des volumes ;
+- export JSON contenant les lignes et les contrôles actionnables ;
+- tests du matcher, des capacités, du préflight et de la politique de sécurité.
 
-## Sécurité
+## Contrôle Live
 
-Le premier lot rekordbox n’exécute aucune action dans rekordbox depuis le laboratoire :
+Le moteur Live utilisait déjà des intentions de haut niveau indépendantes de l’interface :
 
-- aucun clic Accessibilité ;
-- aucune frappe clavier ;
-- aucune commande MIDI ;
-- aucun chargement de morceau ;
-- aucun démarrage de lecture ;
-- aucune modification de playlist ;
-- aucun téléchargement ou stockage de flux musical.
+- focus navigateur ;
+- titre suivant ;
+- chargement sur deck A ou B ;
+- lecture et pause ;
+- synchronisation ;
+- volumes ;
+- égalisation ;
+- crossfader ;
+- transitions automatisées.
 
-Le statut reste `REQUIRES_DEVICE_VALIDATION` tant que les essais sur le Mac cible n’ont pas confirmé l’arbre Accessibilité et le mapping réel.
+Lorsque rekordbox est sélectionné, les mêmes messages sont envoyés par le port `MixPilot Virtual Controller`. rekordbox doit apprendre ces messages avec son système MIDI Learn avant que le préflight puisse être considéré comme validé.
+
+## Actions Accessibilité
+
+MixPilot inspecte l’arbre réel de la fenêtre rekordbox et enregistre pour chaque contrôle :
+
+- son rôle ;
+- son titre, sa valeur, sa description et son aide ;
+- son chemin dans l’arbre ;
+- les actions macOS disponibles ;
+- une empreinte permettant de vérifier que le contrôle n’a pas changé avant l’exécution.
+
+Une action n’est exécutée que si :
+
+1. rekordbox est le backend sélectionné ;
+2. la permission Accessibilité est accordée ;
+3. le contrôle est toujours au même emplacement avec la même empreinte ;
+4. l’action appartient à la liste autorisée ;
+5. l’utilisateur a armé les actions ;
+6. une seconde confirmation est donnée lorsque le libellé ressemble à une suppression.
+
+## Modification de bibliothèque
+
+Les contrôles visibles de rekordbox peuvent maintenant être actionnés depuis MixPilot, notamment lorsqu’ils exposent une action Accessibilité standard.
+
+La modification directe de la base chiffrée rekordbox n’est pas activée dans ce lot. Une future couche hors Live devra obligatoirement :
+
+- vérifier que rekordbox est complètement fermé ;
+- créer une sauvegarde datée de la base et de ses fichiers annexes ;
+- utiliser une transaction ;
+- vérifier l’intégrité après écriture ;
+- proposer un rollback ;
+- refuser les suppressions sans confirmation renforcée.
+
+Pendant une prestation, MixPilot ne modifiera jamais directement la base de données.
 
 ## Parcours de validation
 
 1. Installer et lancer rekordbox sur le Mac cible.
-2. Ouvrir une playlist de test dans la vue utilisée pendant le Live.
+2. Ouvrir une playlist de test.
 3. Dans MixPilot, choisir `rekordbox` comme logiciel DJ.
-4. Accorder la permission Accessibilité à MixPilot.
-5. Ouvrir `Fenêtre → Inspecter la compatibilité rekordbox` ou utiliser `⇧⌘K`.
+4. Accorder la permission Accessibilité.
+5. Ouvrir `Fenêtre → Contrôler et inspecter rekordbox` ou utiliser `⇧⌘K`.
 6. Cliquer sur `Inspecter rekordbox`.
-7. Vérifier le titre de fenêtre, le nombre de textes visibles et les lignes détectées.
-8. Exporter le JSON et vérifier qu’il ne contient que les informations attendues.
-9. Tester ensuite le port MIDI et le mapping, commande par commande, sur un set sans public.
+7. Armer les actions uniquement sur une playlist de test.
+8. Tester les commandes MIDI une par une : Load, Play, Pause, Sync et navigation.
+9. Sélectionner un contrôle Accessibilité non destructif et tester son action.
+10. Exporter le JSON de diagnostic.
+11. Désarmer les actions avant de quitter le laboratoire.
+12. Ne pas activer le Live tant que chaque commande critique n’a pas été confirmée dans rekordbox.
 
 ## Capacités déclarées
 
-- bibliothèque de streaming visible : prise en charge prévue, validation appareil requise ;
-- MIDI Learn : pris en compte par l’architecture, validation appareil requise ;
-- contrôle détaillé des decks : non revendiqué dans ce lot ;
+- bibliothèque Spotify : prise en charge prévue à partir des versions rekordbox compatibles, validation appareil requise ;
+- MIDI Learn : intégré au parcours de contrôle, validation appareil requise ;
+- contrôle réel des decks : code actif, validation appareil requise ;
+- actions sur l’interface : code actif avec armement et vérification d’empreinte ;
 - Automix : non utilisé comme mode d’exécution par défaut ;
 - mode préféré : `directDeckControl` ;
 - validation : `REQUIRES_DEVICE_VALIDATION`.
 
 ## Limites connues
 
-- le nom interne de certaines propriétés historiques contient encore `Serato`, même lorsque le backend sélectionné est rekordbox ;
-- l’importeur de lignes reste heuristique et doit être confronté à l’ordre réel des colonnes rekordbox ;
-- aucun preset MIDI rekordbox n’est généré automatiquement ;
-- les actions Play, Load, Sync, EQ, filtre et crossfader ne sont pas revendiquées comme fonctionnelles ;
-- la confirmation du titre réellement chargé sur chaque deck reste à développer ;
-- le routage audio et la latence doivent être validés sur le MacBook Pro M1.
+- certains noms internes historiques contiennent encore `Serato`, même lorsque le moteur agit sur rekordbox ;
+- aucun preset MIDI rekordbox n’est encore installé automatiquement ;
+- l’ordre réel des colonnes de playlist doit encore être confirmé ;
+- la confirmation du titre chargé sur chaque deck doit être testée sur l’interface réelle ;
+- les actions Accessibilité dépendent de ce que la version installée expose ;
+- le routage audio et la latence doivent être validés sur le MacBook Pro M1 ;
+- aucune écriture directe dans la base SQLCipher n’est autorisée pendant le Live.
 
-## Prochain lot recommandé
+## Étapes suivantes
 
-Après récupération d’un export JSON réel :
-
-1. identifier les colonnes stables de la playlist ;
-2. créer un parseur rekordbox dédié ;
-3. ajouter des fixtures anonymisées et des tests de contrat ;
-4. développer un profil MIDI séparé de celui de Serato ;
-5. tester une seule commande sans lecture publique ;
-6. ajouter la confirmation de deck et de titre avant toute transition ;
-7. conserver un arrêt immédiat et une reprise manuelle prioritaire.
+1. créer un profil MIDI rekordbox séparé et confirmé ;
+2. mémoriser les contrôles Accessibilité validés par version ;
+3. ajouter l’import JSON/XML multi-schémas ;
+4. confirmer les titres et les decks après chaque chargement ;
+5. développer un service de bibliothèque hors Live avec sauvegarde et rollback ;
+6. tester une prestation complète sur une bibliothèque de copie avant toute utilisation publique.
