@@ -81,16 +81,18 @@ public final class SeratoAccessibilityBridge {
         }
     }
 
-    public func activate(_ software: DJSoftware) -> Bool {
-        application(for: software)?.activate(options: [.activateAllWindows]) == true
+    public func activate(_ software: DJSoftware? = nil) -> Bool {
+        application(for: software ?? DJSoftwareSelectionStore.current)?
+            .activate(options: [.activateAllWindows]) == true
     }
 
     public func observe(
-        software: DJSoftware = .serato,
+        software: DJSoftware? = nil,
         maxDepth: Int = 5,
         maximumStrings: Int = 250
     ) -> SeratoWindowObservation {
-        guard let application = application(for: software) else {
+        let resolvedSoftware = software ?? DJSoftwareSelectionStore.current
+        guard let application = application(for: resolvedSoftware) else {
             return SeratoWindowObservation(
                 isRunning: false,
                 processIdentifier: nil,
@@ -131,10 +133,11 @@ public final class SeratoAccessibilityBridge {
     }
 
     public func libraryRows(
-        software: DJSoftware = .serato,
+        software: DJSoftware? = nil,
         maxRows: Int = 500
     ) -> [SeratoLibraryRow] {
-        guard AXIsProcessTrusted(), let application = application(for: software) else { return [] }
+        let resolvedSoftware = software ?? DJSoftwareSelectionStore.current
+        guard AXIsProcessTrusted(), let application = application(for: resolvedSoftware) else { return [] }
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
         guard let window = preferredWindow(for: appElement) else { return [] }
 
