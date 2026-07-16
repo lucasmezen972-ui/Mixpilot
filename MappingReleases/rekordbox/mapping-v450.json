@@ -1,0 +1,27 @@
+{
+  "apply_mode": "notify",
+  "channel": "stable",
+  "ci_run_number": 450,
+  "controller_name": "MixPilot Virtual Controller",
+  "generated_preset_sha256": "18854a58a90132fc8da7c40dfb8ab4d86c32f412b19cc2bd0ca325dee65587af",
+  "mandatory": false,
+  "mapping_version": 450,
+  "maximum_rekordbox_version": null,
+  "minimum_app_build": 1,
+  "minimum_rekordbox_version": "5.3.0",
+  "profile_sha256": "f66339b28e9bdeee29fc90d53d029086396de41aa427580386617f95dfc321af",
+  "release_id": "036df828-bd1d-4842-aa86-c2ef34ad30c6",
+  "release_notes": "Mapping MixPilot généré et validé par la CI.",
+  "repository": "lucasmezen972-ui/Mixpilot",
+  "schema_version": 1,
+  "software": "rekordbox",
+  "validation": {
+    "advanced_actions": 3,
+    "dmg_checksum": "passed",
+    "release_build": "passed",
+    "simulation_250": "passed",
+    "simulation_50": "passed",
+    "supported_actions": 27,
+    "unit_tests": "passed"
+  }
+}
