@@ -3,6 +3,7 @@ import AppKit
 import ApplicationServices
 import AVFoundation
 import Foundation
+import MixPilotCore
 
 public struct SeratoProbeResult: Sendable {
     public var isRunning: Bool
@@ -23,14 +24,21 @@ public struct SeratoEnvironmentProbe: Sendable {
 
     @MainActor
     public func probe() -> SeratoProbeResult {
-        let serato = NSWorkspace.shared.runningApplications.first { application in
+        let selectedSoftware = DJSoftwareSelectionStore.current
+        let application = NSWorkspace.shared.runningApplications.first { application in
             let name = application.localizedName?.lowercased() ?? ""
-            return name.contains("serato dj pro") || name == "serato dj"
+            let bundle = application.bundleIdentifier?.lowercased() ?? ""
+            switch selectedSoftware {
+            case .serato:
+                return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+            case .djay:
+                return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
+            }
         }
 
         return SeratoProbeResult(
-            isRunning: serato != nil,
-            processIdentifier: serato?.processIdentifier,
+            isRunning: application != nil,
+            processIdentifier: application?.processIdentifier,
             accessibilityGranted: AXIsProcessTrusted(),
             audioPermission: audioAuthorizationDescription()
         )
