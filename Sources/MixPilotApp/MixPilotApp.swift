@@ -102,6 +102,11 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 1_080, height: 780)
 
+        Window("Validation réelle rekordbox", id: "rekordbox-device-validation") {
+            RekordboxDeviceValidationView(appModel: model)
+        }
+        .defaultSize(width: 1_240, height: 860)
+
         Window("Mapping rekordbox automatique", id: "automatic-rekordbox-mapping") {
             AutomaticRekordboxMappingView(model: model)
         }
@@ -167,6 +172,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "rekordbox-compatibility")
             }
             .keyboardShortcut("k", modifiers: [.command, .shift])
+
+            Button("Valider rekordbox commande par commande") {
+                openWindow(id: "rekordbox-device-validation")
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
 
             Button("Générer le mapping rekordbox") {
                 openWindow(id: "automatic-rekordbox-mapping")
