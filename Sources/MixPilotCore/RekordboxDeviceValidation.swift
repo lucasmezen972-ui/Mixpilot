@@ -1,42 +1,5 @@
 import Foundation
 
-public struct RekordboxSemanticVersion: Codable, Hashable, Comparable, Sendable, CustomStringConvertible {
-    public var major: Int
-    public var minor: Int
-    public var patch: Int
-
-    public init(major: Int, minor: Int = 0, patch: Int = 0) {
-        self.major = max(0, major)
-        self.minor = max(0, minor)
-        self.patch = max(0, patch)
-    }
-
-    public init?(_ rawValue: String) {
-        let components = rawValue
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: ".", omittingEmptySubsequences: false)
-        guard let first = components.first,
-              let major = Int(first.prefix { $0.isNumber }) else {
-            return nil
-        }
-        self.major = major
-        self.minor = components.indices.contains(1)
-            ? Int(components[1].prefix { $0.isNumber }) ?? 0
-            : 0
-        self.patch = components.indices.contains(2)
-            ? Int(components[2].prefix { $0.isNumber }) ?? 0
-            : 0
-    }
-
-    public static func < (lhs: Self, rhs: Self) -> Bool {
-        if lhs.major != rhs.major { return lhs.major < rhs.major }
-        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
-        return lhs.patch < rhs.patch
-    }
-
-    public var description: String { "\(major).\(minor).\(patch)" }
-}
-
 public enum RekordboxDeviceValidationOutcome: String, Codable, CaseIterable, Sendable {
     case untested
     case passed
@@ -199,11 +162,12 @@ public struct RekordboxDeviceValidationReport: Codable, Hashable, Sendable {
         note: String? = nil,
         date: Date = Date()
     ) {
+        let cleanedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         records[commandID] = RekordboxDeviceValidationRecord(
             commandID: commandID,
             outcome: outcome,
             testedAt: outcome == .untested ? nil : date,
-            note: note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            note: cleanedNote?.isEmpty == false ? cleanedNote : nil
         )
         updatedAt = date
     }
@@ -381,13 +345,6 @@ public struct RekordboxDeviceValidationStore: Sendable {
 
     public func fileURL(for target: RekordboxDeviceValidationTarget) -> URL {
         directory.appendingPathComponent("\(target.identifier).json")
-    }
-}
-
-private extension Optional where Wrapped == String {
-    var nilIfEmpty: String? {
-        guard let self, !self.isEmpty else { return nil }
-        return self
     }
 }
 
