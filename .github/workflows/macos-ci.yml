@@ -48,6 +48,9 @@ jobs:
           name: unit-test-log
           path: unit-test.log
 
+      - name: Live Supabase auth and RLS self-test
+        run: ./Scripts/cloud_self_test.sh | tee cloud-self-test.json
+
       - name: Generate remote mapping candidate
         run: |
           swift run MixPilotMappingPublisherCLI \
@@ -95,6 +98,7 @@ jobs:
             simulation-50-report.json
             simulation-250-report.json
             mapping-release-candidate.json
+            cloud-self-test.json
             unit-test.log
           if-no-files-found: warn
 
