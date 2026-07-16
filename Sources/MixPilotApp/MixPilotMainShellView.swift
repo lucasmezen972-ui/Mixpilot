@@ -12,6 +12,7 @@ enum MixPilotMainSurface: String, CaseIterable, Identifiable {
 struct MixPilotMainShellView: View {
     @ObservedObject var model: AppModel
     @Binding var surface: MixPilotMainSurface
+    @ObservedObject var cloud: MixPilotCloudCoordinator
 
     private var selectedSoftware: DJSoftware { DJSoftwareSelectionStore.current }
 
@@ -29,6 +30,13 @@ struct MixPilotMainShellView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            VStack {
+                MixPilotUpdateBanner(cloud: cloud)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 18)
+                Spacer()
+            }
+
             navigationDock
                 .padding(.horizontal, 18)
                 .padding(.bottom, 14)
@@ -36,6 +44,7 @@ struct MixPilotMainShellView: View {
         .background(Color.black)
         .animation(.snappy(duration: 0.3), value: surface)
         .animation(.snappy(duration: 0.25), value: model.selectedSection)
+        .animation(.snappy(duration: 0.3), value: cloud.availableUpdate?.id)
     }
 
     private var navigationDock: some View {
@@ -70,6 +79,24 @@ struct MixPilotMainShellView: View {
                 symbol: "play.circle.fill",
                 section: .live
             )
+
+            divider
+
+            Button {
+                cloud.checkNow()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: cloud.connectionState.isConnected ? "cloud.fill" : "cloud.slash.fill")
+                        .foregroundStyle(cloud.connectionState.isConnected ? .cyan : .orange)
+                    Text(cloud.connectionState.isConnected ? "CLOUD" : "HORS LIGNE")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .tracking(0.6)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .help("\(cloud.connectionState.label) — cliquer pour vérifier les mises à jour")
 
             divider
 
