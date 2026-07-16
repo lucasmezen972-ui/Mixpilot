@@ -11,12 +11,17 @@ let dependencies: [Package.Dependency] = [
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
     .executable(name: "MixPilotSimulatorCLI", targets: ["MixPilotSimulatorCLI"]),
+    .executable(name: "MixPilotMappingPublisherCLI", targets: ["MixPilotMappingPublisherCLI"]),
 ]
 
 var targets: [Target] = [
     .target(name: "MixPilotCore"),
     .executableTarget(
         name: "MixPilotSimulatorCLI",
+        dependencies: ["MixPilotCore"]
+    ),
+    .executableTarget(
+        name: "MixPilotMappingPublisherCLI",
         dependencies: ["MixPilotCore"]
     ),
     .testTarget(
