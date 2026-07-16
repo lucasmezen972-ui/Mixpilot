@@ -54,10 +54,9 @@ public struct MixPilotTelemetryEvent: Identifiable, Codable, Hashable, Sendable 
     ]
 
     private static func sanitizeToken(_ value: String) -> String {
-        String(value.unicodeScalars.filter {
-            CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-                .contains($0)
-        }).prefix(80))
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        let filtered = value.unicodeScalars.filter { allowed.contains($0) }
+        return String(String.UnicodeScalarView(filtered).prefix(80))
     }
 
     private static func sanitizePayload(_ payload: [String: String]) -> [String: String] {
