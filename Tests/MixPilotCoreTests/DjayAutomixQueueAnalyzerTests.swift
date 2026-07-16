@@ -39,10 +39,12 @@ func recognizesAutomixEvidence() {
     ]
 
     let report = DjayAutomixQueueAnalyzer().analyze(nodes: nodes)
+    let uniqueControlPaths = Set(report.controls.map(\.nodePath))
 
     #expect(report.automixContainers.count == 1)
     #expect(report.queueRows.count == 1)
-    #expect(report.controls.count == 2)
+    #expect(report.controls.count == 4)
+    #expect(uniqueControlPaths.count == 2)
     #expect(report.confidence >= 80)
     #expect(report.hasReadOnlyAutomixEvidence)
     #expect(report.validationStatus == .requiresDeviceValidation)
