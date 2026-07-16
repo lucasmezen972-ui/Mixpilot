@@ -48,6 +48,19 @@ public enum SeratoAction: String, Codable, CaseIterable, Identifiable, Sendable 
     public static func filter(deck: DeckID) -> Self { deck == .a ? .filterA : .filterB }
     public static func echo(deck: DeckID) -> Self { deck == .a ? .echoA : .echoB }
     public static func echoAmount(deck: DeckID) -> Self { deck == .a ? .echoAmountA : .echoAmountB }
+
+    /// Commands required by the current unattended runtime. Crossfader and Echo
+    /// are intentionally absent because every transition now has a volume-fader
+    /// fallback and unverified Serato XML targets must not be guessed.
+    public static let automaticPresetCriticalActions: Set<SeratoAction> = [
+        .playA, .playB, .pauseA, .pauseB,
+        .syncA, .syncB,
+        .loadA, .loadB,
+        .browserUp, .browserDown, .browserFocus,
+        .volumeA, .volumeB,
+        .lowEQA, .lowEQB,
+        .filterA, .filterB,
+    ]
 }
 
 public enum MIDIMessageKind: String, Codable, Sendable {
@@ -141,11 +154,10 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
         Self.automaticPresetCoverageRatio(defaults: .standard)
     }
 
-    /// A mapping is considered configured either when the corresponding Serato
-    /// reaction was confirmed manually, or when that action is present in the
-    /// versioned preset installed by MixPilot. These are deliberately separate
-    /// facts: preset installation is AUTOMATED_SUCCESS, while the actual Serato
-    /// reaction remains REQUIRES_SERATO_VALIDATION until hardware testing.
+    /// A mapping is considered configured either when all actions were confirmed
+    /// manually, or when every critical unattended-Live action is present in the
+    /// versioned preset installed by MixPilot. Preset installation remains an
+    /// AUTOMATED_SUCCESS, not proof of a real Serato reaction.
     public var completionRatio: Double {
         min(configuredRatio, max(confirmationRatio, automaticPresetCoverageRatio))
     }
@@ -165,10 +177,11 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 
     public static func automaticPresetCoverageRatio(defaults: UserDefaults) -> Double {
-        guard !SeratoAction.allCases.isEmpty else { return 1 }
+        let required = SeratoAction.automaticPresetCriticalActions
+        guard !required.isEmpty else { return 1 }
         let installed = Set(defaults.stringArray(forKey: automaticPresetActionsDefaultsKey) ?? [])
-        let covered = SeratoAction.allCases.filter { installed.contains($0.rawValue) }.count
-        return Double(covered) / Double(SeratoAction.allCases.count)
+        let covered = required.filter { installed.contains($0.rawValue) }.count
+        return Double(covered) / Double(required.count)
     }
 
     public static func manualConfirmationRatio(defaults: UserDefaults) -> Double {
