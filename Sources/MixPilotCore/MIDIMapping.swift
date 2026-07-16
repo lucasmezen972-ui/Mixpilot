@@ -93,6 +93,8 @@ public struct MIDIMessageMapping: Codable, Hashable, Sendable {
 public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     public static let currentSchemaVersion = 1
     public static let confirmationDefaultsKey = "MixPilotMappingConfirmationsV1"
+    public static let automaticPresetActionsDefaultsKey = "MixPilotAutomaticSeratoPresetActionsV1"
+    public static let automaticPresetVersionDefaultsKey = "MixPilotAutomaticSeratoPresetVersionV1"
 
     public let id: UUID
     public var schemaVersion: Int
@@ -132,18 +134,48 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var confirmationRatio: Double {
-        guard !SeratoAction.allCases.isEmpty else { return 1 }
-        let confirmations = UserDefaults.standard.dictionary(forKey: Self.confirmationDefaultsKey) as? [String: Bool] ?? [:]
-        let confirmed = SeratoAction.allCases.filter { action in
-            self[action] != nil && confirmations[action.rawValue] == true
-        }.count
-        return Double(confirmed) / Double(SeratoAction.allCases.count)
+        Self.manualConfirmationRatio(defaults: .standard)
     }
 
-    /// A mapping is considered ready only when the MIDI message exists and the user
-    /// has confirmed the corresponding Serato control actually reacted as expected.
+    public var automaticPresetCoverageRatio: Double {
+        Self.automaticPresetCoverageRatio(defaults: .standard)
+    }
+
+    /// A mapping is considered configured either when the corresponding Serato
+    /// reaction was confirmed manually, or when that action is present in the
+    /// versioned preset installed by MixPilot. These are deliberately separate
+    /// facts: preset installation is AUTOMATED_SUCCESS, while the actual Serato
+    /// reaction remains REQUIRES_SERATO_VALIDATION until hardware testing.
     public var completionRatio: Double {
-        min(configuredRatio, confirmationRatio)
+        min(configuredRatio, max(confirmationRatio, automaticPresetCoverageRatio))
+    }
+
+    public static func recordAutomaticPresetInstallation(
+        supportedActions: [SeratoAction],
+        version: String,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(supportedActions.map(\.rawValue).sorted(), forKey: automaticPresetActionsDefaultsKey)
+        defaults.set(version, forKey: automaticPresetVersionDefaultsKey)
+    }
+
+    public static func clearAutomaticPresetInstallation(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: automaticPresetActionsDefaultsKey)
+        defaults.removeObject(forKey: automaticPresetVersionDefaultsKey)
+    }
+
+    public static func automaticPresetCoverageRatio(defaults: UserDefaults) -> Double {
+        guard !SeratoAction.allCases.isEmpty else { return 1 }
+        let installed = Set(defaults.stringArray(forKey: automaticPresetActionsDefaultsKey) ?? [])
+        let covered = SeratoAction.allCases.filter { installed.contains($0.rawValue) }.count
+        return Double(covered) / Double(SeratoAction.allCases.count)
+    }
+
+    public static func manualConfirmationRatio(defaults: UserDefaults) -> Double {
+        guard !SeratoAction.allCases.isEmpty else { return 1 }
+        let confirmations = defaults.dictionary(forKey: confirmationDefaultsKey) as? [String: Bool] ?? [:]
+        let confirmed = SeratoAction.allCases.filter { confirmations[$0.rawValue] == true }.count
+        return Double(confirmed) / Double(SeratoAction.allCases.count)
     }
 
     public static var developmentDefault: MIDIMappingProfile {
