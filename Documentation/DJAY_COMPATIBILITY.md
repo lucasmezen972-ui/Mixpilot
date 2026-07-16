@@ -17,6 +17,19 @@ Conserver le moteur MixPilot existant et ajouter djay comme deuxième logiciel D
 - tests automatisés dédiés ;
 - build Release et DMG validés.
 
+## Validation automatisée
+
+Commit technique validé : `2468c6a4b779420af9e0d7fa96c0fbd1eefc61bc`.
+
+Run macOS CI : `29471160734`.
+
+- tests Swift : `AUTOMATED_SUCCESS` ;
+- simulation 50 titres : `SIMULATED_SUCCESS` ;
+- simulation 250 titres : `SIMULATED_SUCCESS` ;
+- application Release : `AUTOMATED_SUCCESS` ;
+- probe matériel Release : `AUTOMATED_SUCCESS` ;
+- DMG et checksum : `AUTOMATED_SUCCESS`.
+
 ## Limites actuelles
 
 - MixPilot ne remplit pas encore automatiquement la file Automix de djay ;
