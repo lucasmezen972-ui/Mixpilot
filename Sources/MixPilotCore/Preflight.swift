@@ -171,15 +171,14 @@ public struct PreflightEvaluator: Sendable {
             severity: .critical
         ))
 
-        let powerOK = input.connectedToPower || (input.batteryLevel ?? 0) >= 0.8
         items.append(PreflightItem(
             id: "power",
             title: "Alimentation",
             detail: input.connectedToPower
                 ? "Le Mac est branché au secteur."
-                : "Le Mac fonctionne sur batterie (\(Int((input.batteryLevel ?? 0) * 100)) %).",
-            status: powerOK ? (input.connectedToPower ? .passed : .warning) : .failed,
-            severity: input.connectedToPower ? .information : .critical
+                : "Le Mac fonctionne sur batterie (\(Int((input.batteryLevel ?? 0) * 100)) %). Le branchement secteur reste recommandé pour un long set.",
+            status: input.connectedToPower ? .passed : .warning,
+            severity: input.connectedToPower ? .information : .warning
         ))
 
         let emergencyOK = input.emergencyAudioReady && input.emergencyDuration >= 1_800
@@ -188,9 +187,9 @@ public struct PreflightEvaluator: Sendable {
             title: "Musique locale de secours",
             detail: emergencyOK
                 ? "Au moins 30 minutes de secours sont disponibles."
-                : "Ajoute au moins 30 minutes de musique locale.",
-            status: emergencyOK ? .passed : .failed,
-            severity: .critical
+                : "Aucune musique locale de secours. Le Live reste autorisé, mais une coupure Internet ne pourra pas être couverte automatiquement.",
+            status: emergencyOK ? .passed : .warning,
+            severity: emergencyOK ? .information : .warning
         ))
 
         let projectOK = input.projectPrepared && input.projectLocked && input.trackCount >= 2 &&
