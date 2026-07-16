@@ -85,6 +85,12 @@ targets.append(
         dependencies: ["MixPilotRemoteBridge"]
     )
 )
+targets.append(
+    .testTarget(
+        name: "MixPilotSystemTests",
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
+    )
+)
 #endif
 
 let package = Package(

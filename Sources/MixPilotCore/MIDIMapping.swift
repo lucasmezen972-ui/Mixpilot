@@ -48,6 +48,19 @@ public enum SeratoAction: String, Codable, CaseIterable, Identifiable, Sendable 
     public static func filter(deck: DeckID) -> Self { deck == .a ? .filterA : .filterB }
     public static func echo(deck: DeckID) -> Self { deck == .a ? .echoA : .echoB }
     public static func echoAmount(deck: DeckID) -> Self { deck == .a ? .echoAmountA : .echoAmountB }
+
+    /// Commands required by the current unattended runtime. Crossfader and Echo
+    /// are intentionally absent because every transition now has a volume-fader
+    /// fallback and unverified Serato XML targets must not be guessed.
+    public static let automaticPresetCriticalActions: Set<SeratoAction> = [
+        .playA, .playB, .pauseA, .pauseB,
+        .syncA, .syncB,
+        .loadA, .loadB,
+        .browserUp, .browserDown, .browserFocus,
+        .volumeA, .volumeB,
+        .lowEQA, .lowEQB,
+        .filterA, .filterB,
+    ]
 }
 
 public enum MIDIMessageKind: String, Codable, Sendable {
@@ -93,6 +106,8 @@ public struct MIDIMessageMapping: Codable, Hashable, Sendable {
 public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     public static let currentSchemaVersion = 1
     public static let confirmationDefaultsKey = "MixPilotMappingConfirmationsV1"
+    public static let automaticPresetActionsDefaultsKey = "MixPilotAutomaticSeratoPresetActionsV1"
+    public static let automaticPresetVersionDefaultsKey = "MixPilotAutomaticSeratoPresetVersionV1"
 
     public let id: UUID
     public var schemaVersion: Int
@@ -132,18 +147,48 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var confirmationRatio: Double {
-        guard !SeratoAction.allCases.isEmpty else { return 1 }
-        let confirmations = UserDefaults.standard.dictionary(forKey: Self.confirmationDefaultsKey) as? [String: Bool] ?? [:]
-        let confirmed = SeratoAction.allCases.filter { action in
-            self[action] != nil && confirmations[action.rawValue] == true
-        }.count
-        return Double(confirmed) / Double(SeratoAction.allCases.count)
+        Self.manualConfirmationRatio(defaults: .standard)
     }
 
-    /// A mapping is considered ready only when the MIDI message exists and the user
-    /// has confirmed the corresponding Serato control actually reacted as expected.
+    public var automaticPresetCoverageRatio: Double {
+        Self.automaticPresetCoverageRatio(defaults: .standard)
+    }
+
+    /// A mapping is considered configured either when all actions were confirmed
+    /// manually, or when every critical unattended-Live action is present in the
+    /// versioned preset installed by MixPilot. Preset installation remains an
+    /// AUTOMATED_SUCCESS, not proof of a real Serato reaction.
     public var completionRatio: Double {
-        min(configuredRatio, confirmationRatio)
+        min(configuredRatio, max(confirmationRatio, automaticPresetCoverageRatio))
+    }
+
+    public static func recordAutomaticPresetInstallation(
+        supportedActions: [SeratoAction],
+        version: String,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(supportedActions.map(\.rawValue).sorted(), forKey: automaticPresetActionsDefaultsKey)
+        defaults.set(version, forKey: automaticPresetVersionDefaultsKey)
+    }
+
+    public static func clearAutomaticPresetInstallation(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: automaticPresetActionsDefaultsKey)
+        defaults.removeObject(forKey: automaticPresetVersionDefaultsKey)
+    }
+
+    public static func automaticPresetCoverageRatio(defaults: UserDefaults) -> Double {
+        let required = SeratoAction.automaticPresetCriticalActions
+        guard !required.isEmpty else { return 1 }
+        let installed = Set(defaults.stringArray(forKey: automaticPresetActionsDefaultsKey) ?? [])
+        let covered = required.filter { installed.contains($0.rawValue) }.count
+        return Double(covered) / Double(required.count)
+    }
+
+    public static func manualConfirmationRatio(defaults: UserDefaults) -> Double {
+        guard !SeratoAction.allCases.isEmpty else { return 1 }
+        let confirmations = defaults.dictionary(forKey: confirmationDefaultsKey) as? [String: Bool] ?? [:]
+        let confirmed = SeratoAction.allCases.filter { confirmations[$0.rawValue] == true }.count
+        return Double(confirmed) / Double(SeratoAction.allCases.count)
     }
 
     public static var developmentDefault: MIDIMappingProfile {

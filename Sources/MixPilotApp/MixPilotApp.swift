@@ -71,6 +71,11 @@ struct MixPilotAutopilotApp: App {
             }
         }
 
+        Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
+            AutomaticSeratoMappingView(model: model)
+        }
+        .defaultSize(width: 1_020, height: 760)
+
         Window("Répétition des transitions", id: "rehearsal") {
             RehearsalWorkspace(model: model)
         }
@@ -107,6 +112,13 @@ private struct MixPilotWindowCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
+            Button("Installer le mapping Serato automatiquement") {
+                openWindow(id: "automatic-serato-mapping")
+            }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("Ouvrir la répétition des transitions") {
                 openWindow(id: "rehearsal")
             }
