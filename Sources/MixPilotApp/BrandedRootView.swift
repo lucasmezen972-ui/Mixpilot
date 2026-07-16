@@ -19,7 +19,7 @@ struct BrandedRootView: View {
                         Text("MixPilot")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                         Text("AUTOPILOT")
-                            .font(.caption2.black())
+                            .font(.caption2.weight(.black))
                             .tracking(1.5)
                             .foregroundStyle(.cyan)
                     }
