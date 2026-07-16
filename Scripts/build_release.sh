@@ -13,6 +13,7 @@ BUILD_DIR="$ROOT/build"
 BRANDING_DIR="$ROOT/Branding"
 VERSION="${MIXPILOT_VERSION:-0.1.0}"
 VERSION="${VERSION#v}"
+PUBLISHER="${MIXPILOT_PUBLISHER:-TRADIKOM BY LUCAS MEZEN}"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
@@ -54,10 +55,12 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.mixpilot.autopilot</string>
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleGetInfoString</key><string>$APP_NAME $VERSION — $PUBLISHER</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>MixPilot utilise l’audio uniquement pour surveiller le niveau et détecter les silences.</string>
