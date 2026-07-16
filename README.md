@@ -1,5 +1,7 @@
 # MixPilot Autopilot
 
+**TRADIKOM BY LUCAS MEZEN**
+
 MixPilot est une application native macOS qui prépare un set DJ, planifie les transitions, pilote Serato DJ Pro par MIDI, surveille le son et fournit des mécanismes de récupération et de secours.
 
 Une application iPhone séparée, **MixPilot Remote**, permet la surveillance et l’envoi d’intentions de haut niveau sur le réseau local. Le Mac reste toujours la source de vérité et le seul composant autorisé à contrôler Serato ou à envoyer du MIDI.
