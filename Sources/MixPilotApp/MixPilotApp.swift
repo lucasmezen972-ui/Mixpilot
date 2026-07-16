@@ -81,6 +81,11 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 650, height: 380)
 
+        Window("Laboratoire de compatibilité djay", id: "djay-compatibility-lab") {
+            DjayCompatibilityLabView()
+        }
+        .defaultSize(width: 940, height: 720)
+
         Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
@@ -131,6 +136,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Inspecter la compatibilité djay") {
+                openWindow(id: "djay-compatibility-lab")
+            }
+            .keyboardShortcut("j", modifiers: [.command, .shift])
 
             Divider()
 
