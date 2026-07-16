@@ -33,6 +33,11 @@ public struct SeratoEnvironmentProbe: Sendable {
                 return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
             case .djay:
                 return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
+            case .rekordbox:
+                return RekordboxApplicationMatcher.matches(
+                    name: application.localizedName,
+                    bundleIdentifier: application.bundleIdentifier
+                )
             }
         }
 
