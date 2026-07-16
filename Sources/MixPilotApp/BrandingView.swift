@@ -2,6 +2,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 enum MixPilotBrandAssets {
     static let logo: NSImage? = {
         guard let url = Bundle.main.url(forResource: "MixPilotLogo", withExtension: "jpg") else {
@@ -11,6 +12,7 @@ enum MixPilotBrandAssets {
     }()
 }
 
+@MainActor
 struct MixPilotBrandLogoView: View {
     var size: CGFloat = 170
     var cornerRadius: CGFloat = 24
@@ -42,6 +44,7 @@ struct MixPilotBrandLogoView: View {
     }
 }
 
+@MainActor
 struct MixPilotSidebarBrand: View {
     var body: some View {
         HStack(spacing: 10) {
