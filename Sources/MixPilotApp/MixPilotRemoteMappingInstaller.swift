@@ -3,6 +3,17 @@ import Foundation
 import MixPilotCore
 import MixPilotMIDI
 
+enum MixPilotRemoteMappingInstallerError: Error, LocalizedError {
+    case persistenceVerificationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .persistenceVerificationFailed:
+            "Le preset distant écrit sur le disque n’a pas pu être vérifié."
+        }
+    }
+}
+
 struct MixPilotRemoteMappingInstallResult: Sendable {
     let releaseID: UUID
     let mappingVersion: Int
@@ -74,7 +85,7 @@ actor MixPilotRemoteMappingInstaller {
         let presetData = Data(validated.presetCSV.utf8)
         try presetData.write(to: presetURL, options: .atomic)
         guard try Data(contentsOf: presetURL) == presetData else {
-            throw RekordboxMappingExportError.verificationFailed
+            throw MixPilotRemoteMappingInstallerError.persistenceVerificationFailed
         }
 
         let state = MixPilotRemoteMappingLocalState(
@@ -116,6 +127,9 @@ actor MixPilotRemoteMappingInstaller {
             withIntermediateDirectories: true
         )
         try presetData.write(to: presetURL, options: .atomic)
+        guard try Data(contentsOf: presetURL) == presetData else {
+            throw MixPilotRemoteMappingInstallerError.persistenceVerificationFailed
+        }
 
         let currentState = try? loadState()
         try? FileManager.default.removeItem(at: rootDirectory.appendingPathComponent("state.json"))
