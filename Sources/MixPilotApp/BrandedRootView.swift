@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BrandedRootView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,6 +19,11 @@ struct BrandedRootView: View {
                 }
 
                 Spacer()
+
+                Button("INSTALLER LE MAPPING SERATO") {
+                    openWindow(id: "automatic-serato-mapping")
+                }
+                .buttonStyle(.borderedProminent)
 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(model.isLiveRunning ? "AUTOPILOT ACTIF" : "PRÊT")
