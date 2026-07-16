@@ -44,6 +44,23 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum DJSoftwareSelectionStore {
+    public static let defaultsKey = "MixPilotSelectedDJSoftware"
+
+    public static var current: DJSoftware {
+        get {
+            guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
+                  let software = DJSoftware(rawValue: rawValue) else {
+                return .serato
+            }
+            return software
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
+        }
+    }
+}
+
 public enum DJExecutionMode: String, Codable, CaseIterable, Sendable {
     case directDeckControl
     case automixQueue
