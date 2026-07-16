@@ -6,7 +6,7 @@ struct RekordboxDeviceValidationTests {
     @Test func semanticVersionsCompareNumerically() {
         #expect(RekordboxSemanticVersion("7.2.3")! > RekordboxSemanticVersion("7.1.9")!)
         #expect(RekordboxSemanticVersion("6.7.4 build 123") == RekordboxSemanticVersion(major: 6, minor: 7, patch: 4))
-        #expect(RekordboxSemanticVersion("7") == RekordboxSemanticVersion(major: 7))
+        #expect(RekordboxSemanticVersion("7.0") == RekordboxSemanticVersion(major: 7, minor: 0, patch: 0))
     }
 
     @Test func planIncludesAdvancedCommandsAndStableSignature() throws {
