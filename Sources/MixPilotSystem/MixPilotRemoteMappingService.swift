@@ -19,6 +19,7 @@ public actor MixPilotRemoteMappingService {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let installationID: UUID
+    private let provenanceVerifier = MixPilotMappingProvenanceVerifier()
 
     public init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -70,14 +71,20 @@ public actor MixPilotRemoteMappingService {
                 URLQueryItem(name: "limit", value: "25")
             ]
         )
-        return releases.first {
-            $0.isCompatible(
-                currentAppBuild: currentAppBuild,
-                rekordboxVersion: rekordboxVersion,
-                controllerName: controllerName,
-                installationID: installationID
+
+        for release in releases where release.isCompatible(
+            currentAppBuild: currentAppBuild,
+            rekordboxVersion: rekordboxVersion,
+            controllerName: controllerName,
+            installationID: installationID
+        ) {
+            try await verifyImmutableProvenance(
+                for: release,
+                accessToken: authSession.accessToken
             )
+            return release
         }
+        return nil
     }
 
     public func activeCompatibilityOverride(
@@ -149,6 +156,42 @@ public actor MixPilotRemoteMappingService {
                     updatedAt: Date()
                 )
             ]
+        )
+    }
+
+    private func verifyImmutableProvenance(
+        for release: MixPilotRemoteMappingRelease,
+        accessToken: String
+    ) async throws {
+        let rows: [MixPilotMappingProvenance] = try await performRequest(
+            path: "rest/v1/mixpilot_mapping_provenance",
+            method: "GET",
+            accessToken: accessToken,
+            queryItems: [
+                URLQueryItem(name: "id", value: "eq.\(release.id.uuidString)"),
+                URLQueryItem(name: "limit", value: "1")
+            ]
+        )
+        guard let provenance = rows.first else {
+            throw MixPilotMappingProvenanceError.releaseMismatch
+        }
+
+        let manifestURL = try MixPilotMappingProvenanceVerifier.rawManifestURL(for: provenance)
+        var request = URLRequest(url: manifestURL)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (manifestData, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else {
+            throw MixPilotMappingProvenanceError.malformedManifest
+        }
+        _ = try provenanceVerifier.validate(
+            release: release,
+            provenance: provenance,
+            manifestData: manifestData
         )
     }
 
