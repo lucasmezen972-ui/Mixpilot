@@ -1,6 +1,13 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+let dependencies: [Package.Dependency] = [
+    .package(
+        url: "https://github.com/supabase/supabase-swift.git",
+        exact: "2.46.0"
+    ),
+]
+
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
     .executable(name: "MixPilotSimulatorCLI", targets: ["MixPilotSimulatorCLI"]),
@@ -31,13 +38,17 @@ targets.append(
 targets.append(
     .target(
         name: "MixPilotSystem",
-        dependencies: ["MixPilotCore"],
+        dependencies: [
+            "MixPilotCore",
+            .product(name: "Supabase", package: "supabase-swift"),
+        ],
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("ApplicationServices"),
             .linkedFramework("AVFoundation"),
             .linkedFramework("Network"),
             .linkedFramework("IOKit"),
+            .linkedFramework("Security"),
         ]
     )
 )
@@ -98,5 +109,6 @@ let package = Package(
     defaultLocalization: "fr",
     platforms: [.macOS(.v14)],
     products: products,
+    dependencies: dependencies,
     targets: targets
 )
