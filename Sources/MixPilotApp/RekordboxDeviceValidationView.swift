@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import MixPilotCore
+import MixPilotSystem
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -275,7 +276,8 @@ struct RekordboxDeviceValidationView: View {
                     .foregroundStyle(.white.opacity(0.36))
                 Spacer()
                 Text("\(Int(session.completionRatio * 100)) %")
-                    .font(.caption.bold().monospacedDigit())
+                    .font(.caption.bold())
+                    .monospacedDigit()
                     .foregroundStyle(.cyan)
             }
             ProgressView(value: session.completionRatio).tint(.cyan)
@@ -487,29 +489,29 @@ struct RekordboxDeviceValidationView: View {
 
     private func scopeText(_ scope: RekordboxMIDIScope) -> String {
         switch scope {
-        case .global: "Global"
-        case .deckA: "Deck 1"
-        case .deckB: "Deck 2"
+        case .global: return "Global"
+        case .deckA: return "Deck 1"
+        case .deckB: return "Deck 2"
         }
     }
 
     private func outcomeSymbol(_ outcome: RekordboxDeviceValidationOutcome, available: Bool) -> String {
         guard available else { return "nosign" }
         switch outcome {
-        case .untested: "circle.dotted"
-        case .passed: "checkmark.circle.fill"
-        case .failed: "xmark.octagon.fill"
-        case .skipped: "minus.circle.fill"
+        case .untested: return "circle.dotted"
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.octagon.fill"
+        case .skipped: return "minus.circle.fill"
         }
     }
 
     private func outcomeColor(_ outcome: RekordboxDeviceValidationOutcome, available: Bool) -> Color {
-        guard available else { return .secondary }
+        guard available else { return Color.secondary }
         switch outcome {
-        case .untested: .orange
-        case .passed: .green
-        case .failed: .red
-        case .skipped: .secondary
+        case .untested: return Color.orange
+        case .passed: return Color.green
+        case .failed: return Color.red
+        case .skipped: return Color.secondary
         }
     }
 }
