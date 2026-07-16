@@ -10,108 +10,89 @@ struct BrandedRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 15) {
-                MixPilotBrandLogoView(size: 60, cornerRadius: 15)
-                    .shadow(color: .purple.opacity(0.22), radius: 14, y: 6)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("MixPilot")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                        Text("AUTOPILOT")
-                            .font(.caption2.weight(.black))
-                            .tracking(1.5)
-                            .foregroundStyle(.cyan)
-                    }
-                    Text("by Lucas Mezen • Serato, djay et rekordbox")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                softwarePill
-
-                if selectedSoftware == .rekordbox {
-                    Button {
-                        openWindow(id: "rekordbox-hub")
-                    } label: {
-                        Label("REKORDBOX HUB", systemImage: "waveform.badge.magnifyingglass")
-                            .font(.caption.bold())
-                            .tracking(0.7)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 9)
-                    }
-                    .buttonStyle(.plain)
-                    .background(
-                        LinearGradient(
-                            colors: [.purple.opacity(0.82), .blue.opacity(0.82)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 11)
-                    )
-                } else {
-                    Button {
-                        openWindow(id: selectedSoftware == .serato
-                            ? "automatic-serato-mapping"
-                            : "dj-software")
-                    } label: {
-                        Label(
-                            selectedSoftware == .serato ? "CONFIGURER SERATO" : "CONFIGURER LE BACKEND",
-                            systemImage: "slider.horizontal.3"
-                        )
-                        .font(.caption.bold())
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 9)
-                    }
-                    .buttonStyle(.plain)
-                    .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
-                }
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Label(
-                        model.isLiveRunning ? "AUTOPILOT ACTIF" : "SYSTÈME PRÊT",
-                        systemImage: model.isLiveRunning ? "bolt.circle.fill" : "checkmark.circle.fill"
-                    )
-                    .font(.caption.bold())
-                    .foregroundStyle(model.isLiveRunning ? .green : .secondary)
-                    Text(model.runtimeStatus)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: 190, alignment: .trailing)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 11)
-            .background(
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    LinearGradient(
-                        colors: [.purple.opacity(0.075), .blue.opacity(0.055), .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                }
-            )
-
-            Divider()
-
+            workspaceHeader
+            Rectangle()
+                .fill(.white.opacity(0.09))
+                .frame(height: 1)
             AdvancedContentView(model: model)
         }
+        .background(MixPilotPremiumBackground())
+        .preferredColorScheme(.dark)
     }
 
-    private var softwarePill: some View {
-        Label(selectedSoftware.displayName.uppercased(), systemImage: softwareSymbol)
-            .font(.caption2.bold())
-            .tracking(0.6)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(.quaternary.opacity(0.55), in: Capsule())
-            .onTapGesture { openWindow(id: "dj-software") }
-            .help("Changer de logiciel DJ")
+    private var workspaceHeader: some View {
+        HStack(spacing: 14) {
+            MixPilotBrandLogoView(size: 48, cornerRadius: 13)
+                .shadow(color: .purple.opacity(0.25), radius: 14, y: 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
+                    Text("MIXPILOT")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .tracking(0.7)
+                    Text("AUTOPILOT")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .tracking(1.5)
+                        .foregroundStyle(.cyan)
+                }
+                Text(model.selectedSection.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.46))
+            }
+
+            Spacer()
+
+            Button {
+                openWindow(id: "dj-software")
+            } label: {
+                MixPilotStatusBadge(
+                    title: selectedSoftware.displayName,
+                    symbol: softwareSymbol,
+                    accent: .purple
+                )
+            }
+            .buttonStyle(.plain)
+
+            if selectedSoftware == .rekordbox {
+                Button {
+                    openWindow(id: "rekordbox-hub")
+                } label: {
+                    Label("REKORDBOX HUB", systemImage: "waveform.badge.magnifyingglass")
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+            } else if selectedSoftware == .serato {
+                Button {
+                    openWindow(id: "automatic-serato-mapping")
+                } label: {
+                    Label("CONFIGURER SERATO", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+            }
+
+            VStack(alignment: .trailing, spacing: 3) {
+                MixPilotStatusBadge(
+                    title: model.isLiveRunning ? "Autopilot actif" : "Système prêt",
+                    symbol: model.isLiveRunning ? "bolt.circle.fill" : "checkmark.circle.fill",
+                    accent: model.isLiveRunning ? .green : .cyan
+                )
+                Text(model.runtimeStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+                    .frame(maxWidth: 210, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.16))
+        .overlay(alignment: .bottom) {
+            LinearGradient(
+                colors: [.purple.opacity(0.28), .cyan.opacity(0.16), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 1)
+        }
     }
 
     private var softwareSymbol: String {
