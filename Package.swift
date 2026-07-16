@@ -88,7 +88,7 @@ targets.append(
 targets.append(
     .testTarget(
         name: "MixPilotSystemTests",
-        dependencies: ["MixPilotCore", "MixPilotSystem"]
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
     )
 )
 #endif
