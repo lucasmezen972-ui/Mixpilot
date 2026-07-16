@@ -3,6 +3,7 @@ import Foundation
 public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
     case serato
     case djay
+    case rekordbox
 
     public var id: String { rawValue }
 
@@ -10,6 +11,7 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .serato: "Serato DJ Pro"
         case .djay: "djay Pro"
+        case .rekordbox: "rekordbox"
         }
     }
 
@@ -17,6 +19,7 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .serato: "Serato"
         case .djay: "djay"
+        case .rekordbox: "rekordbox"
         }
     }
 
@@ -38,6 +41,15 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
                 customMIDILearn: true,
                 detailedDeckAutomation: false,
                 preferredExecutionMode: .automixQueue,
+                validationStatus: .requiresDeviceValidation
+            )
+        case .rekordbox:
+            DJSoftwareCapabilities(
+                spotifyLibrary: true,
+                builtInAutomix: false,
+                customMIDILearn: true,
+                detailedDeckAutomation: false,
+                preferredExecutionMode: .directDeckControl,
                 validationStatus: .requiresDeviceValidation
             )
         }
