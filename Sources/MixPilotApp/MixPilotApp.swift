@@ -81,6 +81,11 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 650, height: 380)
 
+        Window("Rekordbox Hub", id: "rekordbox-hub") {
+            RekordboxHubView(appModel: model)
+        }
+        .defaultSize(width: 1_320, height: 880)
+
         Window("Contrôle rekordbox", id: "rekordbox-compatibility") {
             RekordboxCompatibilityLabView(appModel: model)
         }
@@ -141,6 +146,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Ouvrir Rekordbox Hub") {
+                openWindow(id: "rekordbox-hub")
+            }
+            .keyboardShortcut("h", modifiers: [.command, .shift])
 
             Button("Contrôler et inspecter rekordbox") {
                 openWindow(id: "rekordbox-compatibility")
