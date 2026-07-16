@@ -12,9 +12,9 @@ struct AutomaticSeratoMappingView: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Mapping Serato automatique")
+                        Text("Support Serato automatique")
                             .font(.largeTitle.bold())
-                        Text("MixPilot ferme Serato, sauvegarde les anciens fichiers, installe son preset puis relance Serato. Aucun bouton à mapper ni à valider un par un.")
+                        Text("Un seul clic : MixPilot publie son contrôleur MIDI, sauvegarde les anciens fichiers, installe le preset et relance Serato. Aucun bouton à mapper ni à valider un par un.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -36,7 +36,7 @@ struct AutomaticSeratoMappingView: View {
                         }
 
                         HStack {
-                            Button(session.isWorking ? "Installation en cours…" : "INSTALLER AUTOMATIQUEMENT") {
+                            Button(session.isWorking ? "Configuration en cours…" : "INSTALLER ET RELANCER SERATO") {
                                 session.install(profile: model.mappingProfile) {
                                     model.resetDefaultMapping()
                                     model.refreshEnvironment()
@@ -47,8 +47,9 @@ struct AutomaticSeratoMappingView: View {
                             .controlSize(.large)
                             .disabled(session.isWorking)
 
-                            Button("Vérifier") {
+                            Button("Revérifier") {
                                 session.refresh(profile: model.mappingProfile)
+                                model.refreshEnvironment()
                                 model.evaluatePreflight()
                             }
                             .disabled(session.isWorking)
@@ -75,22 +76,56 @@ struct AutomaticSeratoMappingView: View {
                     .padding(8)
                 }
 
+                GroupBox("Diagnostic du contrôleur virtuel") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        statusRow(
+                            "Entrée CoreMIDI",
+                            value: session.midiDiagnostic?.sourcePublished == true ? "PUBLIÉE" : "ABSENTE"
+                        )
+                        statusRow(
+                            "Sortie CoreMIDI",
+                            value: session.midiDiagnostic?.destinationPublished == true ? "PUBLIÉE" : "ABSENTE"
+                        )
+                        statusRow(
+                            "Nom d’entrée",
+                            value: session.midiDiagnostic?.expectedSourceName ?? "MixPilot Virtual Controller"
+                        )
+                        statusRow("Version Serato détectée", value: session.detectedSeratoVersion)
+                        statusRow(
+                            "Relance automatique",
+                            value: session.seratoRelaunched ? "CONFIRMÉE" : "NON EXÉCUTÉE"
+                        )
+                        if let diagnostic = session.midiDiagnostic,
+                           !diagnostic.configurationWarnings.isEmpty {
+                            Divider()
+                            ForEach(diagnostic.configurationWarnings, id: \.self) { warning in
+                                Label(warning, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(8)
+                }
+
                 GroupBox("Ce que MixPilot fait réellement") {
                     VStack(alignment: .leading, spacing: 10) {
+                        validationLine("Publie une entrée et une sortie CoreMIDI stables", symbol: "cable.connector")
                         validationLine("Crée `~/Music/_Serato_/MIDI/Xml` si nécessaire", symbol: "folder.badge.plus")
                         validationLine("Sauvegarde `AUTO_SAVE.xml` et tout ancien preset MixPilot", symbol: "externaldrive.badge.timemachine")
                         validationLine("Installe `MixPilot Autopilot.xml` et `AUTO_SAVE.xml`", symbol: "doc.badge.gearshape")
-                        validationLine("Vérifie que les deux fichiers sont identiques et que le XML est valide", symbol: "checkmark.shield")
-                        validationLine("Relance Serato automatiquement", symbol: "arrow.clockwise")
+                        validationLine("Vérifie que les fichiers sont identiques et que le XML est valide", symbol: "checkmark.shield")
+                        validationLine("Ferme puis relance Serato après publication du contrôleur", symbol: "arrow.clockwise")
                     }
                     .padding(8)
                 }
 
                 GroupBox("Statut de confiance") {
                     VStack(alignment: .leading, spacing: 10) {
+                        statusRow("Publication CoreMIDI", value: session.midiDiagnostic?.isReadyForSerato == true ? "AUTOMATED_SUCCESS" : "FAILED")
                         statusRow("Installation des fichiers", value: "AUTOMATED_SUCCESS")
                         statusRow("Structure XML Serato", value: "SOURCED_FROM_REAL_MAPPINGS")
-                        statusRow("Réaction réelle dans Serato", value: "REQUIRES_SERATO_VALIDATION")
+                        statusRow("Détection du contrôleur par Serato", value: "REQUIRES_SERATO_VALIDATION")
                         statusRow("Crossfader et sélection exacte de l’Echo", value: "BLOCKED_BY_PLATFORM")
                         Text("Le moteur ne dépend plus du crossfader : chaque transition dispose aussi d’un fondu par les volumes des deux decks.")
                             .font(.caption)
@@ -118,13 +153,10 @@ struct AutomaticSeratoMappingView: View {
                     }
                 }
 
-                DisclosureGroup("Mapping manuel de secours") {
-                    Text("L’ancien assistant reste disponible dans la rubrique Mapping MIDI, mais il n’est plus nécessaire pour installer le preset automatique.")
+                DisclosureGroup("Dépannage avancé") {
+                    Text("Le mapping manuel reste présent dans le code comme solution de secours, mais il n’est pas demandé dans le parcours normal.")
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
-                    Button("Ouvrir l’assistant manuel") {
-                        model.selectedSection = .mapping
-                    }
                 }
             }
             .padding(30)
@@ -137,6 +169,9 @@ struct AutomaticSeratoMappingView: View {
     }
 
     private var stateSymbol: String {
+        if session.midiDiagnostic?.isReadyForSerato == false {
+            return "cable.connector.slash"
+        }
         switch session.installationState {
         case .installed: "checkmark.circle.fill"
         case .notInstalled: "arrow.down.circle"
@@ -150,10 +185,13 @@ struct AutomaticSeratoMappingView: View {
     }
 
     private func statusRow(_ name: String, value: String) -> some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             Text(name)
             Spacer()
-            Text(value).font(.caption.bold()).monospaced()
+            Text(value)
+                .font(.caption.bold())
+                .monospaced()
+                .multilineTextAlignment(.trailing)
         }
     }
 }
