@@ -18,17 +18,20 @@ Le contrôle est volontairement séparé en deux canaux :
 - lecture générique des lignes visibles de playlist ;
 - préflight adapté au mode de contrôle direct ;
 - centre de contrôle rekordbox accessible avec `⇧⌘K` ;
+- générateur de preset MIDI rekordbox accessible avec `⇧⌘B` ;
+- compilation d’un `.midi.csv` à 15 colonnes pour `MixPilot Virtual Controller` ;
+- validation de l’en-tête, des commandes, des codes hexadécimaux et des doublons MIDI ;
 - inspection des contrôles Accessibilité et de leurs actions disponibles ;
 - exécution protégée de `AXPress`, `AXConfirm`, `AXIncrement`, `AXDecrement` et `AXShowMenu` ;
 - commandes MIDI de test pour charger, lire, mettre en pause et synchroniser les decks A et B ;
 - navigation dans la bibliothèque par MIDI ;
 - test du crossfader et des volumes ;
 - export JSON contenant les lignes et les contrôles actionnables ;
-- tests du matcher, des capacités, du préflight et de la politique de sécurité.
+- tests du matcher, des capacités, du préflight, du compilateur MIDI et de la politique de sécurité.
 
 ## Contrôle Live
 
-Le moteur Live utilisait déjà des intentions de haut niveau indépendantes de l’interface :
+Le moteur Live utilise des intentions de haut niveau indépendantes de l’interface :
 
 - focus navigateur ;
 - titre suivant ;
@@ -40,7 +43,11 @@ Le moteur Live utilisait déjà des intentions de haut niveau indépendantes de 
 - crossfader ;
 - transitions automatisées.
 
-Lorsque rekordbox est sélectionné, les mêmes messages sont envoyés par le port `MixPilot Virtual Controller`. rekordbox doit apprendre ces messages avec son système MIDI Learn avant que le préflight puisse être considéré comme validé.
+Lorsque rekordbox est sélectionné, les mêmes messages sont envoyés par le port `MixPilot Virtual Controller`.
+
+MixPilot peut maintenant générer un preset importable dans la fenêtre MIDI officielle de rekordbox. Le preset couvre uniquement les commandes dont les noms ont été retrouvés dans les catalogues rekordbox 6.6.3 et 6.7.4 : `PlayPause`, `Cue`, `Sync`, `Load`, `BrowseUp`, `BrowseDown`, `ChannelFader`, `CrossFader`, les trois EQ, `TempoSlider`, `BeatLoop4` et `ReloopExit`.
+
+Le focus navigateur, le filtre et l’Echo restent hors preset automatique tant qu’un nom de commande stable n’est pas confirmé.
 
 ## Actions Accessibilité
 
@@ -63,7 +70,7 @@ Une action n’est exécutée que si :
 
 ## Modification de bibliothèque
 
-Les contrôles visibles de rekordbox peuvent maintenant être actionnés depuis MixPilot, notamment lorsqu’ils exposent une action Accessibilité standard.
+Les contrôles visibles de rekordbox peuvent être actionnés depuis MixPilot lorsqu’ils exposent une action Accessibilité standard.
 
 La modification directe de la base chiffrée rekordbox n’est pas activée dans ce lot. Une future couche hors Live devra obligatoirement :
 
@@ -79,22 +86,26 @@ Pendant une prestation, MixPilot ne modifiera jamais directement la base de donn
 ## Parcours de validation
 
 1. Installer et lancer rekordbox sur le Mac cible.
-2. Ouvrir une playlist de test.
-3. Dans MixPilot, choisir `rekordbox` comme logiciel DJ.
-4. Accorder la permission Accessibilité.
-5. Ouvrir `Fenêtre → Contrôler et inspecter rekordbox` ou utiliser `⇧⌘K`.
-6. Cliquer sur `Inspecter rekordbox`.
-7. Armer les actions uniquement sur une playlist de test.
-8. Tester les commandes MIDI une par une : Load, Play, Pause, Sync et navigation.
-9. Sélectionner un contrôle Accessibilité non destructif et tester son action.
-10. Exporter le JSON de diagnostic.
-11. Désarmer les actions avant de quitter le laboratoire.
-12. Ne pas activer le Live tant que chaque commande critique n’a pas été confirmée dans rekordbox.
+2. Ouvrir `Fenêtre → Générer le mapping rekordbox` ou utiliser `⇧⌘B`.
+3. Exporter `MixPilot Virtual Controller.midi.csv`.
+4. Dans rekordbox, passer en mode PERFORMANCE et ouvrir la fenêtre MIDI.
+5. Sélectionner `MixPilot Virtual Controller`, cliquer sur `IMPORT` et choisir le fichier exporté.
+6. Ouvrir une playlist de test.
+7. Dans MixPilot, choisir `rekordbox` comme logiciel DJ.
+8. Accorder la permission Accessibilité.
+9. Ouvrir `Fenêtre → Contrôler et inspecter rekordbox` ou utiliser `⇧⌘K`.
+10. Cliquer sur `Inspecter rekordbox`.
+11. Armer les actions uniquement sur une playlist de test.
+12. Tester les commandes MIDI une par une : Load, PlayPause, Sync, navigation, volumes et EQ.
+13. Sélectionner un contrôle Accessibilité non destructif et tester son action.
+14. Exporter le JSON de diagnostic.
+15. Désarmer les actions avant de quitter le laboratoire.
+16. Ne pas activer le Live tant que chaque commande critique n’a pas été confirmée dans rekordbox.
 
 ## Capacités déclarées
 
 - bibliothèque Spotify : prise en charge prévue à partir des versions rekordbox compatibles, validation appareil requise ;
-- MIDI Learn : intégré au parcours de contrôle, validation appareil requise ;
+- MIDI Learn : preset généré et importable, réaction réelle à valider ;
 - contrôle réel des decks : code actif, validation appareil requise ;
 - actions sur l’interface : code actif avec armement et vérification d’empreinte ;
 - Automix : non utilisé comme mode d’exécution par défaut ;
@@ -104,7 +115,10 @@ Pendant une prestation, MixPilot ne modifiera jamais directement la base de donn
 ## Limites connues
 
 - certains noms internes historiques contiennent encore `Serato`, même lorsque le moteur agit sur rekordbox ;
-- aucun preset MIDI rekordbox n’est encore installé automatiquement ;
+- `PlayPause` est une bascule et nécessite une confirmation de l’état réel du deck ;
+- les catalogues de commandes observés sont ceux de rekordbox 6.6.3 et 6.7.4 ;
+- le preset doit être validé sur rekordbox 7.2.3 ou ultérieur lorsqu’il est utilisé avec Spotify ;
+- les jog wheels, le scratch, les faders 14 bits et le retour LED ne sont pas générés ;
 - l’ordre réel des colonnes de playlist doit encore être confirmé ;
 - la confirmation du titre chargé sur chaque deck doit être testée sur l’interface réelle ;
 - les actions Accessibilité dépendent de ce que la version installée expose ;
@@ -113,7 +127,7 @@ Pendant une prestation, MixPilot ne modifiera jamais directement la base de donn
 
 ## Étapes suivantes
 
-1. créer un profil MIDI rekordbox séparé et confirmé ;
+1. importer le preset sur le Mac cible et confirmer chaque commande ;
 2. mémoriser les contrôles Accessibilité validés par version ;
 3. ajouter l’import JSON/XML multi-schémas ;
 4. confirmer les titres et les decks après chaque chargement ;
