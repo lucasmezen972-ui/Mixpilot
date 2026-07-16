@@ -1,4 +1,5 @@
 #if os(macOS)
+import MixPilotCore
 import SwiftUI
 
 enum MixPilotMainSurface: String, CaseIterable, Identifiable {
@@ -11,6 +12,8 @@ enum MixPilotMainSurface: String, CaseIterable, Identifiable {
 struct MixPilotMainShellView: View {
     @ObservedObject var model: AppModel
     @Binding var surface: MixPilotMainSurface
+
+    private var selectedSoftware: DJSoftware { DJSoftwareSelectionStore.current }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -77,7 +80,7 @@ struct MixPilotMainShellView: View {
                     .shadow(color: model.isLiveRunning ? .green.opacity(0.75) : .cyan.opacity(0.65), radius: 8)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(model.isLiveRunning ? "AUTOPILOT ACTIF" : model.selectedDJSoftware.shortName.uppercased())
+                    Text(model.isLiveRunning ? "AUTOPILOT ACTIF" : selectedSoftware.shortName.uppercased())
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(0.7)
                     Text(model.runtimeStatus)
