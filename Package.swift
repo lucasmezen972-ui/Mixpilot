@@ -45,6 +45,7 @@ targets.append(
         name: "MixPilotSystem",
         dependencies: [
             "MixPilotCore",
+            "MixPilotMIDI",
             .product(name: "Supabase", package: "supabase-swift"),
         ],
         linkerSettings: [
