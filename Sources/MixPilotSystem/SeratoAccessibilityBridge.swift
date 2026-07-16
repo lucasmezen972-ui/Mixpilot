@@ -2,6 +2,7 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import Foundation
+import MixPilotCore
 
 public struct SeratoWindowObservation: Hashable, Sendable {
     public var isRunning: Bool
@@ -72,7 +73,7 @@ public final class SeratoAccessibilityBridge {
     }
 
     public func activateSerato() throws {
-        guard let application = seratoApplication() else {
+        guard let application = application(for: .serato) else {
             throw SeratoAccessibilityError.seratoNotRunning
         }
         guard application.activate(options: [.activateAllWindows]) else {
@@ -80,8 +81,16 @@ public final class SeratoAccessibilityBridge {
         }
     }
 
-    public func observe(maxDepth: Int = 5, maximumStrings: Int = 250) -> SeratoWindowObservation {
-        guard let application = seratoApplication() else {
+    public func activate(_ software: DJSoftware) -> Bool {
+        application(for: software)?.activate(options: [.activateAllWindows]) == true
+    }
+
+    public func observe(
+        software: DJSoftware = .serato,
+        maxDepth: Int = 5,
+        maximumStrings: Int = 250
+    ) -> SeratoWindowObservation {
+        guard let application = application(for: software) else {
             return SeratoWindowObservation(
                 isRunning: false,
                 processIdentifier: nil,
@@ -121,8 +130,11 @@ public final class SeratoAccessibilityBridge {
         )
     }
 
-    public func libraryRows(maxRows: Int = 500) -> [SeratoLibraryRow] {
-        guard AXIsProcessTrusted(), let application = seratoApplication() else { return [] }
+    public func libraryRows(
+        software: DJSoftware = .serato,
+        maxRows: Int = 500
+    ) -> [SeratoLibraryRow] {
+        guard AXIsProcessTrusted(), let application = application(for: software) else { return [] }
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
         guard let window = preferredWindow(for: appElement) else { return [] }
 
@@ -136,11 +148,16 @@ public final class SeratoAccessibilityBridge {
         }
     }
 
-    private func seratoApplication() -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first {
-            let name = $0.localizedName?.lowercased() ?? ""
-            let bundle = $0.bundleIdentifier?.lowercased() ?? ""
-            return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+    private func application(for software: DJSoftware) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { application in
+            let name = application.localizedName?.lowercased() ?? ""
+            let bundle = application.bundleIdentifier?.lowercased() ?? ""
+            switch software {
+            case .serato:
+                return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+            case .djay:
+                return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
+            }
         }
     }
 
