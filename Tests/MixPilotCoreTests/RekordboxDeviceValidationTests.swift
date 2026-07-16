@@ -77,7 +77,8 @@ struct RekordboxDeviceValidationTests {
 
         let store = RekordboxDeviceValidationStore(directory: directory)
         let url = try store.save(report)
-        let loaded = try #require(store.load(for: plan.target))
+        let loadedOptional = try store.load(for: plan.target)
+        let loaded = try #require(loadedOptional)
 
         #expect(FileManager.default.fileExists(atPath: url.path))
         #expect(loaded.target == report.target)
