@@ -15,6 +15,7 @@ struct MixPilotMainShellView: View {
     @ObservedObject var cloud: MixPilotCloudCoordinator
 
     private var selectedSoftware: DJSoftware { DJSoftwareSelectionStore.current }
+    private var compatibilityPaused: Bool { cloud.activeCompatibilityOverride?.blockLive == true }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -42,6 +43,11 @@ struct MixPilotMainShellView: View {
             navigationDock
                 .padding(.horizontal, 18)
                 .padding(.bottom, 14)
+
+            if compatibilityPaused {
+                compatibilityPauseOverlay
+                    .zIndex(100)
+            }
         }
         .background(Color.black)
         .animation(.snappy(duration: 0.3), value: surface)
@@ -50,6 +56,64 @@ struct MixPilotMainShellView: View {
         .animation(.snappy(duration: 0.3), value: cloud.availableMapping?.id)
         .animation(.snappy(duration: 0.3), value: cloud.activeCompatibilityOverride?.id)
         .animation(.snappy(duration: 0.3), value: cloud.stagedMapping?.mappingVersion)
+        .onChange(of: compatibilityPaused) { _, paused in
+            guard paused else { return }
+            model.takeManualControl()
+            model.selectedSection = .preflight
+            surface = .workspace
+        }
+    }
+
+    private var compatibilityPauseOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.88)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 48, weight: .semibold))
+                    .foregroundStyle(.red)
+
+                Text("Mode Live temporairement suspendu")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text(cloud.activeCompatibilityOverride?.warnings.first
+                     ?? "Cette combinaison de versions nécessite une validation supplémentaire avant le prochain Live.")
+                    .font(.callout)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 600)
+
+                Text("MixPilot reprend le contrôle manuel et n’exécute aucune nouvelle commande MIDI. Prépare le mapping proposé, redémarre l’application puis termine la validation réelle rekordbox.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.52))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 650)
+
+                HStack(spacing: 12) {
+                    if cloud.availableMapping != nil {
+                        Button("Préparer le mapping") {
+                            cloud.installAvailableMapping()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    Button("Revérifier la compatibilité") {
+                        cloud.checkNow()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(38)
+            .foregroundStyle(.white)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.red.opacity(0.42), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.7), radius: 42, y: 18)
+        }
+        .transition(.opacity)
     }
 
     private var navigationDock: some View {
@@ -158,6 +222,8 @@ struct MixPilotMainShellView: View {
     ) -> some View {
         let selected = explicitSelection ?? (surface == .workspace && model.selectedSection == section)
         let disabledByLive = model.isLiveRunning && section != .live
+        let disabledByCompatibility = compatibilityPaused && section == .live
+        let disabled = disabledByLive || disabledByCompatibility
 
         return Button {
             if let explicitAction {
@@ -195,9 +261,13 @@ struct MixPilotMainShellView: View {
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(disabledByLive)
-        .opacity(disabledByLive ? 0.38 : 1)
-        .help(disabledByLive ? "Navigation verrouillée pendant le Live" : title)
+        .disabled(disabled)
+        .opacity(disabled ? 0.38 : 1)
+        .help(disabledByCompatibility
+              ? "Mode Live suspendu par une règle de compatibilité validée"
+              : disabledByLive
+                  ? "Navigation verrouillée pendant le Live"
+                  : title)
     }
 }
 #endif
