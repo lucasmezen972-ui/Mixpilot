@@ -81,10 +81,10 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 650, height: 380)
 
-        Window("Laboratoire rekordbox", id: "rekordbox-compatibility") {
-            RekordboxCompatibilityLabView()
+        Window("Contrôle rekordbox", id: "rekordbox-compatibility") {
+            RekordboxCompatibilityLabView(appModel: model)
         }
-        .defaultSize(width: 980, height: 720)
+        .defaultSize(width: 1_080, height: 780)
 
         Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
@@ -137,7 +137,7 @@ private struct MixPilotWindowCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
-            Button("Inspecter la compatibilité rekordbox") {
+            Button("Contrôler et inspecter rekordbox") {
                 openWindow(id: "rekordbox-compatibility")
             }
             .keyboardShortcut("k", modifiers: [.command, .shift])
