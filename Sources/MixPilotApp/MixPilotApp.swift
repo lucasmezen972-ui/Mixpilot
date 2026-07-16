@@ -71,6 +71,16 @@ struct MixPilotAutopilotApp: App {
             }
         }
 
+        Window("Choisir le logiciel DJ", id: "dj-software") {
+            DJSoftwareSettingsView(model: model)
+        }
+        .defaultSize(width: 620, height: 380)
+
+        Window("Préparer un set rapidement", id: "quick-set") {
+            QuickSetView(model: model)
+        }
+        .defaultSize(width: 650, height: 380)
+
         Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
@@ -112,6 +122,18 @@ private struct MixPilotWindowCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
+            Button("Choisir Serato ou djay") {
+                openWindow(id: "dj-software")
+            }
+            .keyboardShortcut(",", modifiers: [.command, .shift])
+
+            Button("Préparer un set rapidement") {
+                openWindow(id: "quick-set")
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("Installer le mapping Serato automatiquement") {
                 openWindow(id: "automatic-serato-mapping")
             }
