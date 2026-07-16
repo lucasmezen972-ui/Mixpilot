@@ -7,17 +7,24 @@ import SwiftUI
 struct MixPilotAutopilotApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var remoteBridge = MixPilotRemoteBridge()
+    @StateObject private var cloud = MixPilotCloudCoordinator()
     @State private var mainSurface: MixPilotMainSurface = .home
 
     var body: some Scene {
         WindowGroup("MixPilot") {
-            MixPilotMainShellView(model: model, surface: $mainSurface)
+            MixPilotMainShellView(model: model, surface: $mainSurface, cloud: cloud)
                 .frame(minWidth: 1_180, minHeight: 790)
+                .onAppear {
+                    cloud.start(liveMode: model.isLiveRunning)
+                }
+                .onChange(of: model.isLiveRunning) { _, isLiveRunning in
+                    cloud.setLiveMode(isLiveRunning)
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1_380, height: 920)
         .commands {
-            MixPilotWindowCommands()
+            MixPilotWindowCommands(cloud: cloud)
             CommandMenu("MixPilot") {
                 Button("Afficher l’accueil premium") {
                     mainSurface = .home
@@ -64,6 +71,16 @@ struct MixPilotAutopilotApp: App {
                 .disabled(!remoteBridge.isRunning)
 
                 Button("État : \(remoteBridge.status)") {}
+                    .disabled(true)
+
+                Divider()
+
+                Button("Vérifier les mises à jour") {
+                    cloud.checkNow()
+                }
+                .keyboardShortcut("u", modifiers: [.command, .option])
+
+                Button(cloud.connectionState.label) {}
                     .disabled(true)
 
                 Divider()
@@ -150,6 +167,7 @@ struct MixPilotAutopilotApp: App {
 
 private struct MixPilotWindowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject var cloud: MixPilotCloudCoordinator
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -211,6 +229,12 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "recovery-center")
             }
             .keyboardShortcut("u", modifiers: [.command, .shift])
+
+            Divider()
+
+            Button("Vérifier les mises à jour maintenant") {
+                cloud.checkNow()
+            }
         }
     }
 }
