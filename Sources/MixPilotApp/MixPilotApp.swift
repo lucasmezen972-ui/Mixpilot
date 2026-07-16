@@ -86,6 +86,11 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 1_080, height: 780)
 
+        Window("Mapping rekordbox automatique", id: "automatic-rekordbox-mapping") {
+            AutomaticRekordboxMappingView(model: model)
+        }
+        .defaultSize(width: 1_020, height: 760)
+
         Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
@@ -141,6 +146,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "rekordbox-compatibility")
             }
             .keyboardShortcut("k", modifiers: [.command, .shift])
+
+            Button("Générer le mapping rekordbox") {
+                openWindow(id: "automatic-rekordbox-mapping")
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
 
             Divider()
 
