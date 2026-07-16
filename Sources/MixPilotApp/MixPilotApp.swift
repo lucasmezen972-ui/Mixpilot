@@ -74,12 +74,17 @@ struct MixPilotAutopilotApp: App {
         Window("Choisir le logiciel DJ", id: "dj-software") {
             DJSoftwareSettingsView(model: model)
         }
-        .defaultSize(width: 620, height: 380)
+        .defaultSize(width: 680, height: 430)
 
         Window("Préparer un set rapidement", id: "quick-set") {
             QuickSetView(model: model)
         }
         .defaultSize(width: 650, height: 380)
+
+        Window("Laboratoire rekordbox", id: "rekordbox-compatibility") {
+            RekordboxCompatibilityLabView()
+        }
+        .defaultSize(width: 980, height: 720)
 
         Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
@@ -122,7 +127,7 @@ private struct MixPilotWindowCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Choisir Serato ou djay") {
+            Button("Choisir Serato, djay ou rekordbox") {
                 openWindow(id: "dj-software")
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
@@ -131,6 +136,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Inspecter la compatibilité rekordbox") {
+                openWindow(id: "rekordbox-compatibility")
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
 
             Divider()
 
