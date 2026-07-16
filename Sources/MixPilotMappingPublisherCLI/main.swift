@@ -59,14 +59,14 @@ private let mandatory = CommandLine.arguments.contains("--mandatory")
 private let controllerName = RekordboxMIDIPresetGenerator.defaultControllerName
 private let profile = MIDIMappingProfile.developmentDefault
 
-let profileSHA256 = try MixPilotRemoteMappingValidator.profileSHA256(profile)
-let preset = try RekordboxAdvancedMIDIPresetGenerator().generate(
+private let profileSHA256 = try MixPilotRemoteMappingValidator.profileSHA256(profile)
+private let preset = try RekordboxAdvancedMIDIPresetGenerator().generate(
     profile: profile,
     controllerName: controllerName
 )
-let presetSHA256 = MixPilotRemoteMappingValidator.sha256(Data(preset.csv.utf8))
+private let presetSHA256 = MixPilotRemoteMappingValidator.sha256(Data(preset.csv.utf8))
 
-let candidate = MappingReleaseCandidate(
+private let candidate = MappingReleaseCandidate(
     controllerName: controllerName,
     mappingVersion: mappingVersion,
     minimumAppBuild: minimumAppBuild,
@@ -86,9 +86,9 @@ let candidate = MappingReleaseCandidate(
     ]
 )
 
-let encoder = JSONEncoder()
+private let encoder = JSONEncoder()
 encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-let data = try encoder.encode(candidate)
-let outputURL = URL(fileURLWithPath: outputPath)
+private let data = try encoder.encode(candidate)
+private let outputURL = URL(fileURLWithPath: outputPath)
 try data.write(to: outputURL, options: .atomic)
 print(outputURL.path)
