@@ -74,7 +74,7 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         trackCount: Int,
         transitionCount: Int,
         lowConfidenceTransitionCount: Int,
-        djSoftware: DJSoftware = .serato
+        djSoftware: DJSoftware = DJSoftwareSelectionStore.current
     ) {
         self.seratoRunning = seratoRunning
         self.accessibilityGranted = accessibilityGranted
