@@ -25,8 +25,8 @@ func completePreflightAllowsLive() {
     #expect(report.failedItems.isEmpty)
 }
 
-@Test("Missing emergency library blocks unattended live mode")
-func missingEmergencyLibraryBlocksLive() {
+@Test("Missing emergency library warns but does not block live mode")
+func missingEmergencyLibraryOnlyWarns() {
     let report = PreflightEvaluator().evaluate(PreflightInput(
         seratoRunning: true,
         accessibilityGranted: true,
@@ -45,8 +45,9 @@ func missingEmergencyLibraryBlocksLive() {
         lowConfidenceTransitionCount: 0
     ))
 
-    #expect(!report.canStartLive)
-    #expect(report.failedItems.contains { $0.id == "emergency" })
+    #expect(report.canStartLive)
+    #expect(report.failedItems.isEmpty)
+    #expect(report.warningItems.contains { $0.id == "emergency" })
 }
 
 @Test("Low confidence transitions warn but do not block")
