@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 import Foundation
 import MixPilotCore
 import MixPilotSystem
