@@ -12,6 +12,10 @@ struct MixPilotAutopilotApp: App {
     @State private var mainSurface: MixPilotMainSurface = .home
     private let cloudBackendContextStore = MixPilotCloudBackendContextStore()
 
+    private var insecureRemoteDevelopmentOverrideEnabled: Bool {
+        MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport
+    }
+
     var body: some Scene {
         WindowGroup("MixPilot") {
             MixPilotMainShellView(model: model, surface: $mainSurface, cloud: cloud)
@@ -76,12 +80,16 @@ struct MixPilotAutopilotApp: App {
 
                 Button(remoteBridge.isRunning
                        ? "Désactiver la télécommande iPhone"
-                       : "Activer la télécommande iPhone") {
+                       : insecureRemoteDevelopmentOverrideEnabled
+                           ? "Activer la télécommande iPhone (développement)"
+                           : "Télécommande iPhone indisponible (sécurité)") {
                     if remoteBridge.isRunning {
                         remoteBridge.stop()
-                    } else {
+                    } else if insecureRemoteDevelopmentOverrideEnabled {
                         remoteBridge.start(provider: model)
                         showPairingCode()
+                    } else {
+                        showRemoteSecurityWarning()
                     }
                 }
 
@@ -89,7 +97,7 @@ struct MixPilotAutopilotApp: App {
                     remoteBridge.rotatePairingCode()
                     showPairingCode()
                 }
-                .disabled(!remoteBridge.isRunning)
+                .disabled(!remoteBridge.isRunning || !insecureRemoteDevelopmentOverrideEnabled)
 
                 Divider()
 
@@ -186,9 +194,27 @@ struct MixPilotAutopilotApp: App {
 
     private func showPairingCode() {
         let alert = NSAlert()
-        alert.messageText = "Appairer MixPilot Remote"
-        alert.informativeText = "Sur l’iPhone, sélectionne ce Mac puis saisis le code \(remoteBridge.pairingCode). Il expire dans deux minutes."
-        alert.alertStyle = .informational
+        guard remoteBridge.pairingCode != "------" else {
+            alert.messageText = "Appairage indisponible"
+            alert.informativeText = "MixPilot n’a pas pu générer un code cryptographiquement sûr. La télécommande reste désactivée."
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        alert.messageText = "Appairer MixPilot Remote — développement"
+        alert.informativeText = "Ce transport local n’est pas encore chiffré. Utilise-le uniquement sur un réseau de développement isolé. Sur l’iPhone, sélectionne ce Mac puis saisis le code \(remoteBridge.pairingCode). Il expire dans deux minutes."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "J’ai compris")
+        alert.runModal()
+    }
+
+    private func showRemoteSecurityWarning() {
+        let alert = NSAlert()
+        alert.messageText = "Télécommande temporairement désactivée"
+        alert.informativeText = "Le transport iPhone–Mac actuel n’est pas encore chiffré. MixPilot le bloque dans les builds normaux. Pour un test de développement sur un réseau isolé, lance l’application avec MIXPILOT_ALLOW_INSECURE_REMOTE=1."
+        alert.alertStyle = .critical
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -219,27 +245,6 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "help-center")
             }
             .keyboardShortcut("?", modifiers: [.command])
-        }
-
-        CommandMenu("Avancé") {
-            Button("Répéter une transition") {
-                openWindow(id: "rehearsal")
-            }
-            Button("Inspecter les transitions") {
-                openWindow(id: "transition-inspector")
-            }
-            Button("Analyser l’audio localement") {
-                openWindow(id: "preparation-analysis")
-            }
-            Button("Ouvrir le centre de récupération") {
-                openWindow(id: "recovery-center")
-            }
-
-            Divider()
-
-            Button("Vérifier les services en ligne") {
-                cloud.checkNow()
-            }
         }
     }
 }
