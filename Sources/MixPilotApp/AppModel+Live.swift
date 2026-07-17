@@ -101,6 +101,7 @@ extension AppModel {
         runtimeEvents = []
         runtimeStatus = "Vérification du système avec \(selectedBackend.displayName)"
         Task { await backendRegistry?.setLiveActive(true) }
+        startLiveReconciliation(expectedBackend: selectedBackend, coordinator: coordinator)
 
         liveTask = Task {
             do {
@@ -116,6 +117,8 @@ extension AppModel {
                 snapshot.statusMessage = runtimeStatus
             }
 
+            liveReconciliationTask?.cancel()
+            liveReconciliationTask = nil
             isLiveRunning = false
             liveArmed = false
             liveTask = nil
@@ -148,6 +151,100 @@ extension AppModel {
             if snapshot.state == .transitioning {
                 snapshot.statusMessage = "La transition en cours se termine sans nouvelle automation."
             }
+        }
+    }
+
+    private func startLiveReconciliation(
+        expectedBackend: DJBackendIdentifier,
+        coordinator: LiveAutopilotCoordinator
+    ) {
+        liveReconciliationTask?.cancel()
+        liveReconciliationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    return
+                }
+
+                guard let self, self.isLiveRunning else { return }
+                guard let registry = self.backendRegistry else {
+                    await self.requestSafeManualControl(
+                        reason: "Le registre des logiciels DJ n’est plus disponible.",
+                        coordinator: coordinator
+                    )
+                    return
+                }
+
+                do {
+                    let backend = try await registry.activeBackend()
+                    let environment = await backend.detectEnvironment()
+                    guard backend.identifier == expectedBackend,
+                          environment.identifier == expectedBackend,
+                          environment.isRunning else {
+                        await self.requestSafeManualControl(
+                            reason: "La connexion avec \(expectedBackend.displayName) a été perdue ou remplacée.",
+                            coordinator: coordinator
+                        )
+                        return
+                    }
+
+                    guard let state = try? await backend.readState(), state.isReliable else {
+                        continue
+                    }
+                    if let observedDeck = state.activeDeck,
+                       observedDeck != self.snapshot.activeDeck {
+                        await self.requestSafeManualControl(
+                            reason: "Le deck actif a changé en dehors du plan confirmé.",
+                            coordinator: coordinator
+                        )
+                        return
+                    }
+                    if let expectedTrack = self.snapshot.currentTrack,
+                       let observedTrack = state.decks[self.snapshot.activeDeck]?.track,
+                       !self.trackReference(observedTrack, matches: expectedTrack) {
+                        await self.requestSafeManualControl(
+                            reason: "Le morceau visible ne correspond plus au dernier état confirmé.",
+                            coordinator: coordinator
+                        )
+                        return
+                    }
+                } catch {
+                    await self.requestSafeManualControl(
+                        reason: "L’état du backend actif ne peut plus être réconcilié en sécurité.",
+                        coordinator: coordinator
+                    )
+                    return
+                }
+            }
+        }
+    }
+
+    private func trackReference(_ observed: DJTrackReference, matches expected: Track) -> Bool {
+        if observed.id == expected.id.uuidString { return true }
+        guard let title = observed.title,
+              title.compare(expected.title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame else {
+            return false
+        }
+        guard let artist = observed.artist, !artist.isEmpty, !expected.artist.isEmpty else {
+            return true
+        }
+        return artist.compare(expected.artist, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    private func requestSafeManualControl(
+        reason: String,
+        coordinator: LiveAutopilotCoordinator
+    ) async {
+        guard isLiveRunning else { return }
+        let decision = await coordinator.requestManualControl()
+        runtimeStatus = reason
+        snapshot.statusMessage = decision.accepted
+            ? "\(reason) MixPilot rend la main au point sûr."
+            : reason
+        runtimeEvents.append("Sécurité : \(reason)")
+        if runtimeEvents.count > 100 {
+            runtimeEvents.removeFirst(runtimeEvents.count - 100)
         }
     }
 
