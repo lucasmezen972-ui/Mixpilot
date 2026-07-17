@@ -33,11 +33,30 @@ targets:
         PRODUCT_MODULE_NAME: MixPilotRemote
         DEFINES_MODULE: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+  MixPilotRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: XcodeTests
+    dependencies:
+      - target: MixPilotRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
+        PRODUCT_NAME: MixPilot Remote Tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   MixPilotRemote:
     build:
       targets:
         MixPilotRemote: all
+        MixPilotRemoteTests: [test]
+    test:
+      gatherCoverageData: true
+      targets:
+        - name: MixPilotRemoteTests
     run:
       config: Debug
     archive:
