@@ -246,6 +246,7 @@ final class RemoteConnection: ObservableObject {
               endpoint != nil else { return }
 
         closeSocketTransport()
+        let retryGeneration = transportGeneration
         snapshot = nil
         pairingRequired = false
         guard reconnectTask == nil else { return }
@@ -266,7 +267,10 @@ final class RemoteConnection: ObservableObject {
             } catch {
                 return
             }
-            guard let self, !Task.isCancelled, self.shouldReconnect else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  self.shouldReconnect,
+                  self.transportGeneration == retryGeneration else { return }
             self.reconnectTask = nil
             self.beginConnection()
         }
