@@ -1,41 +1,16 @@
 name: Core, Remote and Documentation CI
 
+# Temporarily manual-only while GitHub Actions fails before checkout with
+# `steps: none`. Restore pull_request/push triggers after account-level runner
+# execution is confirmed. This prevents notification spam without deleting CI.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "Package.swift"
-      - "Sources/MixPilotCore/**"
-      - "Sources/MixPilotRuntime/**"
-      - "Sources/MixPilotSystem/**"
-      - "Sources/MixPilotApp/**"
-      - "Sources/MixPilotRemoteBridge/**"
-      - "Sources/MixPilotSimulatorCLI/**"
-      - "Shared/RemoteProtocolV2/**"
-      - "Tests/MixPilotCoreTests/**"
-      - "Tests/MixPilotRuntimeTests/**"
-      - "Tests/MixPilotSystemTests/**"
-      - "README.md"
-      - "DEVELOPMENT_STATUS.md"
-      - "Documentation/**"
-      - "Mobile/MixPilotRemote/README.md"
-      - "Scripts/check_documentation_consistency.sh"
-      - "Scripts/check_package_manifest.sh"
-      - "Scripts/check_source_architecture.sh"
-      - ".github/workflows/core-ci.yml"
-  push:
-    branches:
-      - main
-      - develop
-      - "feature/**"
-      - "integration/**"
-      - "release/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: mixpilot-core-${{ github.event.pull_request.number || github.ref }}
+  group: mixpilot-core-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
