@@ -59,12 +59,12 @@ extension RemoteSnapshot {
         sequence: 1,
         updatedAt: Date(),
         mode: .live,
-        setName: "Set principal",
+        setName: "Set de démonstration",
         backend: RemoteBackendSummary(
             identifier: .djay,
             softwareVersion: "5.2",
             modeLabel: "Automix supervisé",
-            degradedCapabilities: []
+            degradedCapabilities: ["Transition de secours distante verrouillée"]
         ),
         currentTrack: RemoteTrackSummary(title: "Morceau actuel", artist: "Artiste", bpm: 117),
         nextTrack: RemoteTrackSummary(title: "Morceau suivant", artist: "Artiste", bpm: 116),
@@ -73,12 +73,12 @@ extension RemoteSnapshot {
         duration: 201,
         transitionLabel: "Fondu doux dans 1 min 12",
         transitionConfidence: 91,
-        audioStatus: "Audio stable",
-        alert: nil,
+        audioStatus: "Audio stable • simulation",
+        alert: "Mode démo : aucune commande n’est envoyée au Mac.",
         canPause: true,
         canResume: false,
         canSkipTransition: true,
-        canSafeFade: true,
+        canSafeFade: false,
         canTakeManualControl: true
     )
 }
