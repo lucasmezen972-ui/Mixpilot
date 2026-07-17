@@ -117,6 +117,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
         }
 
         generation &+= 1
+        let recoveryGeneration = generation
         running = false
         recoveryScheduled = true
         let delay = recoveryPolicy.nextDelay()
@@ -130,20 +131,21 @@ public final class AudioLevelMonitor: @unchecked Sendable {
 
         deliverUnavailable(to: currentHandler)
         if let delay {
-            scheduleRecovery(after: delay)
+            scheduleRecovery(after: delay, generation: recoveryGeneration)
         }
     }
 
-    private func scheduleRecovery(after delay: TimeInterval) {
+    private func scheduleRecovery(after delay: TimeInterval, generation: UInt64) {
         recoveryQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.recoverEngine()
+            self?.recoverEngine(generation: generation)
         }
     }
 
-    private func recoverEngine() {
+    private func recoverEngine(generation expectedGeneration: UInt64) {
         stateLock.lock()
-        guard wantsRunning else {
-            recoveryScheduled = false
+        guard wantsRunning,
+              recoveryScheduled,
+              generation == expectedGeneration else {
             stateLock.unlock()
             return
         }
@@ -162,6 +164,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
             running = false
             recoveryScheduled = false
             let delay = recoveryPolicy.nextDelay()
+            let nextRecoveryGeneration = generation
             let currentHandler = handler
             if delay != nil {
                 recoveryScheduled = true
@@ -173,7 +176,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
 
             deliverUnavailable(to: currentHandler)
             if let delay {
-                scheduleRecovery(after: delay)
+                scheduleRecovery(after: delay, generation: nextRecoveryGeneration)
             }
         }
     }
