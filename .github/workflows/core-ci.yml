@@ -1,4 +1,4 @@
-name: Core and Remote CI
+name: Core, Remote and Documentation CI
 
 on:
   workflow_dispatch:
@@ -9,6 +9,11 @@ on:
       - "Sources/MixPilotSimulatorCLI/**"
       - "Shared/RemoteProtocolV2/**"
       - "Tests/MixPilotCoreTests/**"
+      - "README.md"
+      - "DEVELOPMENT_STATUS.md"
+      - "Documentation/**"
+      - "Mobile/MixPilotRemote/README.md"
+      - "Scripts/check_documentation_consistency.sh"
       - ".github/workflows/core-ci.yml"
   push:
     branches:
@@ -35,11 +40,14 @@ jobs:
       - name: Swift toolchain
         run: swift --version
 
+      - name: Documentation consistency
+        run: bash Scripts/check_documentation_consistency.sh
+
       - name: Core and shared Remote tests
         run: swift test --parallel
 
       - name: Simulation 50 tracks with failures
-        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+        run: swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures
 
       - name: Simulation 250 tracks with failures
-        run: swift run MixPilotSimulatorCLI --tracks 250 --inject-failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures
