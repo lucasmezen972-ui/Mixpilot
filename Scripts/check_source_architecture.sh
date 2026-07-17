@@ -177,8 +177,8 @@ grep -q 'reliabilityTracker.record(isReliable:' Sources/MixPilotApp/AppModel+Liv
   exit 1
 }
 
-grep -q 'ne peut plus confirmer l’état réel des decks' Sources/MixPilotApp/AppModel+Live.swift || {
-  echo 'Architecture check failed: repeated unreliable state reads must trigger a safe manual handoff' >&2
+grep -q 'status.live.reconcile_state_lost' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: repeated unreliable state reads must trigger a localized safe manual handoff' >&2
   exit 1
 }
 
