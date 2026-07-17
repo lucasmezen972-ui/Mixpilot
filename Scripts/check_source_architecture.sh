@@ -121,6 +121,11 @@ if grep -n 'liveTask?.cancel()' Sources/MixPilotApp/AppModel+Live.swift; then
   exit 1
 fi
 
+fail_if_found \
+  'Button\("(Outils rekordbox|Inspecter rekordbox|Valider rekordbox commande par commande|Générer le mapping rekordbox|Configurer Serato)"' \
+  'backend-specific tools must remain contextual and must not recreate a parallel global menu' \
+  Sources/MixPilotApp/MixPilotApp.swift
+
 if grep -RInE \
   --exclude='RemoteMappingUpdates.swift' \
   --exclude-dir=.build \
