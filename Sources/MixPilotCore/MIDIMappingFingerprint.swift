@@ -9,4 +9,11 @@ public extension MIDIMappingProfile {
         let value = (["schema=\(schemaVersion)"] + rows).joined(separator: "\n")
         return "profile-\(schemaVersion)-\(MixPilotRemoteMappingValidator.sha256(Data(value.utf8)))"
     }
+
+    var liveControlCoverageRatio: Double {
+        let required = DJControlAction.automaticPresetCriticalActions
+        guard !required.isEmpty else { return 1 }
+        let configured = required.filter { self[$0] != nil }.count
+        return Double(configured) / Double(required.count)
+    }
 }
