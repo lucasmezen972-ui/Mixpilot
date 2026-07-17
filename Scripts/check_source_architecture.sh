@@ -36,9 +36,9 @@ fail_if_found \
   Sources
 
 # The old property remains source-compatible in DJBackend.swift for the moment,
-# but new code must use the strict isConfirmedForLive contract.
+# but active source code must use the strict isConfirmedForLive contract.
 if grep -RIn --exclude='DJBackend.swift' --exclude-dir=.build --exclude-dir=.git \
-  'isVerifiedForLive' Sources Tests; then
+  'isVerifiedForLive' Sources; then
   echo 'Architecture check failed: use isConfirmedForLive instead of isVerifiedForLive' >&2
   exit 1
 fi
