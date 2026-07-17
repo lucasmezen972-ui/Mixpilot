@@ -19,4 +19,26 @@ public extension DJBackendCapabilities {
     func confirmsAllForLive(_ capabilities: Set<DJCapability>) -> Bool {
         capabilities.allSatisfy(confirmsForLive)
     }
+
+    func confirmedForLiveOnly() -> DJBackendCapabilities {
+        var result = DJBackendCapabilities()
+        for capability in DJCapability.allCases {
+            let current = self[capability]
+            result[capability] = current.isConfirmedForLive
+                ? current
+                : DJCapabilityStatus(
+                    availability: .unavailable,
+                    confidence: current.confidence,
+                    validation: current.validation,
+                    method: current.method,
+                    lastValidatedAt: current.lastValidatedAt,
+                    testedSoftwareVersion: current.testedSoftwareVersion,
+                    mappingVersion: current.mappingVersion,
+                    controllerName: current.controllerName,
+                    reason: current.reason ?? "Cette fonction doit encore être confirmée sur ce Mac.",
+                    userAction: current.userAction
+                )
+        }
+        return result
+    }
 }
