@@ -42,7 +42,6 @@ extension AppModel {
             backendDescriptors.first { $0.identifier == identifier }
         }
         let rawCapabilities = descriptor?.capabilities ?? DJBackendCapabilities()
-        let accessibilityGranted = accessibilityStatus == "Autorisée"
         let capabilities = rawCapabilities.applyingRuntimeAvailability(
             accessibilityGranted: accessibilityGranted
         )
@@ -86,6 +85,7 @@ extension AppModel {
     func refreshEnvironmentNow() async {
         guard let backendRegistry else {
             backendStatus = "Initialisation des logiciels DJ"
+            accessibilityGranted = false
             backendValidationReport = nil
             evaluatePreflight()
             return
@@ -97,6 +97,7 @@ extension AppModel {
         guard let selectedBackend,
               let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }) else {
             backendStatus = "Choisis djay Pro, rekordbox ou Serato DJ Pro"
+            accessibilityGranted = false
             accessibilityStatus = "En attente du choix"
             libraryRowCount = 0
             backendValidationReport = nil
@@ -112,9 +113,10 @@ extension AppModel {
                 : "\(descriptor.displayName) n’est pas installé"
 
         let observation = accessibilityBridge.observe(backend: selectedBackend)
-        accessibilityStatus = observation.accessibilityGranted ? "Autorisée" : "Action requise"
+        accessibilityGranted = observation.accessibilityGranted
+        accessibilityStatus = accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : "Surveillance arrêtée"
-        libraryRowCount = observation.accessibilityGranted
+        libraryRowCount = accessibilityGranted
             ? accessibilityBridge.libraryRows(
                 backend: selectedBackend,
                 maxRows: 1_000
@@ -127,7 +129,7 @@ extension AppModel {
             backendValidationReport = nil
         }
 
-        if observation.isRunning && observation.accessibilityGranted {
+        if observation.isRunning && accessibilityGranted {
             runtimeStatus = "\(descriptor.displayName) observable"
         }
 
