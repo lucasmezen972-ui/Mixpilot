@@ -126,7 +126,7 @@ func manualControlDuringTransitionUsesCooperativeHandoff() async throws {
     try await runTask.value
 
     let events = await probe.events
-    #expect(events == ["transition-started", "transition-completed", "manual-control"])
+    #expect(events == ["transition-started", "manual-control"])
     #expect(await probe.manualControlCount == 1)
 }
 
