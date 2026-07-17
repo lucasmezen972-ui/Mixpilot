@@ -53,7 +53,6 @@ final class AppModel: ObservableObject {
     )
     @Published var preflightReport = PreflightReport(items: [])
     @Published var optimizationReport: SetOptimizationReport?
-    @Published var hasCompletedOnboarding: Bool
     @Published var selectedSection: SidebarSection = .dashboard
 
     var seratoStatus: String { backendStatus }
@@ -79,7 +78,6 @@ final class AppModel: ObservableObject {
     let projectStore: JSONProjectStore
 
     init() {
-        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "MixPilotOnboardingCompleted")
         let supportRoot = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -106,18 +104,6 @@ final class AppModel: ObservableObject {
         audioMonitor.stop()
         connectivityMonitor.stop()
         sleepAssertion.release()
-    }
-
-    func completeOnboarding() {
-        hasCompletedOnboarding = true
-        UserDefaults.standard.set(true, forKey: "MixPilotOnboardingCompleted")
-        selectedSection = .studio
-    }
-
-    func restartOnboarding() {
-        hasCompletedOnboarding = false
-        UserDefaults.standard.set(false, forKey: "MixPilotOnboardingCompleted")
-        selectedSection = .onboarding
     }
 }
 
