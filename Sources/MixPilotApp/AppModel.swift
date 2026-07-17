@@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
     @Published var hasCompletedOnboarding: Bool
     @Published var selectedSection: SidebarSection = .dashboard
 
+    /// Transitional compatibility for specialized legacy views.
     var seratoStatus: String { backendStatus }
 
     var midiController: CoreMIDIController?
@@ -64,7 +65,7 @@ final class AppModel: ObservableObject {
     var runtimeCoordinator: LiveAutopilotCoordinator?
     var liveTask: Task<Void, Never>?
 
-    let accessibilityBridge = SeratoAccessibilityBridge()
+    let accessibilityBridge = DJAccessibilityBridge()
     let commandValidationStore = UserDefaultsDJCommandValidationStore()
     let audioMonitor = AudioLevelMonitor()
     let audioWatchdog = AudioWatchdog()
