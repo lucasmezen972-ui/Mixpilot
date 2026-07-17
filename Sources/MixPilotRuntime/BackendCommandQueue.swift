@@ -216,7 +216,7 @@ public actor BackendCommandQueue: DJCommandSending {
                 deck: deck(for: action)
             )
         }
-        switch action {
+        return switch action {
         case .playA: .playback(true, deck: .a)
         case .playB: .playback(true, deck: .b)
         case .pauseA: .playback(false, deck: .a)
