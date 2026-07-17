@@ -20,6 +20,31 @@ fail_if_found \
   'the active application must use VisiblePlaylistImporter' \
   Sources/MixPilotApp Sources/MixPilotRuntime Sources/MixPilotRemoteBridge
 
+if [[ -e Sources/MixPilotRuntime/SeratoPlaylistImporter.swift ]]; then
+  echo 'Architecture check failed: playlist import belongs to MixPilotSystem, not MixPilotRuntime' >&2
+  exit 1
+fi
+
+test -f Sources/MixPilotSystem/VisiblePlaylistImporter.swift || {
+  echo 'Architecture check failed: the generic visible playlist importer is missing' >&2
+  exit 1
+}
+
+grep -q 'public struct VisiblePlaylistImporter' Sources/MixPilotSystem/VisiblePlaylistImporter.swift || {
+  echo 'Architecture check failed: VisiblePlaylistImporter must be a real implementation, not a cross-module alias' >&2
+  exit 1
+}
+
+grep -q 'DJLibraryRow' Sources/MixPilotSystem/VisiblePlaylistImporter.swift || {
+  echo 'Architecture check failed: the visible playlist importer must accept generic DJ rows' >&2
+  exit 1
+}
+
+test -f Tests/MixPilotSystemTests/VisiblePlaylistImporterTests.swift || {
+  echo 'Architecture check failed: generic visible playlist importer tests are missing' >&2
+  exit 1
+}
+
 if grep -RInE \
   --exclude='SeratoAccessibilityBridge.swift' \
   --exclude-dir=.build \
