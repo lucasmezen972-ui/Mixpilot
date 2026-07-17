@@ -20,6 +20,7 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
     private var queue: [URL] = []
     private var currentIndex = 0
     private var operationGeneration: UInt64 = 0
+    private var invalidPaths: Set<String> = []
 
     public private(set) var currentURL: URL?
     public private(set) var isPlaying = false
@@ -39,6 +40,7 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
         stopImmediately()
         queue = []
         invalidFiles = []
+        invalidPaths = []
         totalDuration = 0
         currentIndex = 0
         lastError = nil
@@ -48,8 +50,8 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
             let normalized = url.standardizedFileURL
             guard seenPaths.insert(normalized.path).inserted else { continue }
             do {
-                let probe = try AVAudioPlayer(contentsOf: normalized)
-                guard probe.duration > 0, probe.prepareToPlay() else {
+                let probe = try makePreparedPlayer(url: normalized)
+                guard probe.duration > 0 else {
                     appendInvalid(normalized)
                     continue
                 }
@@ -68,7 +70,11 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
             )
         }
         try prepareCurrent(url: first)
-        return EmergencyLibrarySummary(fileCount: queue.count, totalDuration: totalDuration, invalidFiles: invalidFiles)
+        return EmergencyLibrarySummary(
+            fileCount: queue.count,
+            totalDuration: totalDuration,
+            invalidFiles: invalidFiles
+        )
     }
 
     @discardableResult
@@ -81,6 +87,7 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
         operationGeneration &+= 1
         player.volume = 0
         guard player.play() else {
+            if let currentURL { appendInvalid(currentURL) }
             isPlaying = false
             lastError = "Le fichier de secours n’a pas pu démarrer."
             return false
@@ -119,8 +126,6 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
     public func skip() {
         guard !queue.isEmpty else { return }
         operationGeneration &+= 1
-        player?.stop()
-        isPlaying = false
         _ = advanceToPlayableTrack(fadeInDuration: 0.4)
     }
 
@@ -131,6 +136,7 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
         currentURL = nil
         totalDuration = 0
         invalidFiles = []
+        invalidPaths = []
         lastError = nil
     }
 
@@ -139,7 +145,10 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
             guard let self, self.player === player, !self.queue.isEmpty else { return }
             self.operationGeneration &+= 1
             self.isPlaying = false
-            if !flag { self.lastError = "Le fichier de secours s’est interrompu avant sa fin." }
+            if !flag {
+                if let currentURL = self.currentURL { self.appendInvalid(currentURL) }
+                self.lastError = "Le fichier de secours s’est interrompu avant sa fin."
+            }
             _ = self.advanceToPlayableTrack(fadeInDuration: 0.35)
         }
     }
@@ -157,19 +166,42 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
 
     private func advanceToPlayableTrack(fadeInDuration: TimeInterval) -> Bool {
         guard !queue.isEmpty else { return false }
+
+        let baseIndex = currentIndex
+        player?.delegate = nil
+        player?.stop()
+        player = nil
+        currentURL = nil
+        isPlaying = false
+
         for offset in 1...queue.count {
-            let candidateIndex = (currentIndex + offset) % queue.count
-            let candidate = queue[candidateIndex]
+            let candidateIndex = (baseIndex + offset) % queue.count
+            let candidate = queue[candidateIndex].standardizedFileURL
+            guard !invalidPaths.contains(candidate.path) else { continue }
+
             do {
-                try prepareCurrent(url: candidate)
+                let preparedPlayer = try makePreparedPlayer(url: candidate)
+                preparedPlayer.volume = 0
+                guard preparedPlayer.play() else {
+                    appendInvalid(candidate)
+                    lastError = "Le fichier \(candidate.lastPathComponent) n’a pas pu démarrer."
+                    continue
+                }
+
+                operationGeneration &+= 1
+                preparedPlayer.setVolume(1, fadeDuration: max(0, fadeInDuration))
+                player = preparedPlayer
+                currentURL = candidate
                 currentIndex = candidateIndex
-                if play(fadeInDuration: fadeInDuration) { return true }
-                appendInvalid(candidate)
+                isPlaying = true
+                lastError = nil
+                return true
             } catch {
                 appendInvalid(candidate)
                 lastError = error.localizedDescription
             }
         }
+
         player = nil
         currentURL = nil
         isPlaying = false
@@ -178,6 +210,14 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func prepareCurrent(url: URL) throws {
+        let normalized = url.standardizedFileURL
+        let preparedPlayer = try makePreparedPlayer(url: normalized)
+        player = preparedPlayer
+        currentURL = normalized
+        isPlaying = false
+    }
+
+    private func makePreparedPlayer(url: URL) throws -> AVAudioPlayer {
         let preparedPlayer = try AVAudioPlayer(contentsOf: url)
         preparedPlayer.delegate = self
         guard preparedPlayer.prepareToPlay() else {
@@ -187,18 +227,19 @@ public final class EmergencyAudioPlayer: NSObject, AVAudioPlayerDelegate {
                 userInfo: [NSLocalizedDescriptionKey: "Le fichier \(url.lastPathComponent) ne peut pas être préparé."]
             )
         }
-        player = preparedPlayer
-        currentURL = url
-        isPlaying = false
+        return preparedPlayer
     }
 
     private func appendInvalid(_ url: URL) {
-        let name = url.lastPathComponent
+        let normalized = url.standardizedFileURL
+        guard invalidPaths.insert(normalized.path).inserted else { return }
+        let name = normalized.lastPathComponent
         if !invalidFiles.contains(name) { invalidFiles.append(name) }
     }
 
     private func stopImmediately() {
         operationGeneration &+= 1
+        player?.delegate = nil
         player?.stop()
         player = nil
         currentURL = nil
