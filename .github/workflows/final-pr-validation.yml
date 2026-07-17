@@ -1,9 +1,9 @@
 name: Final PR Validation
 
+# Keep this workflow manual-only until GitHub-hosted runners execute at least
+# one smoke job beyond checkout. Automatic triggers previously failed before
+# the first step with steps: none and generated notification spam.
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       version:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mixpilot-final-validation-${{ github.event.pull_request.number || github.ref }}
+  group: mixpilot-final-validation-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -43,8 +43,66 @@ jobs:
           uname -a
           df -h
           git --version
+          python3 --version
+          swift --version
           docker version
           docker info
+
+  portable-validation:
+    name: Portable tests, simulations and repository audit
+    needs: runner-smoke-ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare scripts
+        run: chmod +x Scripts/*.sh
+      - name: Static consistency and cleanup audits
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_package_manifest.sh
+          ./Scripts/check_source_architecture.sh
+          ./Scripts/check_runtime_safety.sh
+          ./Scripts/check_documentation_consistency.sh
+          python3 Scripts/check_help_localizations.py
+          python3 Scripts/check_localization_consistency.py
+          python3 Scripts/final_repository_audit.py \
+            --strict \
+            --output final-repository-audit.json
+          ./Scripts/check_transport_reliability.sh
+          ./Scripts/check_validation_context.sh
+      - name: Portable Swift test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee portable-swift-test.log
+      - name: Portable 50-track simulation on every backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures \
+            2>&1 | tee portable-simulation-50-report.json
+      - name: Portable 250-track simulation on every backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures \
+            2>&1 | tee portable-simulation-250-report.json
+      - name: Upload portable validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-portable-final-validation
+          path: |
+            final-repository-audit.json
+            portable-swift-test.log
+            portable-simulation-50-report.json
+            portable-simulation-250-report.json
+          if-no-files-found: warn
 
   fresh-supabase:
     name: Fresh Supabase migrations
@@ -123,7 +181,9 @@ jobs:
 
   apple-validation:
     name: macOS, iPhone, simulations and development DMG
-    needs: runner-smoke-macos
+    needs:
+      - runner-smoke-macos
+      - portable-validation
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -139,6 +199,10 @@ jobs:
           ./Scripts/check_runtime_safety.sh
           ./Scripts/check_documentation_consistency.sh
           python3 Scripts/check_help_localizations.py
+          python3 Scripts/check_localization_consistency.py
+          python3 Scripts/final_repository_audit.py \
+            --strict \
+            --output final-repository-audit.json
           ./Scripts/check_transport_reliability.sh
           ./Scripts/check_validation_context.sh
       - name: Complete Swift test suite
@@ -223,6 +287,7 @@ jobs:
         run: |
           {
             echo "## Final validation"
+            echo "- This workflow is manual-only while hosted runner allocation remains unresolved."
             echo "- Development/ad hoc signing is accepted for this workflow."
             echo "- Developer ID and notarization are not required here."
             echo "- Physical DJ software, audio and controller tests remain separate."
@@ -233,6 +298,7 @@ jobs:
         with:
           name: MixPilot-PR-final-validation
           path: |
+            final-repository-audit.json
             swift-test.log
             simulation-50-report.json
             simulation-250-report.json
