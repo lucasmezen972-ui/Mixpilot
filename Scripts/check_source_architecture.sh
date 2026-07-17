@@ -150,6 +150,31 @@ grep -q '_mixpilot\._tcp' Scripts/build_release.sh || {
   exit 1
 }
 
+grep -q '^  MixPilotRemoteTests:$' Mobile/MixPilotRemote/project.yml || {
+  echo 'Architecture check failed: the iPhone project must include the application unit-test target' >&2
+  exit 1
+}
+
+grep -q 'type: bundle.unit-test' Mobile/MixPilotRemote/project.yml || {
+  echo 'Architecture check failed: MixPilotRemoteTests must remain an iOS unit-test bundle' >&2
+  exit 1
+}
+
+grep -q 'target: MixPilotRemote' Mobile/MixPilotRemote/project.yml || {
+  echo 'Architecture check failed: the iPhone unit tests must depend on the host application so XcodeGen configures TEST_HOST' >&2
+  exit 1
+}
+
+test -f Mobile/MixPilotRemote/XcodeTests/RemoteConnectionTests.swift || {
+  echo 'Architecture check failed: the iPhone application tests are missing' >&2
+  exit 1
+}
+
+grep -q 'Run iOS application tests' .github/workflows/iphone-remote-ci.yml || {
+  echo 'Architecture check failed: iPhone CI must execute the application test target on a simulator' >&2
+  exit 1
+}
+
 for deleted in \
   Sources/MixPilotApp/ContentView.swift \
   Sources/MixPilotApp/BrandedRootView.swift \
