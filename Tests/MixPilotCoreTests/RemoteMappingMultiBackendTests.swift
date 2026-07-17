@@ -77,6 +77,49 @@ struct RemoteMappingMultiBackendTests {
         }
     }
 
+    @Test func profileOnlyManifestPassesImmutableProvenanceValidation() throws {
+        let release = try makeRelease(backend: .djay, generatedArtifactSHA256: nil)
+        let validation = completeValidation()
+        let manifest = MixPilotMappingProvenanceManifest(
+            applyMode: release.applyMode,
+            channel: release.channel,
+            ciRunNumber: 12,
+            controllerName: release.controllerName,
+            generatedArtifactSHA256: nil,
+            mandatory: release.mandatory,
+            mappingVersion: release.mappingVersion,
+            maximumSoftwareVersion: release.maximumSoftwareVersion,
+            minimumAppBuild: release.minimumAppBuild,
+            minimumSoftwareVersion: release.minimumSoftwareVersion,
+            profileSHA256: release.profileSHA256,
+            releaseID: release.id,
+            releaseNotes: release.releaseNotes,
+            repository: MixPilotMappingProvenanceVerifier.trustedRepository,
+            schemaVersion: 1,
+            software: release.software,
+            validation: validation
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let manifestData = try encoder.encode(manifest)
+        let provenance = MixPilotMappingProvenance(
+            releaseID: release.id,
+            sourceRepository: MixPilotMappingProvenanceVerifier.trustedRepository,
+            sourceCommitSHA: String(repeating: "a", count: 40),
+            sourceManifestPath: "MappingReleases/djay/mapping-v1.json",
+            sourceManifestSHA256: MixPilotRemoteMappingValidator.sha256(manifestData)
+        )
+
+        let verified = try MixPilotMappingProvenanceVerifier().validate(
+            release: release,
+            provenance: provenance,
+            manifestData: manifestData
+        )
+
+        #expect(verified.generatedArtifactSHA256 == nil)
+        #expect(verified.software == DJBackendIdentifier.djay.rawValue)
+    }
+
     @Test func legacyRekordboxVersionKeysRemainDecodable() throws {
         let profileHash = try MixPilotRemoteMappingValidator.profileSHA256(.developmentDefault)
         let profileData = try JSONEncoder().encode(MIDIMappingProfile.developmentDefault)
@@ -109,6 +152,18 @@ struct RemoteMappingMultiBackendTests {
 
         #expect(decoded.backendIdentifier == .rekordbox)
         #expect(decoded.minimumSoftwareVersion == "6.8.0")
+    }
+
+    private func completeValidation() -> MixPilotMappingManifestValidation {
+        MixPilotMappingManifestValidation(
+            advancedActions: 0,
+            dmgChecksum: "passed",
+            releaseBuild: "passed",
+            simulation250: "passed",
+            simulation50: "passed",
+            supportedActions: 1,
+            unitTests: "passed"
+        )
     }
 
     private func makeRelease(
