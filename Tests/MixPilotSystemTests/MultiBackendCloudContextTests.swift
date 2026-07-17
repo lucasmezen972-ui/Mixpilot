@@ -40,7 +40,10 @@ func cloudContextUsesDynamicBackend() throws {
 @Test("Online diagnostics remain disabled until the user opts in")
 func diagnosticsAreOptIn() {
     let suiteName = "MixPilotCloudPreferencesTests-\(UUID().uuidString)"
-    let defaults = #require(UserDefaults(suiteName: suiteName))
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        Issue.record("Unable to create isolated UserDefaults suite")
+        return
+    }
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     var preferences = MixPilotOnlineDiagnosticsPreferences(defaults: defaults)
