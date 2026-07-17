@@ -116,6 +116,21 @@ grep -q 'descriptor.capabilities.applyingRuntimeAvailability' Sources/MixPilotAp
   exit 1
 }
 
+grep -q 'remoteResumeRejectionReason' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
+  echo 'Architecture check failed: Remote resume must actively revalidate the backend before asking the runtime to continue' >&2
+  exit 1
+}
+
+grep -q 'backend.readState()' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
+  echo 'Architecture check failed: Remote resume must read the current backend state' >&2
+  exit 1
+}
+
+grep -q 'currentState.isReliable' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
+  echo 'Architecture check failed: Remote resume must refuse an unverified deck state' >&2
+  exit 1
+}
+
 if grep -n 'liveTask?.cancel()' Sources/MixPilotApp/AppModel+Live.swift; then
   echo 'Architecture check failed: manual control must use the coordinator safe-point handoff instead of cancelling the Live task first' >&2
   exit 1
