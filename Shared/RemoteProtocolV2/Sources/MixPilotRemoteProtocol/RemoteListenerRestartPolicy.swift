@@ -46,5 +46,4 @@ public struct RemoteTransportRetryPolicy: Sendable, Hashable {
     }
 }
 
-@available(*, deprecated, renamed: "RemoteTransportRetryPolicy")
 public typealias RemoteListenerRestartPolicy = RemoteTransportRetryPolicy
