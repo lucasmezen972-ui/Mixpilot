@@ -4,16 +4,17 @@ on:
   pull_request:
     paths:
       - "Mobile/MixPilotRemote/**"
-      - "Shared/RemoteProtocolV1/**"
+      - "Shared/RemoteProtocolV2/**"
       - ".github/workflows/iphone-remote-ci.yml"
   push:
     branches:
       - develop
+      - "feature/**"
       - "integration/**"
       - "release/**"
     paths:
       - "Mobile/MixPilotRemote/**"
-      - "Shared/RemoteProtocolV1/**"
+      - "Shared/RemoteProtocolV2/**"
       - ".github/workflows/iphone-remote-ci.yml"
   workflow_dispatch:
 
@@ -51,7 +52,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee iphone-remote-build.log
 
-      - name: Run Remote v1 contract and sequence tests
+      - name: Run Remote v2 contract and sequence tests
         working-directory: Mobile/MixPilotRemote
         run: |
           set -o pipefail
