@@ -37,7 +37,6 @@ targets:
   MixPilotRemoteTests:
     type: bundle.unit-test
     platform: iOS
-    hostApplication: MixPilotRemote
     sources:
       - path: XcodeTests
     dependencies:
