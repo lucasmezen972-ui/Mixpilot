@@ -1,0 +1,43 @@
+"commands.menu.mixpilot" = "MixPilot";
+"commands.prepare" = "Préparer";
+"commands.verify" = "Vérifier";
+"commands.live" = "Live";
+"commands.advanced" = "Avancé";
+"commands.remote.disable" = "Désactiver la télécommande iPhone";
+"commands.remote.enable_development" = "Activer la télécommande iPhone (développement)";
+"commands.remote.unavailable" = "Télécommande iPhone indisponible (sécurité)";
+"commands.remote.new_pairing_code" = "Afficher un nouveau code d’appairage…";
+"commands.check_updates" = "Vérifier les mises à jour";
+"commands.export_diagnostics" = "Exporter un diagnostic anonymisé…";
+"commands.take_control_now" = "Reprendre immédiatement la main";
+
+"commands.window.choose_software" = "Choisir le logiciel DJ";
+"commands.window.quick_set" = "Préparer un set rapidement";
+"commands.window.rekordbox_tools" = "Outils rekordbox";
+"commands.window.rekordbox_inspection" = "Inspection rekordbox";
+"commands.window.rekordbox_validation" = "Validation réelle rekordbox";
+"commands.window.rekordbox_mapping" = "Mapping rekordbox";
+"commands.window.serato_mapping" = "Configuration Serato";
+"commands.window.rehearsal" = "Répétition des transitions";
+"commands.window.transition_inspector" = "Inspecteur de transitions";
+"commands.window.audio_analysis" = "Analyse audio de préparation";
+"commands.window.recovery" = "Centre de récupération";
+"commands.window.help" = "Centre d’aide";
+
+"commands.alert.pairing_unavailable.title" = "Appairage indisponible";
+"commands.alert.pairing_unavailable.detail" = "MixPilot n’a pas pu générer un code cryptographiquement sûr. La télécommande reste désactivée.";
+"commands.alert.ok" = "OK";
+"commands.alert.pairing_development.title" = "Appairer MixPilot Remote — développement";
+"commands.alert.pairing_development.detail_format" = "Ce transport local n’est pas encore chiffré. Utilise-le uniquement sur un réseau de développement isolé. Sur l’iPhone, sélectionne ce Mac puis saisis le code %@. Il expire dans deux minutes.";
+"commands.alert.understood" = "J’ai compris";
+"commands.alert.remote_disabled.title" = "Télécommande temporairement désactivée";
+"commands.alert.remote_disabled.detail" = "Le transport iPhone–Mac actuel n’est pas encore chiffré. MixPilot le bloque dans les builds normaux. Pour un test de développement sur un réseau isolé, lance l’application avec MIXPILOT_ALLOW_INSECURE_REMOTE=1.";
+
+"commands.choose_software" = "Choisir le logiciel DJ";
+"commands.quick_set" = "Préparer un set rapidement";
+"commands.advanced_menu" = "Avancé";
+"commands.rehearse_transition" = "Répéter une transition";
+"commands.inspect_transitions" = "Inspecter les transitions";
+"commands.analyze_audio" = "Analyser l’audio localement";
+"commands.open_recovery" = "Ouvrir le centre de récupération";
+"commands.check_online_services" = "Vérifier les services en ligne";
