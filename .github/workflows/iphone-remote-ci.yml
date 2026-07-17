@@ -26,7 +26,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +65,36 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee iphone-remote-build.log
 
+      - name: Run iOS application tests
+        working-directory: Mobile/MixPilotRemote
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > available-simulators.json
+          SIMULATOR_UDID="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('available-simulators.json').read_text())
+          for runtime_devices in payload.get('devices', {}).values():
+              for device in runtime_devices:
+                  if device.get('isAvailable') and 'iPhone' in device.get('name', ''):
+                      print(device['udid'])
+                      raise SystemExit(0)
+          raise SystemExit('No available iPhone simulator was found on the runner.')
+          PY
+          )"
+          xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          set -o pipefail
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee iphone-remote-xctest.log
+
       - name: Run Remote v2 contract and sequence tests
         working-directory: Mobile/MixPilotRemote
         run: |
@@ -78,5 +108,7 @@ jobs:
           name: iphone-remote-validation-logs
           path: |
             Mobile/MixPilotRemote/iphone-remote-build.log
+            Mobile/MixPilotRemote/iphone-remote-xctest.log
             Mobile/MixPilotRemote/iphone-remote-test.log
+            Mobile/MixPilotRemote/available-simulators.json
           if-no-files-found: warn
