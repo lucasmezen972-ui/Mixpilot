@@ -116,7 +116,10 @@ extension AppModel {
         let record = DJCommandValidationRecord(
             key: key,
             status: succeeded ? .automatedSuccess : .failed,
-            detail: succeeded ? "DEVICE_CONFIRMED" : "DEVICE_REJECTED"
+            evidence: succeeded ? .deviceConfirmed : .userRejected,
+            detail: succeeded
+                ? "Réaction confirmée par l’utilisateur sur le logiciel DJ actif."
+                : "La réaction attendue n’a pas été observée."
         )
 
         Task {
