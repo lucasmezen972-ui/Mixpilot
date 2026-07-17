@@ -28,6 +28,8 @@ CURRENT_REFERENCES=(
   Documentation/SUPABASE_ADVISOR_REPORT.md
   Documentation/REMOTE_COMPATIBILITY.md
   Documentation/IPHONE_REMOTE_BRIDGE.md
+  Documentation/TECHNICAL_BENCHMARK_AND_PRIOR_ART.md
+  Documentation/RELIABILITY_HARDENING_REPORT.md
 )
 
 for file in "${CURRENT_REFERENCES[@]}"; do
@@ -71,6 +73,32 @@ for section in \
     exit 1
   }
 done
+
+for section in \
+  "Résumé exécutif" \
+  "Références Apple" \
+  "Écarts prioritaires" \
+  "Priorités d’implémentation" \
+  "Sources principales"; do
+  grep -q "$section" Documentation/TECHNICAL_BENCHMARK_AND_PRIOR_ART.md || {
+    echo "The technical benchmark is missing section: $section" >&2
+    exit 1
+  }
+done
+
+for section in \
+  "Listener Remote Mac" \
+  "Reconnexion iPhone" \
+  "Changements de configuration audio" \
+  "Fraîcheur de l’état backend" \
+  "Handoff après panne critique"; do
+  grep -q "$section" Documentation/RELIABILITY_HARDENING_REPORT.md || {
+    echo "The reliability report is missing section: $section" >&2
+    exit 1
+  }
+done
+
+python3 Scripts/check_help_localizations.py
 
 FORBIDDEN_PATTERN='Serato-only|Serato principal|djay expérimental|rekordbox expérimental|second backend|third backend|Serato source of truth|REQUIRES_SERATO_VALIDATION'
 if grep -Ein "$FORBIDDEN_PATTERN" "${CURRENT_REFERENCES[@]}"; then
