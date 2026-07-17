@@ -22,17 +22,18 @@ TABLES = (
     "Workspace.strings",
     "Commands.strings",
     "Status.strings",
+    "Technical.strings",
 )
 
 ENTRY_RE = re.compile(r'^\s*"((?:\\.|[^"\\])+)"\s*=\s*"((?:\\.|[^"\\])*)"\s*;\s*$')
 PLACEHOLDER_RE = re.compile(r'%(?:\d+\$)?(?:[-+0 #]*)(?:\d+|\*)?(?:\.\d+|\.\*)?(?:hh|h|ll|l|L|z|j|t)?[@aAcCdDeEfFgGiIoOsSuUxX]')
 REFERENCE_PATTERNS = (
     re.compile(r'RemoteLocalizedCopy\.(?:text|format)\(\s*"([^"]+)"'),
-    re.compile(r'AppLocalizedCopy\.(?:text|format|workspace|workspaceFormat|command|commandFormat|status|statusFormat)\(\s*"([^"]+)"'),
+    re.compile(r'AppLocalizedCopy\.(?:text|format|workspace|workspaceFormat|command|commandFormat|status|statusFormat|technical|technicalFormat)\(\s*"([^"]+)"'),
     re.compile(r'catalog\.localized\(\s*"([^"]+)"'),
     re.compile(r'localized\(\s*"([^"]+)"'),
 )
-STABLE_KEY_RE = re.compile(r'"((?:app|commands|help|remote|status|workspace)\.[A-Za-z0-9_.-]+)"')
+STABLE_KEY_RE = re.compile(r'"((?:app|commands|help|remote|status|technical|workspace)\.[A-Za-z0-9_.-]+)"')
 SOURCE_ROOTS = (
     ROOT / "Mobile" / "MixPilotRemote" / "Sources",
     ROOT / "Sources" / "MixPilotApp",
