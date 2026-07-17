@@ -12,6 +12,22 @@ private final class SecurityMemoryTokenStore: MixPilotRemoteTokenStoring, @unche
 
 @MainActor
 final class RemoteSecurityPolicyTests: XCTestCase {
+    func testCurrentInsecureTransportIsDisabledUnlessExplicitlyOverridden() {
+        XCTAssertFalse(
+            MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(environment: [:])
+        )
+        XCTAssertFalse(
+            MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(
+                environment: [MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey: "0"]
+            )
+        )
+        XCTAssertTrue(
+            MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(
+                environment: [MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey: "1"]
+            )
+        )
+    }
+
     func testCorrectIncorrectAndExpiredCodes() throws {
         let authority = MixPilotRemotePairingAuthority(tokenStore: SecurityMemoryTokenStore())
         let now = Date(timeIntervalSince1970: 1_000)
@@ -27,6 +43,41 @@ final class RemoteSecurityPolicyTests: XCTestCase {
         let freshPIN = authority.rotatePairingCode(now: now)
         let token = try authority.pair(deviceID: "valid", pin: freshPIN, now: now.addingTimeInterval(20))
         XCTAssertTrue(authority.authenticate(deviceID: "valid", token: token))
+    }
+
+    func testPairingLocksAfterFiveIncorrectAttempts() throws {
+        let authority = MixPilotRemotePairingAuthority(tokenStore: SecurityMemoryTokenStore())
+        let now = Date(timeIntervalSince1970: 1_500)
+        let validPIN = authority.rotatePairingCode(now: now)
+        let invalidPIN = validPIN == "000000" ? "999999" : "000000"
+
+        for attempt in 1...5 {
+            XCTAssertThrowsError(
+                try authority.pair(
+                    deviceID: "attacker-\(attempt)",
+                    pin: invalidPIN,
+                    now: now.addingTimeInterval(Double(attempt))
+                )
+            ) { error in
+                if attempt == 5 {
+                    guard case MixPilotRemotePairingError.tooManyAttempts = error else {
+                        return XCTFail("La cinquième erreur doit verrouiller l’appairage")
+                    }
+                }
+            }
+        }
+
+        XCTAssertEqual(authority.failedPairingAttempts, 5)
+        XCTAssertGreaterThan(authority.pairingLockedUntil, now)
+        XCTAssertEqual(authority.pairingCode, "------")
+
+        XCTAssertThrowsError(
+            try authority.pair(deviceID: "attacker", pin: validPIN, now: now.addingTimeInterval(30))
+        ) { error in
+            guard case MixPilotRemotePairingError.tooManyAttempts = error else {
+                return XCTFail("Le verrouillage doit rester actif")
+            }
+        }
     }
 
     func testValidTokenBecomesInvalidAfterRevocation() throws {

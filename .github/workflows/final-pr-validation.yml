@@ -1,53 +1,85 @@
 name: Final PR Validation
 
-# Manual-only while account-level runners are not proven to start jobs. This
-# workflow intentionally does not subscribe to push or pull_request events.
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
         description: "Version used for the development DMG"
         required: false
-        default: "0.3.0-pr31"
+        default: "0.4.0-dev"
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: mixpilot-final-validation-${{ github.ref }}
+  group: mixpilot-final-validation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  MIXPILOT_VALIDATION_VERSION: ${{ github.event.inputs.version || '0.4.0-dev' }}
+
 jobs:
+  runner-smoke-ubuntu:
+    name: Runner smoke test (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: GitHub context
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Ubuntu runner"
+            echo "- event: ${GITHUB_EVENT_NAME}"
+            echo "- ref: ${GITHUB_REF}"
+            echo "- sha: ${GITHUB_SHA}"
+            echo "- runner: ${RUNNER_OS}-${RUNNER_ARCH}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a
+          df -h
+          git --version
+          docker version
+          docker info
+
   fresh-supabase:
     name: Fresh Supabase migrations
+    needs: runner-smoke-ubuntu
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       SUPABASE_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
       - name: Install pinned Supabase CLI
         run: npm install --no-save supabase@2.109.1
-
       - name: Initialize local Supabase configuration when absent
         run: |
           if [[ ! -f supabase/config.toml ]]; then
             npx supabase init
           fi
-
       - name: Rebuild a fresh local database from migrations
+        shell: bash
         run: |
+          set -euo pipefail
           set -o pipefail
           npx supabase start 2>&1 | tee supabase-start.log
           npx supabase db reset 2>&1 | tee supabase-reset.log
           npx supabase migration list --local 2>&1 | tee supabase-migrations.log
-
+      - name: Database diagnostics after failure
+        if: failure()
+        shell: bash
+        run: |
+          docker ps -a | tee docker-ps.log
+          docker system df | tee docker-disk.log
+          npx supabase status 2>&1 | tee supabase-status.log || true
       - name: Upload fresh-database logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,27 +89,51 @@ jobs:
             supabase-start.log
             supabase-reset.log
             supabase-migrations.log
+            supabase-status.log
+            docker-ps.log
+            docker-disk.log
           if-no-files-found: warn
-
       - name: Stop local Supabase
         if: always()
         run: npx supabase stop --no-backup || true
 
-  apple-builds:
-    name: macOS, iPhone, simulations and DMG
+  runner-smoke-macos:
+    name: Runner smoke test (macOS)
     runs-on: macos-latest
-    timeout-minutes: 75
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Toolchain
+      - name: Apple toolchain context
+        shell: bash
         run: |
+          set -euo pipefail
+          {
+            echo "## macOS runner"
+            echo "- event: ${GITHUB_EVENT_NAME}"
+            echo "- ref: ${GITHUB_REF}"
+            echo "- sha: ${GITHUB_SHA}"
+            echo "- runner: ${RUNNER_OS}-${RUNNER_ARCH}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          sw_vers
+          uname -a
+          df -h
           xcodebuild -version
           swift --version
-          chmod +x Scripts/*.sh
+          xcrun simctl list runtimes
 
+  apple-validation:
+    name: macOS, iPhone, simulations and development DMG
+    needs: runner-smoke-macos
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare scripts
+        run: chmod +x Scripts/*.sh
       - name: Static consistency checks
+        shell: bash
         run: |
+          set -euo pipefail
           ./Scripts/check_package_manifest.sh
           ./Scripts/check_source_architecture.sh
           ./Scripts/check_runtime_safety.sh
@@ -85,37 +141,39 @@ jobs:
           python3 Scripts/check_help_localizations.py
           ./Scripts/check_transport_reliability.sh
           ./Scripts/check_validation_context.sh
-
       - name: Complete Swift test suite
+        shell: bash
         run: |
+          set -euo pipefail
           set -o pipefail
           swift test --parallel 2>&1 | tee swift-test.log
-
       - name: Simulate 50 tracks with failures on every backend
+        shell: bash
         run: |
+          set -euo pipefail
           set -o pipefail
           swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures \
             2>&1 | tee simulation-50-report.json
-
       - name: Simulate 250 tracks with failures on every backend
+        shell: bash
         run: |
+          set -euo pipefail
           set -o pipefail
           swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures \
             2>&1 | tee simulation-250-report.json
-
       - name: Build all macOS release products
         run: |
           swift build -c release --product MixPilotAutopilot
           swift build -c release --product MixPilotHardwareProbeCLI
           swift build -c release --product MixPilotMappingPublisherCLI
-
       - name: Install XcodeGen
-        run: brew install xcodegen
-
+        shell: bash
+        run: |
+          brew install xcodegen
+          xcodegen --version
       - name: Generate iPhone project
         working-directory: Mobile/MixPilotRemote
         run: xcodegen generate
-
       - name: Build and XCTest iPhone Remote
         working-directory: Mobile/MixPilotRemote
         shell: bash
@@ -142,22 +200,33 @@ jobs:
             -scheme MixPilotRemote \
             -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -resultBundlePath iphone-remote-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test 2>&1 | tee iphone-remote-xctest.log
-
       - name: Build application and development DMG
         env:
-          MIXPILOT_VERSION: ${{ inputs.version }}
+          MIXPILOT_VERSION: ${{ env.MIXPILOT_VALIDATION_VERSION }}
+          CODE_SIGN_IDENTITY: "-"
         run: |
           ./Scripts/build_release.sh
           ./Scripts/package_dmg.sh
-
-      - name: Verify DMG and checksum
+      - name: Verify development app and checksum
+        shell: bash
         run: |
+          set -euo pipefail
           codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
           cd build
           shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
-
+      - name: Validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Final validation"
+            echo "- Development/ad hoc signing is accepted for this workflow."
+            echo "- Developer ID and notarization are not required here."
+            echo "- Physical DJ software, audio and controller tests remain separate."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload final validation artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -169,6 +238,7 @@ jobs:
             simulation-250-report.json
             Mobile/MixPilotRemote/iphone-remote-xctest.log
             Mobile/MixPilotRemote/available-simulators.json
+            Mobile/MixPilotRemote/iphone-remote-tests.xcresult
             build/MixPilot-Autopilot.dmg
             build/MixPilot-Autopilot.dmg.sha256
           if-no-files-found: warn
