@@ -63,18 +63,18 @@ func djayAutomixDoesNotRequireMIDI() {
     #expect(report.items.first(where: { $0.id == "mapping" })?.status == .warning)
 }
 
-@Test("A genuinely critical failure still blocks Live")
-func criticalFailureStillBlocksLive() {
+@Test("A genuinely critical backend failure still blocks Live")
+func criticalBackendFailureStillBlocksLive() {
     var input = readyInput(
         connectedToPower: false,
         batteryLevel: 0.31,
         emergencyAudioReady: false,
         emergencyDuration: 0
     )
-    input.seratoRunning = false
+    input.backendEnvironment?.isRunning = false
 
     let report = PreflightEvaluator().evaluate(input)
 
     #expect(!report.canStartLive)
-    #expect(report.items.first(where: { $0.id == "dj-software" })?.status == .failed)
+    #expect(report.items.first(where: { $0.id == "backend-environment" })?.status == .failed)
 }
