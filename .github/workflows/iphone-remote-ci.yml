@@ -1,23 +1,9 @@
 name: iPhone Remote CI
 
+# Temporarily manual-only while GitHub Actions fails before checkout with
+# `steps: none`. Restore pull_request/push triggers after account-level runner
+# execution is confirmed. This prevents notification spam without deleting CI.
 on:
-  pull_request:
-    paths:
-      - "Mobile/MixPilotRemote/**"
-      - "Shared/RemoteProtocolV2/**"
-      - "Scripts/check_source_architecture.sh"
-      - ".github/workflows/iphone-remote-ci.yml"
-  push:
-    branches:
-      - develop
-      - "feature/**"
-      - "integration/**"
-      - "release/**"
-    paths:
-      - "Mobile/MixPilotRemote/**"
-      - "Shared/RemoteProtocolV2/**"
-      - "Scripts/check_source_architecture.sh"
-      - ".github/workflows/iphone-remote-ci.yml"
   workflow_dispatch:
 
 permissions:
