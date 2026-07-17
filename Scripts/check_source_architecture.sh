@@ -13,17 +13,21 @@ fail_if_found() {
   fi
 }
 
-# Historical aliases may remain in compatibility files, but never in the active
-# application, runtime or Remote bridge.
+# Historical aliases may remain in compatibility files, but never in active
+# product layers.
 fail_if_found \
   'SeratoPlaylistImporter\(' \
   'the active application must use VisiblePlaylistImporter' \
   Sources/MixPilotApp Sources/MixPilotRuntime Sources/MixPilotRemoteBridge
 
-fail_if_found \
-  'SeratoAccessibilityBridge\(' \
-  'the active product layers must use DJAccessibilityBridge' \
-  Sources/MixPilotApp Sources/MixPilotRuntime Sources/MixPilotRemoteBridge
+if grep -RInE \
+  --exclude='SeratoAccessibilityBridge.swift' \
+  --exclude-dir=.build \
+  --exclude-dir=.git \
+  'SeratoAccessibilityBridge\(' Sources; then
+  echo 'Architecture check failed: active source must use DJAccessibilityBridge' >&2
+  exit 1
+fi
 
 fail_if_found \
   'MappedSeratoController' \
