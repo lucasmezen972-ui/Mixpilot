@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 extension AppModel {
     func capturePlaylist() {
         guard let selectedBackend else {
-            runtimeStatus = "Choisis ton logiciel DJ avant d’importer la playlist."
+            runtimeStatus = AppLocalizedCopy.status("status.preparation.choose_backend_import")
             return
         }
         let rows = accessibilityBridge.libraryRows(backend: selectedBackend, maxRows: 1_000)
@@ -17,16 +17,25 @@ extension AppModel {
         let result = VisiblePlaylistImporter().importRows(rows)
         playlistWarnings = result.warnings
         guard !result.tracks.isEmpty else {
-            runtimeStatus = "Aucune playlist exploitable n’est visible. Ouvre la playlist souhaitée, puis relance l’import."
+            runtimeStatus = AppLocalizedCopy.status("status.preparation.no_visible_playlist")
             return
         }
+        let timestamp = Date().formatted(date: .abbreviated, time: .shortened)
         preparedProject = SetPreparationEngine().prepare(
-            name: "Playlist \(selectedBackend.displayName) — \(Date().formatted(date: .abbreviated, time: .shortened))",
+            name: AppLocalizedCopy.statusFormat(
+                "status.preparation.project_name",
+                selectedBackend.displayName,
+                timestamp
+            ),
             tracks: result.tracks,
             backend: selectedBackend
         )
         optimizationReport = SetOptimizer().analyze(tracks: result.tracks)
-        runtimeStatus = "\(result.tracks.count) morceaux préparés pour \(selectedBackend.displayName)"
+        runtimeStatus = AppLocalizedCopy.statusFormat(
+            "status.preparation.tracks_prepared",
+            result.tracks.count,
+            selectedBackend.displayName
+        )
         updateSnapshotForProject()
         evaluatePreflight()
     }
@@ -37,15 +46,15 @@ extension AppModel {
     func createDemoProject() {
         let tracks = SetSimulator().makeTracks(count: 30)
         preparedProject = SetPreparationEngine().prepare(
-            name: "Set de démonstration",
+            name: AppLocalizedCopy.status("status.preparation.demo_name"),
             tracks: tracks,
             backend: selectedBackend
         )
         optimizationReport = SetOptimizer().analyze(tracks: tracks)
         playlistWarnings = []
         runtimeStatus = selectedBackend.map {
-            "Set de démonstration préparé pour \($0.displayName)"
-        } ?? "Set de démonstration préparé • choisis le logiciel DJ avant le Live"
+            AppLocalizedCopy.statusFormat("status.preparation.demo_for_backend", $0.displayName)
+        } ?? AppLocalizedCopy.status("status.preparation.demo_choose_backend")
         updateSnapshotForProject()
         evaluatePreflight()
     }
@@ -53,20 +62,23 @@ extension AppModel {
     func lockPreparedProject() {
         guard var project = preparedProject else { return }
         guard let selectedBackend else {
-            runtimeStatus = "Choisis le logiciel DJ avant de verrouiller le plan."
+            runtimeStatus = AppLocalizedCopy.status("status.preparation.choose_backend_lock")
             return
         }
         project.selectBackend(selectedBackend)
         project.lock()
         preparedProject = project
         Task { try? await projectStore.save(project) }
-        runtimeStatus = "Plan verrouillé pour \(selectedBackend.displayName) • prêt pour la vérification"
+        runtimeStatus = AppLocalizedCopy.statusFormat(
+            "status.preparation.plan_locked",
+            selectedBackend.displayName
+        )
         evaluatePreflight()
     }
 
     func selectEmergencyAudio() {
         let panel = NSOpenPanel()
-        panel.title = "Choisir au moins 30 minutes de musique locale de secours"
+        panel.title = AppLocalizedCopy.status("status.preparation.emergency_panel_title")
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.mp3, .mpeg4Audio, .wav, .aiff, .audio]
@@ -74,39 +86,54 @@ extension AppModel {
         do {
             let summary = try emergencyPlayer.prepare(urls: panel.urls)
             emergencyDuration = summary.totalDuration
-            emergencyStatus = "\(summary.fileCount) fichiers • \(Int(summary.totalDuration / 60)) min"
+            emergencyStatus = AppLocalizedCopy.statusFormat(
+                "status.preparation.emergency_summary",
+                summary.fileCount,
+                Int(summary.totalDuration / 60)
+            )
             if !summary.invalidFiles.isEmpty {
-                emergencyStatus += " • \(summary.invalidFiles.count) fichier(s) ignoré(s)"
+                emergencyStatus += AppLocalizedCopy.statusFormat(
+                    "status.preparation.emergency_invalid",
+                    summary.invalidFiles.count
+                )
             }
         } catch {
             emergencyDuration = 0
-            emergencyStatus = "La musique de secours n’a pas pu être préparée. Choisis des fichiers audio locaux lisibles."
+            emergencyStatus = AppLocalizedCopy.status("status.preparation.emergency_failed")
         }
         evaluatePreflight()
     }
 
     func playEmergencyAudio() {
         emergencyPlayer.play()
-        emergencyStatus = "Musique de secours en lecture"
+        emergencyStatus = AppLocalizedCopy.status("status.preparation.emergency_playing")
     }
 
     func stopEmergencyAudio() {
         emergencyPlayer.stop()
-        emergencyStatus = "Musique de secours arrêtée"
+        emergencyStatus = AppLocalizedCopy.status("status.preparation.emergency_stopped")
     }
 
     func startAudioMonitoring() {
-        guard !audioMonitor.isRunning, audioStatus != "Démarrage de la surveillance…" else { return }
+        guard !audioMonitor.isRunning, !audioMonitoringStarting else { return }
+        audioMonitoringStarting = true
         audioMonitoringGeneration &+= 1
         let generation = audioMonitoringGeneration
         lastAudioLevelUIUpdateAt = 0
-        audioStatus = "Démarrage de la surveillance…"
+        audioStatus = AppLocalizedCopy.status("status.preparation.audio_starting")
 
         Task { @MainActor [weak self] in
-            guard let self, self.audioMonitoringGeneration == generation else { return }
+            guard let self else { return }
+            guard self.audioMonitoringGeneration == generation else {
+                self.audioMonitoringStarting = false
+                return
+            }
             await self.audioWatchdog.reset()
             guard self.audioMonitoringGeneration == generation,
-                  !self.audioMonitor.isRunning else { return }
+                  !self.audioMonitor.isRunning else {
+                self.audioMonitoringStarting = false
+                return
+            }
 
             do {
                 try self.audioMonitor.start { [weak self, audioWatchdog = self.audioWatchdog, generation] sample in
@@ -125,12 +152,18 @@ extension AppModel {
                 }
                 guard self.audioMonitoringGeneration == generation else {
                     self.audioMonitor.stop()
+                    self.audioMonitoringStarting = false
                     return
                 }
-                self.audioStatus = "Surveillance active"
+                self.audioMonitoringStarting = false
+                self.audioStatus = AppLocalizedCopy.status("status.preparation.audio_active")
             } catch {
-                guard self.audioMonitoringGeneration == generation else { return }
-                self.audioStatus = "La surveillance audio n’a pas pu démarrer. Vérifie l’entrée sélectionnée et les permissions."
+                guard self.audioMonitoringGeneration == generation else {
+                    self.audioMonitoringStarting = false
+                    return
+                }
+                self.audioMonitoringStarting = false
+                self.audioStatus = AppLocalizedCopy.status("status.preparation.audio_start_failed")
             }
             self.evaluatePreflight()
         }
@@ -138,9 +171,10 @@ extension AppModel {
 
     func stopAudioMonitoring() {
         audioMonitoringGeneration &+= 1
+        audioMonitoringStarting = false
         audioMonitor.stop()
         Task { await audioWatchdog.reset() }
-        audioStatus = "Surveillance arrêtée"
+        audioStatus = AppLocalizedCopy.status("status.preparation.audio_stopped")
         evaluatePreflight()
     }
 
@@ -155,34 +189,43 @@ extension AppModel {
             totalTransitions: project.transitions.count,
             progress: 0,
             incidents: [],
-            statusMessage: "Set préparé"
+            statusMessage: AppLocalizedCopy.status("status.preparation.set_prepared")
         )
     }
 
     func applyAudioEvent(_ event: AudioWatchdogEvent) {
         switch event {
         case .healthy:
-            audioStatus = "Surveillance active"
+            audioStatus = AppLocalizedCopy.status("status.preparation.audio_active")
         case .silenceWarning(let duration):
-            audioStatus = String(format: "Silence détecté %.1f s", duration)
+            audioStatus = AppLocalizedCopy.statusFormat(
+                "status.preparation.silence_warning",
+                duration
+            )
         case .criticalSilence(let duration):
-            audioStatus = String(format: "Silence critique %.1f s", duration)
+            audioStatus = AppLocalizedCopy.statusFormat(
+                "status.preparation.critical_silence",
+                duration
+            )
             if isLiveRunning {
                 if emergencyPlayer.currentURL != nil, !emergencyPlayer.isPlaying {
                     emergencyPlayer.play()
-                    emergencyStatus = "Musique de secours déclenchée automatiquement"
+                    emergencyStatus = AppLocalizedCopy.status("status.preparation.emergency_auto")
                 }
                 takeManualControl()
             }
         case .clipping(let peakDB):
-            audioStatus = String(format: "Saturation %.1f dB", peakDB)
+            audioStatus = AppLocalizedCopy.statusFormat(
+                "status.preparation.clipping",
+                peakDB
+            )
         case .sourceUnavailable:
-            audioStatus = "Source audio indisponible"
+            audioStatus = AppLocalizedCopy.status("status.preparation.source_unavailable")
             if isLiveRunning {
                 takeManualControl()
             }
         case .sourceRestored:
-            audioStatus = "Source audio rétablie"
+            audioStatus = AppLocalizedCopy.status("status.preparation.source_restored")
         }
     }
 }
