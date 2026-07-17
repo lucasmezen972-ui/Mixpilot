@@ -65,6 +65,7 @@ final class AppModel: ObservableObject {
     var liveTask: Task<Void, Never>?
     var liveReconciliationTask: Task<Void, Never>?
     var lastAudioLevelUIUpdateAt: TimeInterval = 0
+    var audioMonitoringGeneration: UInt64 = 0
 
     let accessibilityBridge = DJAccessibilityBridge()
     let commandValidationStore = UserDefaultsDJCommandValidationStore()
