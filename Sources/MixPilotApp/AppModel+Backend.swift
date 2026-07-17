@@ -18,7 +18,6 @@ extension AppModel {
                 }
                 try await backendRegistry.select(identifier)
                 selectedBackend = identifier
-                DJSoftwareSelectionStore.selected = DJSoftware(identifier)
                 try await associatePreparedProject(with: identifier)
                 try await rebuildRuntimeCoordinator()
                 await refreshEnvironmentNow()
@@ -43,9 +42,10 @@ extension AppModel {
             backendDescriptors.first { $0.identifier == identifier }
         }
         let capabilities = descriptor?.capabilities ?? DJBackendCapabilities()
+        let liveCapabilities = capabilities.confirmedForLiveOnly()
         let project = preparedProject
         let adaptations = project.map {
-            TransitionCapabilityNegotiator().adaptSet($0.transitions, to: capabilities)
+            TransitionCapabilityNegotiator().adaptSet($0.transitions, to: liveCapabilities)
         } ?? []
         let fallbackCount = adaptations.filter { $0.usedFallback && $0.isExecutable }.count
         let blockedCount = adaptations.filter { !$0.isExecutable }.count
@@ -59,7 +59,7 @@ extension AppModel {
                 backendValidation: backendValidationReport,
                 accessibilityGranted: accessibilityStatus == "Autorisée",
                 midiAvailable: midiController != nil,
-                mappingCompletion: mappingProfile.completionRatio,
+                mappingCompletion: mappingProfile.liveControlCoverageRatio,
                 audioMonitorRunning: audioMonitor.isRunning,
                 internetAvailable: connectivityStatus.isAvailable,
                 internetRequiredForPreparedSet: false,
@@ -147,7 +147,6 @@ extension AppModel {
         guard project.backend != identifier else { return }
 
         project.selectBackend(identifier)
-        project.locked = false
         preparedProject = project
         liveArmed = false
         _ = try await projectStore.save(project)
