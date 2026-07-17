@@ -78,32 +78,6 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public enum DJSoftwareSelectionStore {
-    public static let defaultsKey = "MixPilotSelectedDJSoftware"
-
-    /// Reads only an explicit legacy preference. Missing or invalid data returns
-    /// nil so onboarding can ask the user instead of inventing Serato.
-    public static var selected: DJSoftware? {
-        get {
-            guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey) else {
-                return nil
-            }
-            return DJSoftware(rawValue: rawValue)
-        }
-        set {
-            if let newValue {
-                UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: defaultsKey)
-            }
-        }
-    }
-
-    public static func migrateToBackendIdentifier() -> DJBackendIdentifier? {
-        selected?.backendIdentifier
-    }
-}
-
 @available(*, deprecated, message: "Use DJBackendCapabilities")
 public enum DJExecutionMode: String, Codable, CaseIterable, Sendable {
     case directDeckControl
