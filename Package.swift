@@ -13,6 +13,7 @@ var dependencies: [Package.Dependency] = [
 
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
+    .library(name: "MixPilotHelp", targets: ["MixPilotHelp"]),
     .library(name: "MixPilotRemoteProtocol", targets: ["MixPilotRemoteProtocol"]),
     .executable(name: "MixPilotSimulatorCLI", targets: ["MixPilotSimulatorCLI"]),
     .executable(name: "MixPilotMappingPublisherCLI", targets: ["MixPilotMappingPublisherCLI"]),
@@ -24,6 +25,10 @@ var targets: [Target] = [
         dependencies: [
             .product(name: "Crypto", package: "swift-crypto"),
         ]
+    ),
+    .target(
+        name: "MixPilotHelp",
+        resources: [.process("Resources")]
     ),
     .target(
         name: "MixPilotRemoteProtocol",
@@ -41,6 +46,11 @@ var targets: [Target] = [
         name: "MixPilotCoreTests",
         dependencies: ["MixPilotCore"],
         path: "Tests/MixPilotCoreTests"
+    ),
+    .testTarget(
+        name: "MixPilotHelpTests",
+        dependencies: ["MixPilotHelp"],
+        path: "Tests/MixPilotHelpTests"
     ),
     .testTarget(
         name: "MixPilotRemoteProtocolTests",
@@ -118,6 +128,7 @@ targets.append(
         name: "MixPilotApp",
         dependencies: [
             "MixPilotCore",
+            "MixPilotHelp",
             "MixPilotMIDI",
             "MixPilotSystem",
             "MixPilotRuntime",
@@ -156,7 +167,7 @@ targets.append(
 let package = Package(
     name: "MixPilot",
     defaultLocalization: "fr",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: products,
     dependencies: dependencies,
     targets: targets
