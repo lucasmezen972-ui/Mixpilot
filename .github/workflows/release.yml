@@ -65,7 +65,7 @@ jobs:
           ./Scripts/check_source_architecture.sh
           ./Scripts/check_runtime_safety.sh
           ./Scripts/check_documentation_consistency.sh
-          python3 Scripts/check_help_localizations.py
+          python3 Scripts/check_localization_consistency.py
           ./Scripts/check_transport_reliability.sh
           ./Scripts/check_validation_context.sh
 
@@ -197,17 +197,17 @@ jobs:
           ## Artifact generated — ${RELEASE_VERSION}
 
           - Workflow run: ${GITHUB_RUN_ID}
-          - Commit: `${GITHUB_SHA}`
-          - Artifact: `MixPilot-Autopilot-${RELEASE_VERSION}`
-          - DMG SHA-256: `${checksum}`
+          - Commit: ${GITHUB_SHA}
+          - Artifact: MixPilot-Autopilot-${RELEASE_VERSION}
+          - DMG SHA-256: ${checksum}
           - Signature: ${signature_label}
           - Notarization: ${notarization_label}
-          - Unit tests: `AUTOMATED_SUCCESS`
-          - Simulation 50: `SIMULATED_SUCCESS`
-          - Simulation 250: `SIMULATED_SUCCESS`
-          - macOS release build: `AUTOMATED_SUCCESS`
-          - iPhone Simulator XCTest: `AUTOMATED_SUCCESS`
-          - Physical DJ/audio/pairing: `REQUIRES_DEVICE_VALIDATION`
+          - Unit tests: AUTOMATED_SUCCESS
+          - Simulation 50: SIMULATED_SUCCESS
+          - Simulation 250: SIMULATED_SUCCESS
+          - macOS release build: AUTOMATED_SUCCESS
+          - iPhone Simulator XCTest: AUTOMATED_SUCCESS
+          - Physical DJ/audio/pairing: REQUIRES_DEVICE_VALIDATION
           REPORT
           gh pr comment "$PR_NUMBER" --body-file build/pr-release-report.md
           cat build/pr-release-report.md >> "$GITHUB_STEP_SUMMARY"
