@@ -57,8 +57,14 @@ dependencies.append(
     )
 )
 
-products.append(.executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]))
-products.append(.executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]))
+products.append(contentsOf: [
+    .library(name: "MixPilotMIDI", targets: ["MixPilotMIDI"]),
+    .library(name: "MixPilotSystem", targets: ["MixPilotSystem"]),
+    .library(name: "MixPilotRuntime", targets: ["MixPilotRuntime"]),
+    .library(name: "MixPilotRemoteBridge", targets: ["MixPilotRemoteBridge"]),
+    .executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]),
+    .executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]),
+])
 
 targets.append(
     .target(
