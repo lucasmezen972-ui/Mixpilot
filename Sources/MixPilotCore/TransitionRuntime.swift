@@ -150,23 +150,44 @@ public actor TransitionExecutor {
             framesPerSecond: framesPerSecond
         )
         let duration = frames.last?.elapsed ?? 0
+        let speed = max(0.01, speedMultiplier)
+        let clock = ContinuousClock()
 
         try await trigger(.sync(deck: incomingDeck), requireVerification: false)
         try await trigger(.play(deck: incomingDeck), requireVerification: true)
 
-        var previousElapsed: TimeInterval = 0
-        for frame in frames {
+        let startedAt = clock.now
+        let quantizationStep = 1.0 / 127.0
+        var lastSentValues: [DJControlAction: Double] = [:]
+        var processedFrames = 0
+
+        for (position, frame) in frames.enumerated() {
             try Task.checkCancellation()
-            let delay = max(0, frame.elapsed - previousElapsed) / max(0.01, speedMultiplier)
-            if delay > 0 {
-                try await Task.sleep(for: .seconds(delay))
-            }
-            for action in frame.values.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
-                if let value = frame.values[action] {
-                    try await sender.set(action, value: value)
+
+            let target = startedAt.advanced(by: .seconds(frame.elapsed / speed))
+            if position + 1 < frames.count {
+                let nextFrame = frames[position + 1]
+                let nextTarget = startedAt.advanced(by: .seconds(nextFrame.elapsed / speed))
+                if clock.now >= nextTarget {
+                    continue
                 }
             }
-            previousElapsed = frame.elapsed
+            if clock.now < target {
+                try await clock.sleep(until: target)
+            }
+
+            let isFinalFrame = position == frames.count - 1
+            for action in frame.values.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+                guard let value = frame.values[action] else { continue }
+                if !isFinalFrame,
+                   let previous = lastSentValues[action],
+                   abs(previous - value) < quantizationStep {
+                    continue
+                }
+                try await sender.set(action, value: value)
+                lastSentValues[action] = value
+            }
+            processedFrames += 1
         }
 
         try await trigger(.pause(deck: outgoingDeck), requireVerification: true)
@@ -174,7 +195,7 @@ public actor TransitionExecutor {
         try await sender.set(.lowEQ(deck: incomingDeck), value: 1)
 
         return TransitionExecutionSummary(
-            frameCount: frames.count,
+            frameCount: processedFrames,
             duration: duration,
             outgoingDeck: outgoingDeck,
             incomingDeck: incomingDeck,
