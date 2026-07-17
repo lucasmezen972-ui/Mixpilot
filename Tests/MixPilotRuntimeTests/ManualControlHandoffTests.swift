@@ -107,7 +107,7 @@ func manualControlDuringTransitionUsesCooperativeHandoff() async throws {
                 preloadLeadSeconds: 5,
                 loadSettleSeconds: 0.5,
                 framesPerSecond: 30,
-                speedMultiplier: 80,
+                speedMultiplier: 20,
                 strictTrackValidation: true
             ),
             onEvent: { event in await probe.record(event) }
