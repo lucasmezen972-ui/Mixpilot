@@ -8,6 +8,7 @@ public struct SimulationReport: Codable, Sendable {
     public var incidentCount: Int
     public var recoveredIncidentCount: Int
     public var minimumConfidence: Int
+    public var safeManualHandoff: Bool
 
     public init(
         trackCount: Int,
@@ -16,7 +17,8 @@ public struct SimulationReport: Codable, Sendable {
         finalState: AutopilotState,
         incidentCount: Int,
         recoveredIncidentCount: Int,
-        minimumConfidence: Int
+        minimumConfidence: Int,
+        safeManualHandoff: Bool = false
     ) {
         self.trackCount = trackCount
         self.transitionCount = transitionCount
@@ -25,11 +27,14 @@ public struct SimulationReport: Codable, Sendable {
         self.incidentCount = incidentCount
         self.recoveredIncidentCount = recoveredIncidentCount
         self.minimumConfidence = minimumConfidence
+        self.safeManualHandoff = safeManualHandoff
     }
 
     public var succeeded: Bool {
-        finalState == .completed && completedTransitions == transitionCount &&
+        let completedNormally = finalState == .completed &&
+            completedTransitions == transitionCount &&
             incidentCount == recoveredIncidentCount
+        return completedNormally || (finalState == .manualControl && safeManualHandoff)
     }
 }
 
@@ -72,13 +77,25 @@ public struct SetSimulator: Sendable {
         var snapshot = await engine.snapshot()
         let maxSteps = max(20, trackCount * 20)
 
-        while snapshot.state != .completed && snapshot.state != .failed && step < maxSteps {
+        while snapshot.state != .completed &&
+              snapshot.state != .failed &&
+              snapshot.state != .manualControl &&
+              step < maxSteps {
             if let incident = injectedIncidents[step] {
                 await engine.inject(incident)
             }
             snapshot = await engine.advance()
             step += 1
         }
+
+        let manualHandoffKinds: Set<IncidentKind> = [
+            .audioSourceLost,
+            .midiUnavailable,
+            .backendUnavailable,
+            .checkpointMismatch,
+        ]
+        let safeManualHandoff = snapshot.state == .manualControl &&
+            snapshot.incidents.last.map { manualHandoffKinds.contains($0.kind) } == true
 
         return SimulationReport(
             trackCount: tracks.count,
@@ -87,7 +104,8 @@ public struct SetSimulator: Sendable {
             finalState: snapshot.state,
             incidentCount: snapshot.incidents.count,
             recoveredIncidentCount: snapshot.incidents.filter(\.recovered).count,
-            minimumConfidence: plans.map(\.confidence).min() ?? 100
+            minimumConfidence: plans.map(\.confidence).min() ?? 100,
+            safeManualHandoff: safeManualHandoff
         )
     }
 }
