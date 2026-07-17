@@ -1,18 +1,35 @@
 name: Autopilot Long Simulation
 
+# Temporarily manual-only while GitHub Actions fails before checkout with
+# `steps: none`. Restore scheduled runs only after runner execution is confirmed.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * 1"
 
 permissions:
   contents: read
 
+concurrency:
+  group: mixpilot-long-simulation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   simulate:
-    runs-on: macos-15
-    timeout-minutes: 20
+    runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Runtime safety consistency
+        run: bash Scripts/check_runtime_safety.sh
+
+      - name: Transport reliability consistency
+        run: bash Scripts/check_transport_reliability.sh
+
+      - name: Validation context consistency
+        run: bash Scripts/check_validation_context.sh
+
       - name: Simulate 250 tracks with recoverable failures
-        run: swift run MixPilotSimulatorCLI --tracks 250 --inject-failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures
