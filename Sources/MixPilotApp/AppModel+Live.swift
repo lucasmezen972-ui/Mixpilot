@@ -79,6 +79,17 @@ extension AppModel {
             return
         }
         guard let coordinator = runtimeCoordinator, !isLiveRunning else { return }
+        guard coordinator.backendIdentifier == selectedBackend else {
+            liveArmed = false
+            runtimeCoordinator = nil
+            runtimeStatus = "La connexion Live correspond encore à \(coordinator.backendDisplayName), alors que \(selectedBackend.displayName) est sélectionné. MixPilot reconstruit la connexion avant tout envoi."
+            selectedSection = .preflight
+            Task {
+                try? await rebuildRuntimeCoordinator()
+                await refreshEnvironmentNow()
+            }
+            return
+        }
 
         do {
             try sleepAssertion.acquire()
