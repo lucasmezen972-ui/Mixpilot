@@ -96,6 +96,99 @@ private struct StateBlindBackend: DJBackend {
 
 @Test("Full Autopilot sends no command without reliable state reading")
 func fullAutopilotBlocksBeforeFirstCommandWithoutReliableState() async throws {
+    var project = makeLockedProject(backend: .rekordbox)
+    project.lock()
+
+    let probe = LiveValidationProbe()
+    let coordinator = LiveAutopilotCoordinator(
+        backend: StateBlindBackend(probe: probe),
+        checkpointStore: nil
+    )
+
+    do {
+        try await coordinator.run(
+            project: project,
+            configuration: testConfiguration,
+            onEvent: { _ in }
+        )
+        Issue.record("The Live should be blocked before sending a command.")
+    } catch let error as LiveRuntimeError {
+        guard case .configurationBlocked(let detail) = error else {
+            Issue.record("Unexpected Live error: \(error)")
+            return
+        }
+        #expect(detail.contains("état réel des decks"))
+    }
+
+    #expect(await probe.commandCount == 0)
+}
+
+@Test("A locked project without a backend is rejected before any command")
+func liveRejectsProjectWithoutBackend() async throws {
+    var project = makeLockedProject(backend: nil)
+    project.lock()
+    let probe = LiveValidationProbe()
+    let coordinator = LiveAutopilotCoordinator(
+        backend: StateBlindBackend(probe: probe),
+        checkpointStore: nil
+    )
+
+    do {
+        try await coordinator.run(
+            project: project,
+            configuration: testConfiguration,
+            onEvent: { _ in }
+        )
+        Issue.record("A backend-less project must not start a Live.")
+    } catch let error as LiveRuntimeError {
+        guard case .configurationBlocked(let detail) = error else {
+            Issue.record("Unexpected Live error: \(error)")
+            return
+        }
+        #expect(detail.contains("ne précise pas le logiciel DJ"))
+    }
+
+    #expect(await probe.commandCount == 0)
+}
+
+@Test("A project locked for another backend is rejected before any command")
+func liveRejectsBackendMismatch() async throws {
+    var project = makeLockedProject(backend: .serato)
+    project.lock()
+    let probe = LiveValidationProbe()
+    let coordinator = LiveAutopilotCoordinator(
+        backend: StateBlindBackend(probe: probe),
+        checkpointStore: nil
+    )
+
+    do {
+        try await coordinator.run(
+            project: project,
+            configuration: testConfiguration,
+            onEvent: { _ in }
+        )
+        Issue.record("A project must not run with another backend.")
+    } catch let error as LiveRuntimeError {
+        guard case .configurationBlocked(let detail) = error else {
+            Issue.record("Unexpected Live error: \(error)")
+            return
+        }
+        #expect(detail.contains("Serato DJ Pro"))
+        #expect(detail.contains("State Blind Backend"))
+    }
+
+    #expect(await probe.commandCount == 0)
+}
+
+private let testConfiguration = LiveRuntimeConfiguration(
+    preloadLeadSeconds: 5,
+    loadSettleSeconds: 0.5,
+    framesPerSecond: 5,
+    speedMultiplier: 100,
+    strictTrackValidation: true
+)
+
+private func makeLockedProject(backend: DJBackendIdentifier?) -> SetProject {
     let tracks = [
         Track(
             title: "Track A",
@@ -116,36 +209,10 @@ func fullAutopilotBlocksBeforeFirstCommandWithoutReliableState() async throws {
             profile: .afro
         )
     ]
-    var project = SetPreparationEngine().prepare(name: "Test", tracks: tracks)
-    project.lock()
-
-    let probe = LiveValidationProbe()
-    let coordinator = LiveAutopilotCoordinator(
-        backend: StateBlindBackend(probe: probe),
-        checkpointStore: nil
+    return SetPreparationEngine().prepare(
+        name: "Test",
+        tracks: tracks,
+        backend: backend
     )
-
-    do {
-        try await coordinator.run(
-            project: project,
-            configuration: LiveRuntimeConfiguration(
-                preloadLeadSeconds: 5,
-                loadSettleSeconds: 0.5,
-                framesPerSecond: 5,
-                speedMultiplier: 100,
-                strictTrackValidation: true
-            ),
-            onEvent: { _ in }
-        )
-        Issue.record("The Live should be blocked before sending a command.")
-    } catch let error as LiveRuntimeError {
-        guard case .configurationBlocked(let detail) = error else {
-            Issue.record("Unexpected Live error: \(error)")
-            return
-        }
-        #expect(detail.contains("état réel des decks"))
-    }
-
-    #expect(await probe.commandCount == 0)
 }
 #endif
