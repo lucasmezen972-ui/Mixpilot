@@ -2,7 +2,7 @@
 import Foundation
 import MixPilotCore
 
-public actor MappedSeratoController: SeratoCommandSending {
+public actor MappedMIDIController: DJCommandSending {
     private let controller: CoreMIDIController
     private var profile: MIDIMappingProfile
 
@@ -22,34 +22,32 @@ public actor MappedSeratoController: SeratoCommandSending {
         profile
     }
 
-    public func trigger(_ action: SeratoAction) async throws {
+    public func trigger(_ action: DJControlAction) async throws {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
         }
         try controller.trigger(mapping)
     }
 
-    public func set(_ action: SeratoAction, value: Double) async throws {
+    public func set(_ action: DJControlAction, value: Double) async throws {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
         }
         try controller.set(mapping, normalizedValue: value)
     }
 
-    public func testCriticalMappings() async -> [SeratoAction: Bool] {
-        let critical: [SeratoAction] = [
-            .playA, .playB, .pauseA, .pauseB,
-            .syncA, .syncB, .loadA, .loadB,
-            .crossfader, .volumeA, .volumeB,
-            .lowEQA, .lowEQB,
-        ]
-        var result: [SeratoAction: Bool] = [:]
+    public func testCriticalMappings() async -> [DJControlAction: Bool] {
+        let critical = DJControlAction.automaticPresetCriticalActions.sorted { $0.rawValue < $1.rawValue }
+        var result: [DJControlAction: Bool] = [:]
         for action in critical {
             result[action] = profile[action] != nil
         }
         return result
     }
 }
+
+@available(*, deprecated, renamed: "MappedMIDIController")
+public typealias MappedSeratoController = MappedMIDIController
 
 public actor MIDIMappingProfileStore {
     private let fileURL: URL
