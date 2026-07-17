@@ -64,7 +64,12 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>MixPilot utilise l’audio uniquement pour surveiller le niveau et détecter les silences.</string>
-  <key>NSScreenCaptureUsageDescription</key><string>MixPilot observe Serato afin de confirmer les titres chargés et les erreurs.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>MixPilot peut observer l’interface visible du logiciel DJ sélectionné afin de confirmer les titres, les decks et les erreurs.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>MixPilot utilise le réseau local uniquement pour connecter l’application Remote sur ton iPhone au Mac.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_mixpilot._tcp</string>
+  </array>
 </dict>
 </plist>
 PLIST
