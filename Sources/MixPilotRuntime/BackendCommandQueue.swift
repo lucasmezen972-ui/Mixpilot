@@ -6,6 +6,7 @@ public enum BackendCommandQueueError: Error, LocalizedError, Sendable {
     case circuitOpen
     case commandInFlight
     case uncertainOutcome(DJControlAction)
+    case executionNotAcknowledged(DJControlAction, DJCommandLifecycleStatus, String?)
     case verificationRequired(DJControlAction, String)
 
     public var errorDescription: String? {
@@ -16,6 +17,8 @@ public enum BackendCommandQueueError: Error, LocalizedError, Sendable {
             "Cette commande est déjà en cours. MixPilot n’envoie pas de doublon."
         case .uncertainOutcome:
             "Cette commande a peut-être déjà été exécutée. MixPilot refuse de la renvoyer sans vérification manuelle."
+        case .executionNotAcknowledged(let action, let status, let detail):
+            detail ?? "La commande \(action.rawValue) n’a pas été confirmée par le logiciel DJ (état \(status.rawValue)). MixPilot suspend cette étape."
         case .verificationRequired(_, let detail):
             detail
         }
@@ -123,6 +126,14 @@ public actor BackendCommandQueue: DJCommandSending {
             }
             status.lastCommandAt = Date()
 
+            guard executionWasAcknowledged(receipt.status) else {
+                throw BackendCommandQueueError.executionNotAcknowledged(
+                    command.action,
+                    receipt.status,
+                    receipt.detail
+                )
+            }
+
             let verification: DJCommandVerification?
             do {
                 verification = try await withTimeout(timeout, action: command.action) {
@@ -197,6 +208,15 @@ public actor BackendCommandQueue: DJCommandSending {
         status.consecutiveFailures += 1
         if status.consecutiveFailures >= failureThreshold {
             status.circuitOpen = true
+        }
+    }
+
+    private func executionWasAcknowledged(_ status: DJCommandLifecycleStatus) -> Bool {
+        switch status {
+        case .acknowledged, .observed, .verified:
+            true
+        case .requested, .sent, .failed, .unknown:
+            false
         }
     }
 
