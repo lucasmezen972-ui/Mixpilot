@@ -2,12 +2,12 @@ import Foundation
 
 public extension DJCapabilityStatus {
     /// A capability may enter an unattended Live plan only after a successful
-    /// validation with trustworthy evidence. Simulation and pending device
-    /// validation never satisfy this rule.
+    /// validation with direct, trustworthy evidence. Documentation, observation,
+    /// simulation and pending device validation never satisfy this rule.
     var isConfirmedForLive: Bool {
-        guard availability == .available else { return false }
-        guard validation == .automatedSuccess else { return false }
-        return confidence == .validated || confidence == .documented
+        availability == .available &&
+            validation == .automatedSuccess &&
+            confidence == .validated
     }
 }
 
