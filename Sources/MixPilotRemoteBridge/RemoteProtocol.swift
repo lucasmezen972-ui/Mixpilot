@@ -2,6 +2,7 @@
 import Foundation
 import MixPilotRemoteProtocol
 
+public typealias MixPilotRemoteBackendIdentifier = RemoteDJBackendIdentifier
 public typealias MixPilotRemoteMode = RemoteMode
 public typealias MixPilotRemoteTrackSummary = RemoteTrackSummary
 public typealias MixPilotRemoteBackendSummary = RemoteBackendSummary
