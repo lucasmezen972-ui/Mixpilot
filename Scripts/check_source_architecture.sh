@@ -46,6 +46,22 @@ for policy in SeratoBackendPolicy RekordboxBackendPolicy DjayBackendPolicy; do
   }
 done
 
+test -f Sources/MixPilotCore/StrictVerificationDJBackend.swift || {
+  echo 'Architecture check failed: the strict backend verification boundary is missing' >&2
+  exit 1
+}
+
+test -f Tests/MixPilotCoreTests/StrictVerificationDJBackendTests.swift || {
+  echo 'Architecture check failed: strict backend verification tests are missing' >&2
+  exit 1
+}
+
+strict_backend_count="$(grep -c 'StrictVerificationDJBackend(' Sources/MixPilotApp/AppModel+Mapping.swift || true)"
+if [[ "$strict_backend_count" -ne 3 ]]; then
+  echo 'Architecture check failed: djay, rekordbox and Serato must all use StrictVerificationDJBackend' >&2
+  exit 1
+fi
+
 fail_if_found \
   'DJSoftwareSelectionStore' \
   'the redundant legacy selection store must not return; migration belongs to DJBackendSelectionStoring' \
