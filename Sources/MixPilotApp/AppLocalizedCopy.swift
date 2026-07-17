@@ -36,5 +36,18 @@ enum AppLocalizedCopy {
             arguments: arguments
         )
     }
+
+    static func command(_ key: String) -> String {
+        text(key, table: "Commands")
+    }
+
+    static func commandFormat(_ key: String, _ arguments: CVarArg...) -> String {
+        let format = command(key)
+        return String(
+            format: format,
+            locale: Locale(identifier: language.rawValue),
+            arguments: arguments
+        )
+    }
 }
 #endif
