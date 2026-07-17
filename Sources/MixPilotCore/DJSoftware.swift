@@ -1,5 +1,8 @@
 import Foundation
 
+/// Legacy identifier preserved while older projects and preferences migrate to
+/// `DJBackendIdentifier`. New runtime and UI code must use the backend registry.
+@available(*, deprecated, renamed: "DJBackendIdentifier")
 public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
     case serato
     case djay
@@ -23,6 +26,25 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public var backendIdentifier: DJBackendIdentifier {
+        switch self {
+        case .serato: .serato
+        case .djay: .djay
+        case .rekordbox: .rekordbox
+        }
+    }
+
+    public init(_ identifier: DJBackendIdentifier) {
+        switch identifier {
+        case .serato: self = .serato
+        case .djay: self = .djay
+        case .rekordbox: self = .rekordbox
+        }
+    }
+
+    /// Historical six-flag model. It is intentionally not used for Live
+    /// negotiation; the backend capability matrix is the source of truth.
+    @available(*, deprecated, message: "Use DJBackendCapabilities from the active backend")
     public var capabilities: DJSoftwareCapabilities {
         switch self {
         case .serato:
@@ -59,31 +81,43 @@ public enum DJSoftware: String, Codable, CaseIterable, Identifiable, Sendable {
 public enum DJSoftwareSelectionStore {
     public static let defaultsKey = "MixPilotSelectedDJSoftware"
 
-    public static var current: DJSoftware {
+    /// Reads only an explicit legacy preference. Missing or invalid data returns
+    /// nil so onboarding can ask the user instead of inventing Serato.
+    public static var selected: DJSoftware? {
         get {
-            guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
-                  let software = DJSoftware(rawValue: rawValue) else {
-                return .serato
+            guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey) else {
+                return nil
             }
-            return software
+            return DJSoftware(rawValue: rawValue)
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
+            if let newValue {
+                UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: defaultsKey)
+            }
         }
+    }
+
+    public static func migrateToBackendIdentifier() -> DJBackendIdentifier? {
+        selected?.backendIdentifier
     }
 }
 
+@available(*, deprecated, message: "Use DJBackendCapabilities")
 public enum DJExecutionMode: String, Codable, CaseIterable, Sendable {
     case directDeckControl
     case automixQueue
 }
 
+@available(*, deprecated, message: "Use DJValidationStatus")
 public enum DJBackendValidationStatus: String, Codable, Sendable {
     case automatedSuccess = "AUTOMATED_SUCCESS"
     case requiresDeviceValidation = "REQUIRES_DEVICE_VALIDATION"
     case blockedByPlatform = "BLOCKED_BY_PLATFORM"
 }
 
+@available(*, deprecated, message: "Use DJBackendCapabilities")
 public struct DJSoftwareCapabilities: Codable, Hashable, Sendable {
     public var spotifyLibrary: Bool
     public var builtInAutomix: Bool
