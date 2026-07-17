@@ -96,30 +96,48 @@ extension AppModel {
     }
 
     func startAudioMonitoring() {
-        guard !audioMonitor.isRunning else { return }
+        guard !audioMonitor.isRunning, audioStatus != "Démarrage de la surveillance…" else { return }
+        audioMonitoringGeneration &+= 1
+        let generation = audioMonitoringGeneration
         lastAudioLevelUIUpdateAt = 0
-        Task { await audioWatchdog.reset() }
-        do {
-            try audioMonitor.start { [weak self, audioWatchdog] sample in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if sample.timestamp - self.lastAudioLevelUIUpdateAt >= 0.1 {
-                        self.audioLevelDB = sample.rmsDB
-                        self.lastAudioLevelUIUpdateAt = sample.timestamp
-                    }
-                    if let event = await audioWatchdog.ingest(sample) {
-                        self.applyAudioEvent(event)
+        audioStatus = "Démarrage de la surveillance…"
+
+        Task { @MainActor [weak self] in
+            guard let self, self.audioMonitoringGeneration == generation else { return }
+            await self.audioWatchdog.reset()
+            guard self.audioMonitoringGeneration == generation,
+                  !self.audioMonitor.isRunning else { return }
+
+            do {
+                try self.audioMonitor.start { [weak self, audioWatchdog = self.audioWatchdog, generation] sample in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.audioMonitoringGeneration == generation else { return }
+                        if sample.timestamp - self.lastAudioLevelUIUpdateAt >= 0.1 {
+                            self.audioLevelDB = sample.rmsDB
+                            self.lastAudioLevelUIUpdateAt = sample.timestamp
+                        }
+                        if let event = await audioWatchdog.ingest(sample) {
+                            guard self.audioMonitoringGeneration == generation else { return }
+                            self.applyAudioEvent(event)
+                        }
                     }
                 }
+                guard self.audioMonitoringGeneration == generation else {
+                    self.audioMonitor.stop()
+                    return
+                }
+                self.audioStatus = "Surveillance active"
+            } catch {
+                guard self.audioMonitoringGeneration == generation else { return }
+                self.audioStatus = "La surveillance audio n’a pas pu démarrer. Vérifie l’entrée sélectionnée et les permissions."
             }
-            audioStatus = "Surveillance active"
-        } catch {
-            audioStatus = "La surveillance audio n’a pas pu démarrer. Vérifie l’entrée sélectionnée et les permissions."
+            self.evaluatePreflight()
         }
-        evaluatePreflight()
     }
 
     func stopAudioMonitoring() {
+        audioMonitoringGeneration &+= 1
         audioMonitor.stop()
         Task { await audioWatchdog.reset() }
         audioStatus = "Surveillance arrêtée"
