@@ -15,8 +15,12 @@ public enum CueMarkerType: String, Codable, CaseIterable, Sendable {
 public enum CueOrigin: String, Codable, Sendable {
     case automaticMetadata
     case automaticAudio
-    case serato
+    case backend
     case manual
+
+    /// Historical origin preserved for older project files.
+    @available(*, deprecated, renamed: "backend")
+    case serato
 }
 
 public struct CueMarker: Identifiable, Codable, Hashable, Sendable {
@@ -97,30 +101,38 @@ public struct PreparedTrack: Identifiable, Codable, Hashable, Sendable {
 }
 
 public struct SetProject: Identifiable, Codable, Hashable, Sendable {
+    public static let currentFormatVersion = 2
+
     public let id: UUID
+    public var formatVersion: Int
     public var name: String
     public var createdAt: Date
     public var updatedAt: Date
     public var tracks: [PreparedTrack]
     public var transitions: [TransitionPlan]
     public var locked: Bool
+    public var backend: DJBackendIdentifier?
 
     public init(
         id: UUID = UUID(),
+        formatVersion: Int = Self.currentFormatVersion,
         name: String,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         tracks: [PreparedTrack],
         transitions: [TransitionPlan],
-        locked: Bool = false
+        locked: Bool = false,
+        backend: DJBackendIdentifier? = nil
     ) {
         self.id = id
+        self.formatVersion = max(1, formatVersion)
         self.name = name
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.tracks = tracks
         self.transitions = transitions
         self.locked = locked
+        self.backend = backend
     }
 
     public var duration: TimeInterval {
@@ -131,9 +143,43 @@ public struct SetProject: Identifiable, Codable, Hashable, Sendable {
         transitions.filter { $0.confidence < 75 }.count
     }
 
+    public var requiresBackendSelection: Bool {
+        backend == nil
+    }
+
+    public mutating func selectBackend(_ identifier: DJBackendIdentifier) {
+        backend = identifier
+        formatVersion = Self.currentFormatVersion
+        updatedAt = Date()
+    }
+
     public mutating func lock() {
         locked = true
+        formatVersion = Self.currentFormatVersion
         updatedAt = Date()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, formatVersion, name, createdAt, updatedAt, tracks, transitions, locked, backend
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        tracks = try container.decode([PreparedTrack].self, forKey: .tracks)
+        transitions = try container.decode([TransitionPlan].self, forKey: .transitions)
+        locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        backend = try container.decodeIfPresent(DJBackendIdentifier.self, forKey: .backend)
+
+        // Missing backend is intentionally preserved. A legacy project does not
+        // prove which application should control its Live.
+        if formatVersion < Self.currentFormatVersion {
+            formatVersion = Self.currentFormatVersion
+        }
     }
 }
 
@@ -160,12 +206,19 @@ public struct SetPreparationEngine: Sendable {
         self.planner = planner
     }
 
-    public func prepare(name: String, tracks: [Track]) -> SetProject {
-        let prepared = tracks.map { PreparedTrack(track: $0, analysis: analyzeMetadata(for: $0)) }
+    public func prepare(
+        name: String,
+        tracks: [Track],
+        backend: DJBackendIdentifier? = nil
+    ) -> SetProject {
+        let prepared = tracks.map {
+            PreparedTrack(track: $0, analysis: analyzeMetadata(for: $0))
+        }
         return SetProject(
             name: name,
             tracks: prepared,
-            transitions: planner.planSet(tracks)
+            transitions: planner.planSet(tracks),
+            backend: backend
         )
     }
 
@@ -179,8 +232,13 @@ public struct SetPreparationEngine: Sendable {
         let endSafe = max(mixOut, track.duration - max(3, beatDuration * 8))
         let loopStart = max(introLength, mixOut - phraseDuration)
         let loopEnd = min(endSafe, loopStart + phraseDuration)
-        let estimatedVocalIn = track.vocalDensity > 0.65 ? introLength : min(track.duration * 0.2, introLength + phraseDuration)
-        let estimatedDrop = min(track.duration * 0.35, max(estimatedVocalIn, introLength + phraseDuration))
+        let estimatedVocalIn = track.vocalDensity > 0.65
+            ? introLength
+            : min(track.duration * 0.2, introLength + phraseDuration)
+        let estimatedDrop = min(
+            track.duration * 0.35,
+            max(estimatedVocalIn, introLength + phraseDuration)
+        )
 
         var warnings: [String] = []
         if track.bpm <= 0 { warnings.append("BPM manquant ou invalide") }
@@ -202,13 +260,12 @@ public struct SetPreparationEngine: Sendable {
             CueMarker(type: .emergencyLoopEnd, time: loopEnd, confidence: 0.64, origin: .automaticMetadata),
         ]
 
-        let playDuration = max(30, mixOut - introLength)
         return TrackAnalysis(
             bpmConfidence: metadataQuality,
             downbeatConfidence: 0.55,
             phraseConfidence: phraseConfidence,
             structureConfidence: structureConfidence,
-            suggestedPlayDuration: playDuration,
+            suggestedPlayDuration: max(30, mixOut - introLength),
             markers: markers,
             warnings: warnings
         )
@@ -232,8 +289,7 @@ public actor JSONProjectStore {
     public func save(_ project: SetProject) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(project.id.uuidString).mixpilot.json")
-        let data = try encoder.encode(project)
-        try data.write(to: url, options: .atomic)
+        try encoder.encode(project).write(to: url, options: .atomic)
         return url
     }
 
