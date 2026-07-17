@@ -116,6 +116,31 @@ grep -q 'state.isReliable' Sources/MixPilotApp/AppModel+Live.swift || {
   exit 1
 }
 
+test -f Sources/MixPilotCore/LiveStateReliabilityTracker.swift || {
+  echo 'Architecture check failed: the Live state reliability tracker is missing' >&2
+  exit 1
+}
+
+test -f Tests/MixPilotCoreTests/LiveStateReliabilityTrackerTests.swift || {
+  echo 'Architecture check failed: the Live state reliability tracker tests are missing' >&2
+  exit 1
+}
+
+grep -q 'LiveStateReliabilityTracker(failureThreshold: 2)' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: Live must tolerate only a short, explicit unreliable-state window' >&2
+  exit 1
+}
+
+grep -q 'reliabilityTracker.record(isReliable:' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: every periodic state read must update the reliability tracker' >&2
+  exit 1
+}
+
+grep -q 'ne peut plus confirmer l’état réel des decks' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: repeated unreliable state reads must trigger a safe manual handoff' >&2
+  exit 1
+}
+
 grep -q 'remoteActiveBackendIdentifier' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
   echo 'Architecture check failed: Remote snapshots must use the backend owned by the active Live coordinator' >&2
   exit 1
