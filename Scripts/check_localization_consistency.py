@@ -26,6 +26,7 @@ REFERENCE_PATTERNS = (
     re.compile(r'catalog\.localized\(\s*"([^"]+)"'),
     re.compile(r'localized\(\s*"([^"]+)"'),
 )
+STABLE_KEY_RE = re.compile(r'"((?:app|help|remote|workspace)\.[A-Za-z0-9_.-]+)"')
 SOURCE_ROOTS = (
     ROOT / "Mobile" / "MixPilotRemote" / "Sources",
     ROOT / "Sources" / "MixPilotApp",
@@ -76,9 +77,15 @@ def collect_literal_references() -> dict[str, set[pathlib.Path]]:
             continue
         for path in source_root.rglob("*.swift"):
             text = path.read_text(encoding="utf-8")
+            relative_path = path.relative_to(ROOT)
             for pattern in REFERENCE_PATTERNS:
                 for key in pattern.findall(text):
-                    references[key].add(path.relative_to(ROOT))
+                    references[key].add(relative_path)
+            # Conditional expressions often place the stable key on a line after
+            # the localization call. Scanning all stable key literals prevents
+            # those references from escaping validation.
+            for key in STABLE_KEY_RE.findall(text):
+                references[key].add(relative_path)
     return references
 
 
@@ -123,7 +130,8 @@ def main() -> int:
     all_keys = set()
     for catalog in catalogs.values():
         all_keys.update(catalog.values)
-    for key, paths in sorted(collect_literal_references().items()):
+    references = collect_literal_references()
+    for key, paths in sorted(references.items()):
         if key not in all_keys:
             locations = ", ".join(str(path) for path in sorted(paths))
             errors.append(f"missing localized key {key} referenced by {locations}")
@@ -135,11 +143,10 @@ def main() -> int:
         return 1
 
     key_count = sum(len(catalog.values) for (language, _), catalog in catalogs.items() if language == "fr")
-    reference_count = len(collect_literal_references())
     print(
         "Localization consistency audit passed for "
         f"{len(LANGUAGES)} languages, {len(TABLES)} tables, "
-        f"{key_count} reference keys and {reference_count} literal source references."
+        f"{key_count} reference keys and {len(references)} literal source references."
     )
     return 0
 
