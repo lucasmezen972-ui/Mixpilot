@@ -1,18 +1,13 @@
 name: macOS CI
 
+# Temporarily manual-only while GitHub Actions fails before checkout with
+# `steps: none`. Restore pull_request/push triggers after account-level runner
+# execution is confirmed. This prevents notification spam without deleting CI.
 on:
   workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - main
-      - develop
-      - "feature/**"
-      - "integration/**"
-      - "release/**"
 
 concurrency:
-  group: mixpilot-macos-${{ github.event.pull_request.number || github.ref }}
+  group: mixpilot-macos-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
