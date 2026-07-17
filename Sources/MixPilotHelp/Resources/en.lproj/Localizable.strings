@@ -1,0 +1,71 @@
+"help.center.title" = "Help Center";
+"help.center.search" = "Search help";
+"help.center.no_result" = "No article matches this search.";
+"help.center.all_categories" = "All topics";
+"help.center.offline_note" = "This help is available offline.";
+"help.center.close" = "Close";
+"help.category.start" = "Getting started";
+"help.category.backend" = "DJ software and mapping";
+"help.category.preparation" = "Preparation";
+"help.category.live" = "Live";
+"help.category.remote" = "iPhone Remote";
+"help.category.safety" = "Safety";
+"help.category.troubleshooting" = "Troubleshooting";
+"help.language.fr" = "Français";
+"help.language.en" = "English";
+"help.language.es" = "Español";
+
+"help.getting_started.title" = "Get started with MixPilot";
+"help.getting_started.summary" = "Choose the DJ software, prepare a set, check the system and start Live without skipping safety steps.";
+"help.getting_started.body" = "1. Choose djay Pro, rekordbox or Serato DJ Pro.\n2. Prepare or import the tracks for the set.\n3. Check the mapping, permissions, audio and emergency music.\n4. Lock the set plan.\n5. Arm Live only when the check contains no blocking issue.\n\nMixPilot remains local: Internet and the iPhone are not required to keep audio running.";
+"help.getting_started.keywords" = "start setup first use workflow installation";
+
+"help.choose_backend.title" = "Choose the correct DJ software";
+"help.choose_backend.summary" = "The three backends are equal in the product, but their capabilities and available evidence differ.";
+"help.choose_backend.body" = "Select the software that is actually running on the Mac. A set locked for one backend cannot start with another.\n\n• djay Pro can use supervised Automix when its capabilities are confirmed.\n• rekordbox uses MIDI mapping and can produce a locally verified CSV.\n• Serato uses a virtual MIDI controller and an adapted preset.\n\nA backend card never means that every command has been validated on your hardware.";
+"help.choose_backend.keywords" = "djay rekordbox serato backend software version controller";
+
+"help.midi_mapping.title" = "Configure and validate MIDI mapping";
+"help.midi_mapping.summary" = "A present mapping is not necessarily compatible: every critical command needs the correct type and real validation.";
+"help.midi_mapping.body" = "Volumes, EQ, filters and crossfader must use Control Change. Momentary buttons must return to their resting value.\n\nBefore Live, validate at least loading, Play/Pause, deck volumes and virtual-controller visibility. Confirmation is tied to the software and version, controller, mapping, macOS version, Mac model and MixPilot build. Updates therefore invalidate previous evidence.";
+"help.midi_mapping.keywords" = "midi mapping note control change cc controller validation play pause volume crossfader";
+
+"help.prepare_set.title" = "Prepare and lock a set";
+"help.prepare_set.summary" = "Build the order, analyze tracks and preserve a deterministic plan before Live.";
+"help.prepare_set.body" = "Import a visible playlist or add prepared tracks. Check BPM, duration, energy and musical profiles.\n\nLocking freezes the backend and transition plan. If the DJ software, mapping or library changes, run the check again and relock the set.";
+"help.prepare_set.keywords" = "playlist library tracks order set lock analyze bpm energy";
+
+"help.transitions.title" = "Understand transitions";
+"help.transitions.summary" = "MixPilot chooses a deterministic transition and uses conservative fallbacks when confidence decreases.";
+"help.transitions.body" = "Available transitions include Smooth Blend, Bass Swap, Rap Switch, Shatta Drop, Echo Exit and Safe Fade.\n\nThe crossfader is never the only safeguard: deck volumes are automated as well. Continuous values are coalesced at MIDI resolution and stale frames are dropped instead of being sent in a burst.";
+"help.transitions.keywords" = "transition fade bass swap rap switch shatta drop echo safe fade crossfader";
+
+"help.preflight.title" = "Resolve check blockers";
+"help.preflight.summary" = "The check separates ready, limited, needs confirmation and blocking conditions.";
+"help.preflight.body" = "A blocker can come from closed software, unknown version, missing Accessibility permission, invisible MIDI port, incomplete mapping, unavailable audio source or missing emergency music.\n\nFix the displayed cause and run the check again. Do not bypass a blocker by removing the test: it protects a command MixPilot cannot yet confirm.";
+"help.preflight.keywords" = "preflight check blocker permission accessibility audio midi version error";
+
+"help.live.title" = "Monitor Live";
+"help.live.summary" = "The Mac remains the source of truth and monitors the backend, audio and commands throughout the set.";
+"help.live.body" = "During Live, MixPilot periodically reconciles the active software and deck state. A stale or unreliable observation is rejected.\n\nInternet can disappear without stopping local Live. Losing the DJ software, MIDI or audio source instead triggers manual control or emergency playback according to the risk. Keep the Mac powered and reachable.";
+"help.live.keywords" = "live autopilot state decks network internet sleep monitoring";
+
+"help.iphone_remote.title" = "Use MixPilot Remote on iPhone";
+"help.iphone_remote.summary" = "The iPhone supervises and sends high-level intentions; it never controls the DJ software directly.";
+"help.iphone_remote.body" = "The Mac and iPhone must use the same local network. Enable Remote on the Mac, select it on the iPhone and enter the six-digit code.\n\nAfter a disconnection, the iPhone performs bounded reconnection and resumes only newer snapshots. No old command is replayed. If reconnection fails, select the Mac again.";
+"help.iphone_remote.keywords" = "iphone remote pairing code wifi bonjour websocket reconnect snapshot";
+
+"help.manual_control.title" = "Take manual control safely";
+"help.manual_control.summary" = "Manual control is cooperative: MixPilot completes the current safe point before stopping future automation.";
+"help.manual_control.body" = "Take control when the DJ software, MIDI, audio or visible plan no longer matches the expected state.\n\nMixPilot does not abruptly cancel a transition already in progress. It opens the command circuit at the safe point, shows manual-control mode and does not restart automation without a new explicit action.";
+"help.manual_control.keywords" = "manual take control safety safe point stop autopilot";
+
+"help.emergency_audio.title" = "Configure emergency music";
+"help.emergency_audio.summary" = "A local queue of valid files can cover critical silence before manual control.";
+"help.emergency_audio.body" = "Add several local audio files and verify that they can be played. Duplicates and invalid files are ignored.\n\nCritical silence may start emergency playback and then hand control back. Loss of the monitoring source does not automatically play audio because the main signal may still exist. If emergency playback fails, Live stops safely.";
+"help.emergency_audio.keywords" = "emergency fallback silence file audio player music";
+
+"help.troubleshooting.title" = "Quick troubleshooting";
+"help.troubleshooting.summary" = "The most useful checks when MixPilot refuses to start or loses a feature.";
+"help.troubleshooting.body" = "• Software not detected: launch the correct app and check its version.\n• Mapping rejected: check the controller, preset and Note/CC types.\n• Accessibility denied: allow MixPilot in System Settings > Privacy & Security.\n• Audio unavailable: select a valid input or route and restart monitoring.\n• iPhone not found: check the same Wi-Fi and Local Network permission.\n• Inconsistent state: take control, close Live and run a complete check again.";
+"help.troubleshooting.keywords" = "troubleshoot problem error missing denied permission wifi audio mapping";
