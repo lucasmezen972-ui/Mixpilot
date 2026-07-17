@@ -20,14 +20,16 @@ struct RootView: View {
         }
         .sheet(isPresented: $connection.pairingRequired) {
             PairingView(
-                macName: connection.status.title,
+                macName: RemotePresentationCopy.statusTitle(connection.status),
                 code: $pairingCode,
                 error: connection.lastError,
                 onPair: {
                     connection.pair(using: pairingCode)
                     pairingCode = ""
                 },
-                onCancel: { connection.disconnect(reason: "Appairage annulé") }
+                onCancel: {
+                    connection.disconnect(reason: RemoteLocalizedCopy.text("remote.reason.pairing_cancelled"))
+                }
             )
             .presentationDetents([.medium])
             .interactiveDismissDisabled()
@@ -54,11 +56,11 @@ private struct DiscoveryView: View {
                             .foregroundStyle(.white)
                     }
 
-                    Text("Supervise ton Live sans rester devant le Mac")
+                    Text(RemoteLocalizedCopy.text("remote.ui.supervise_title"))
                         .font(.title2.bold())
                         .multilineTextAlignment(.center)
 
-                    Text("L’iPhone envoie seulement des intentions de haut niveau. Le Mac garde la main sur djay Pro, rekordbox ou Serato DJ Pro, vérifie chaque demande et peut la refuser pour protéger le Live.")
+                    Text(RemoteLocalizedCopy.text("remote.ui.supervise_body"))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -68,21 +70,21 @@ private struct DiscoveryView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Mac disponibles").font(.headline)
+                        Text(RemoteLocalizedCopy.text("remote.ui.available_macs")).font(.headline)
                         Spacer()
                         if discovery.isSearching { ProgressView().controlSize(.small) }
                         Button {
                             discovery.stop()
                             discovery.start()
                         } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("Relancer la recherche")
+                        .accessibilityLabel(RemoteLocalizedCopy.text("remote.ui.refresh_search"))
                     }
 
                     if discovery.endpoints.isEmpty {
                         ContentUnavailableView(
-                            "Aucun Mac détecté",
+                            RemoteLocalizedCopy.text("remote.ui.no_mac"),
                             systemImage: "laptopcomputer.slash",
-                            description: Text("Ouvre MixPilot sur le Mac et vérifie que les deux appareils utilisent le même réseau local.")
+                            description: Text(RemoteLocalizedCopy.text("remote.ui.no_mac_description"))
                         )
                         .frame(minHeight: 210)
                     } else {
@@ -95,7 +97,7 @@ private struct DiscoveryView: View {
                                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 11))
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(endpoint.name).font(.headline)
-                                        Text("MixPilot disponible sur le réseau local")
+                                        Text(RemoteLocalizedCopy.text("remote.ui.available_local"))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -111,13 +113,13 @@ private struct DiscoveryView: View {
                 }
 
                 Button { connection.startDemo() } label: {
-                    Label("Découvrir avec le mode démo", systemImage: "play.circle")
+                    Label(RemoteLocalizedCopy.text("remote.ui.demo_button"), systemImage: "play.circle")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
-                Text("Le mode démo ne se connecte à aucun logiciel DJ et n’envoie aucune commande.")
+                Text(RemoteLocalizedCopy.text("remote.ui.demo_disclaimer"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -137,7 +139,7 @@ private struct StatusCard: View {
                 Circle()
                     .fill(status.isAuthenticated ? Color.green : Color.orange)
                     .frame(width: 9, height: 9)
-                Text(status.title).font(.subheadline.weight(.semibold))
+                Text(RemotePresentationCopy.statusTitle(status)).font(.subheadline.weight(.semibold))
                 Spacer()
             }
             if let detail = status.detail ?? humanError(error), !detail.isEmpty {
@@ -153,7 +155,7 @@ private struct StatusCard: View {
 
     private func humanError(_ error: String?) -> String? {
         guard error != nil else { return nil }
-        return "La connexion locale n’a pas pu être établie. Vérifie le Wi-Fi et que MixPilot est ouvert sur le Mac."
+        return RemoteLocalizedCopy.text("remote.ui.connection_generic_error")
     }
 }
 
@@ -170,7 +172,7 @@ private struct PairingView: View {
                 Image(systemName: "lock.shield")
                     .font(.system(size: 46))
                     .foregroundStyle(.indigo)
-                Text("Entre le code affiché sur le Mac")
+                Text(RemoteLocalizedCopy.text("remote.ui.pairing_title"))
                     .font(.title3.bold())
                     .multilineTextAlignment(.center)
                 Text(macName).font(.subheadline).foregroundStyle(.secondary)
@@ -187,17 +189,17 @@ private struct PairingView: View {
                     }
 
                 if error != nil {
-                    Text("Le code n’a pas été accepté. Vérifie les six chiffres affichés sur le Mac.")
+                    Text(RemoteLocalizedCopy.text("remote.ui.pairing_error"))
                         .font(.caption)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }
 
-                Button("Appairer l’iPhone", action: onPair)
+                Button(RemoteLocalizedCopy.text("remote.ui.pair_button"), action: onPair)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(code.count != 6)
-                Button("Annuler", role: .cancel, action: onCancel)
+                Button(RemoteLocalizedCopy.text("remote.ui.cancel"), role: .cancel, action: onCancel)
             }
             .padding(24)
         }
@@ -235,32 +237,32 @@ private struct LiveRemoteView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Déconnecter") { connection.disconnect() }
+                Button(RemoteLocalizedCopy.text("remote.ui.disconnect")) { connection.disconnect() }
             }
         }
         .confirmationDialog(
-            "Utiliser une transition de secours ?",
+            RemoteLocalizedCopy.text("remote.ui.safe_fade_title"),
             isPresented: $confirmSafeFade,
             titleVisibility: .visible
         ) {
-            Button("Demander la transition de secours", role: .destructive) {
+            Button(RemoteLocalizedCopy.text("remote.ui.safe_fade_action"), role: .destructive) {
                 connection.sendCommand(.safeFade)
             }
-            Button("Annuler", role: .cancel) {}
+            Button(RemoteLocalizedCopy.text("remote.ui.cancel"), role: .cancel) {}
         } message: {
-            Text("Le Mac vérifiera le backend actif, l’audio et les capacités disponibles avant d’accepter cette demande.")
+            Text(RemoteLocalizedCopy.text("remote.ui.safe_fade_message"))
         }
         .confirmationDialog(
-            "Reprendre la main ?",
+            RemoteLocalizedCopy.text("remote.ui.manual_title"),
             isPresented: $confirmManualControl,
             titleVisibility: .visible
         ) {
-            Button("Reprendre la main", role: .destructive) {
+            Button(RemoteLocalizedCopy.text("remote.ui.manual_action"), role: .destructive) {
                 connection.sendCommand(.takeManualControl)
             }
-            Button("Annuler", role: .cancel) {}
+            Button(RemoteLocalizedCopy.text("remote.ui.cancel"), role: .cancel) {}
         } message: {
-            Text("Le Mac arrêtera les prochaines automatisations sans envoyer de commande susceptible de modifier brutalement le mix en cours.")
+            Text(RemoteLocalizedCopy.text("remote.ui.manual_message"))
         }
     }
 
@@ -268,7 +270,7 @@ private struct LiveRemoteView: View {
         HStack(spacing: 12) {
             Circle().fill(.green).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 2) {
-                Text(connection.status.title).font(.subheadline.bold())
+                Text(RemotePresentationCopy.statusTitle(connection.status)).font(.subheadline.bold())
                 Text(snapshot.setName).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -288,14 +290,16 @@ private struct LiveRemoteView: View {
                     .foregroundStyle(.indigo)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(backend.identifier.displayName).font(.headline)
-                    Text([backend.modeLabel, backend.softwareVersion.map { "Version \($0)" }]
-                        .compactMap { $0 }.joined(separator: " • "))
+                    Text([
+                        backend.modeLabel,
+                        backend.softwareVersion.map { RemoteLocalizedCopy.format("remote.ui.version", $0) }
+                    ].compactMap { $0 }.joined(separator: " • "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let activeDeck = snapshot.activeDeck {
-                    Text("DECK \(activeDeck)")
+                    Text(RemoteLocalizedCopy.format("remote.ui.deck", activeDeck))
                         .font(.caption2.bold())
                         .padding(.horizontal, 9)
                         .padding(.vertical, 6)
@@ -311,7 +315,7 @@ private struct LiveRemoteView: View {
 
             if !backend.degradedCapabilities.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Fonctions temporairement limitées")
+                    Text(RemoteLocalizedCopy.text("remote.ui.degraded"))
                         .font(.caption.bold())
                         .foregroundStyle(.orange)
                     Text(backend.degradedCapabilities.prefix(4).joined(separator: " • "))
@@ -336,7 +340,9 @@ private struct LiveRemoteView: View {
 
     private var nowPlayingCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("EN COURS").font(.caption.bold()).foregroundStyle(.secondary)
+            Text(RemoteLocalizedCopy.text("remote.ui.now_playing"))
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
 
             if let track = snapshot.currentTrack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -354,7 +360,7 @@ private struct LiveRemoteView: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             } else {
-                Text("Aucun morceau en lecture").foregroundStyle(.secondary)
+                Text(RemoteLocalizedCopy.text("remote.ui.no_track")).foregroundStyle(.secondary)
             }
 
             if let transition = snapshot.transitionLabel {
@@ -382,8 +388,10 @@ private struct LiveRemoteView: View {
                 .frame(width: 42, height: 42)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 3) {
-                Text("ENSUITE").font(.caption.bold()).foregroundStyle(.secondary)
-                Text(snapshot.nextTrack?.title ?? "Fin du set").font(.headline)
+                Text(RemoteLocalizedCopy.text("remote.ui.next"))
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Text(snapshot.nextTrack?.title ?? RemoteLocalizedCopy.text("remote.ui.end_set")).font(.headline)
                 if let artist = snapshot.nextTrack?.artist {
                     Text(artist).font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -399,17 +407,19 @@ private struct LiveRemoteView: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 if snapshot.canPause {
-                    RemoteActionButton(title: "Mettre en pause", icon: "pause.fill") {
-                        connection.sendCommand(.pauseAutopilot)
-                    }
+                    RemoteActionButton(
+                        title: RemoteLocalizedCopy.text("remote.ui.pause"),
+                        icon: "pause.fill"
+                    ) { connection.sendCommand(.pauseAutopilot) }
                 }
                 if snapshot.canResume {
-                    RemoteActionButton(title: "Reprendre", icon: "play.fill") {
-                        connection.sendCommand(.resumeAutopilot)
-                    }
+                    RemoteActionButton(
+                        title: RemoteLocalizedCopy.text("remote.ui.resume"),
+                        icon: "play.fill"
+                    ) { connection.sendCommand(.resumeAutopilot) }
                 }
                 RemoteActionButton(
-                    title: "Changer la transition",
+                    title: RemoteLocalizedCopy.text("remote.ui.change_transition"),
                     icon: "forward.fill",
                     disabled: !snapshot.canSkipTransition
                 ) { connection.sendCommand(.skipTransition) }
@@ -417,14 +427,14 @@ private struct LiveRemoteView: View {
 
             HStack(spacing: 12) {
                 RemoteActionButton(
-                    title: "Transition de secours",
+                    title: RemoteLocalizedCopy.text("remote.ui.emergency_transition"),
                     icon: "waveform.path.ecg",
                     destructive: true,
                     disabled: !snapshot.canSafeFade
                 ) { confirmSafeFade = true }
 
                 RemoteActionButton(
-                    title: "Reprendre la main",
+                    title: RemoteLocalizedCopy.text("remote.ui.take_control"),
                     icon: "hand.raised.fill",
                     destructive: true,
                     disabled: !snapshot.canTakeManualControl
@@ -445,12 +455,12 @@ private struct LiveRemoteView: View {
 
     private func modeLabel(_ mode: RemoteMode) -> String {
         switch mode {
-        case .idle: "INACTIF"
-        case .preflight: "VÉRIFICATION"
-        case .live: "LIVE"
-        case .paused: "PAUSE"
-        case .manualControl: "MANUEL"
-        case .recovery: "SECOURS"
+        case .idle: RemoteLocalizedCopy.text("remote.mode.idle")
+        case .preflight: RemoteLocalizedCopy.text("remote.mode.preflight")
+        case .live: RemoteLocalizedCopy.text("remote.mode.live")
+        case .paused: RemoteLocalizedCopy.text("remote.mode.paused")
+        case .manualControl: RemoteLocalizedCopy.text("remote.mode.manual")
+        case .recovery: RemoteLocalizedCopy.text("remote.mode.recovery")
         }
     }
 

@@ -1,5 +1,7 @@
 name: Build DMG
 
+# Manual-only while account-level runners are not proven to execute checkout.
+# A tag or release branch can still be selected explicitly in the Run workflow UI.
 on:
   workflow_dispatch:
     inputs:
@@ -7,15 +9,11 @@ on:
         description: "Version à empaqueter, par exemple 0.3.0-rc.2"
         required: false
         type: string
-  push:
-    branches:
-      - "release/**"
-    tags:
-      - "v*"
-    paths-ignore:
-      - "**/*.md"
-      - "Documentation/**"
-  
+      pr_number:
+        description: "PR facultative à commenter avec le rapport de l’artefact"
+        required: false
+        type: string
+
 concurrency:
   group: mixpilot-release-${{ github.ref }}
   cancel-in-progress: true
@@ -31,7 +29,7 @@ env:
 
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -61,30 +59,56 @@ jobs:
           swift --version
           chmod +x Scripts/*.sh
 
+      - name: Consistency checks
+        run: |
+          ./Scripts/check_package_manifest.sh
+          ./Scripts/check_source_architecture.sh
+          ./Scripts/check_runtime_safety.sh
+          ./Scripts/check_documentation_consistency.sh
+          python3 Scripts/check_localization_consistency.py
+          ./Scripts/check_transport_reliability.sh
+          ./Scripts/check_validation_context.sh
+
       - name: Unit tests
         run: swift test --parallel
 
       - name: Simulation 50 tracks with failures
-        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+        run: swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures
 
       - name: Simulation 250 tracks with failures
-        run: swift run MixPilotSimulatorCLI --tracks 250 --inject-failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures
 
       - name: Build hardware probe
         run: swift build -c release --product MixPilotHardwareProbeCLI
 
-      - name: Build iPhone Remote for Simulator
+      - name: Build and test iPhone Remote for Simulator
+        shell: bash
         run: |
           brew install xcodegen
           cd Mobile/MixPilotRemote
           xcodegen generate
+          xcrun simctl list devices available -j > available-simulators.json
+          SIMULATOR_UDID="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('available-simulators.json').read_text())
+          for devices in payload.get('devices', {}).values():
+              for device in devices:
+                  if device.get('isAvailable') and 'iPhone' in device.get('name', ''):
+                      print(device['udid'])
+                      raise SystemExit(0)
+          raise SystemExit('No available iPhone simulator was found.')
+          PY
+          )"
+          xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
           xcodebuild \
             -project MixPilotRemote.xcodeproj \
             -scheme MixPilotRemote \
             -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            test
           swift test --parallel
 
       - name: Import Developer ID certificate
@@ -134,10 +158,10 @@ jobs:
               "unitTests": "AUTOMATED_SUCCESS",
               "simulation50": "SIMULATED_SUCCESS",
               "simulation250": "SIMULATED_SUCCESS",
-              "hardwareProbeBuild": "AUTOMATED_SUCCESS",
-              "iphoneSimulatorBuild": "AUTOMATED_SUCCESS",
+              "macOSReleaseBuild": "AUTOMATED_SUCCESS",
+              "iphoneSimulatorXCTest": "AUTOMATED_SUCCESS",
               "remoteProtocolContracts": "AUTOMATED_SUCCESS",
-              "seratoReal": "REQUIRES_SERATO_VALIDATION",
+              "physicalDJSoftware": "REQUIRES_DEVICE_VALIDATION",
               "deviceAudio": "REQUIRES_DEVICE_VALIDATION",
               "physicalPairing": "REQUIRES_DEVICE_VALIDATION"
             }
@@ -153,10 +177,11 @@ jobs:
             build/release-manifest.json
             build/codesign-details.txt
 
-      - name: Report RC artifact to pull request
-        if: startsWith(github.ref, 'refs/heads/release/')
+      - name: Report artifact to pull request
+        if: inputs.pr_number != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
         shell: bash
         run: |
           checksum="$(awk '{print $1}' build/MixPilot-Autopilot.dmg.sha256)"
@@ -169,26 +194,22 @@ jobs:
             notarization_label="notarized and stapled"
           fi
           cat > build/pr-release-report.md <<REPORT
-          ## RC artifact generated — ${RELEASE_VERSION}
+          ## Artifact generated — ${RELEASE_VERSION}
 
           - Workflow run: ${GITHUB_RUN_ID}
-          - Commit: \`${GITHUB_SHA}\`
-          - Artifact: \`MixPilot-Autopilot-${RELEASE_VERSION}\`
-          - DMG SHA-256: \`${checksum}\`
+          - Commit: ${GITHUB_SHA}
+          - Artifact: MixPilot-Autopilot-${RELEASE_VERSION}
+          - DMG SHA-256: ${checksum}
           - Signature: ${signature_label}
           - Notarization: ${notarization_label}
-          - Unit tests: \`AUTOMATED_SUCCESS\`
-          - Simulation 50: \`SIMULATED_SUCCESS\`
-          - Simulation 250: \`SIMULATED_SUCCESS\`
-          - Hardware probe build: \`AUTOMATED_SUCCESS\`
-          - iPhone Simulator build: \`AUTOMATED_SUCCESS\`
-          - Remote protocol contracts: \`AUTOMATED_SUCCESS\`
-          - Serato real: \`REQUIRES_SERATO_VALIDATION\`
-          - Physical audio/pairing: \`REQUIRES_DEVICE_VALIDATION\`
-
-          The PR must remain unmerged until the guided hardware validation is complete.
+          - Unit tests: AUTOMATED_SUCCESS
+          - Simulation 50: SIMULATED_SUCCESS
+          - Simulation 250: SIMULATED_SUCCESS
+          - macOS release build: AUTOMATED_SUCCESS
+          - iPhone Simulator XCTest: AUTOMATED_SUCCESS
+          - Physical DJ/audio/pairing: REQUIRES_DEVICE_VALIDATION
           REPORT
-          gh pr comment 17 --body-file build/pr-release-report.md
+          gh pr comment "$PR_NUMBER" --body-file build/pr-release-report.md
           cat build/pr-release-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish GitHub Release

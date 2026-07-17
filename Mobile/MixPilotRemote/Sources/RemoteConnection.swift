@@ -15,7 +15,11 @@ final class RemoteConnection: ObservableObject {
     private var socket: URLSessionWebSocketTask?
     private var receiverTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var sequencePolicy = RemoteSnapshotSequencePolicy()
+    private var reconnectPolicy = RemoteTransportRetryPolicy()
+    private var shouldReconnect = false
+    private var transportGeneration: UInt64 = 0
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -40,13 +44,85 @@ final class RemoteConnection: ObservableObject {
     }
 
     func connect(to endpoint: RemoteEndpoint) {
-        closeTransport()
+        stopAllTransport()
         isDemo = false
         snapshot = nil
         lastError = nil
         lastAcknowledgement = nil
         pairingRequired = false
         self.endpoint = endpoint
+        shouldReconnect = true
+        reconnectPolicy.reset()
+        beginConnection()
+    }
+
+    func pair(using pin: String) {
+        guard let endpoint else { return }
+        let normalized = pin.filter { $0.isNumber }
+        guard normalized.count == 6 else {
+            lastError = RemoteLocalizedCopy.text("remote.error.code_six_digits")
+            return
+        }
+
+        let generation = transportGeneration
+        Task { [weak self] in
+            guard let self else { return }
+            await self.send(
+                .pair(
+                    deviceID: self.deviceID,
+                    deviceName: UIDevice.current.name,
+                    pin: normalized
+                ),
+                generation: generation
+            )
+            guard generation == self.transportGeneration else { return }
+            self.status = .pairingRequired(endpoint.name)
+        }
+    }
+
+    func sendCommand(_ kind: RemoteCommandKind) {
+        if isDemo {
+            applyDemoCommand(kind)
+            return
+        }
+
+        guard status.isAuthenticated else {
+            lastError = RemoteLocalizedCopy.text("remote.error.mac_not_connected")
+            return
+        }
+
+        let command = RemoteCommand(kind: kind)
+        let generation = transportGeneration
+        Task { [weak self] in
+            await self?.send(.command(command), generation: generation)
+        }
+    }
+
+    func startDemo() {
+        stopAllTransport()
+        isDemo = true
+        endpoint = nil
+        pairingRequired = false
+        lastError = nil
+        lastAcknowledgement = nil
+        snapshot = RemotePresentationCopy.demoSnapshot
+        status = .authenticated(RemoteLocalizedCopy.text("remote.demo.status_name"))
+    }
+
+    func disconnect(reason: String? = nil) {
+        stopAllTransport()
+        isDemo = false
+        endpoint = nil
+        pairingRequired = false
+        snapshot = nil
+        status = .disconnected(reason ?? RemoteLocalizedCopy.text("remote.reason.user_closed"))
+    }
+
+    private func beginConnection() {
+        guard shouldReconnect, let endpoint else { return }
+        closeSocketTransport()
+        transportGeneration &+= 1
+        let generation = transportGeneration
         status = .connecting(endpoint.name)
 
         var components = URLComponents()
@@ -56,7 +132,8 @@ final class RemoteConnection: ObservableObject {
         components.path = "/v1/remote"
 
         guard let url = components.url else {
-            status = .failed("Adresse réseau invalide")
+            shouldReconnect = false
+            status = .failed(RemoteLocalizedCopy.text("remote.error.invalid_address"))
             return
         }
 
@@ -72,83 +149,49 @@ final class RemoteConnection: ObservableObject {
         socket.resume()
 
         receiverTask = Task { [weak self] in
-            await self?.receiveLoop()
+            await self?.receiveLoop(generation: generation)
         }
 
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
-                guard let self, !Task.isCancelled else { return }
-                await self.send(.ping())
+                do {
+                    try await Task.sleep(for: .seconds(12))
+                } catch {
+                    return
+                }
+                guard let self,
+                      !Task.isCancelled,
+                      generation == self.transportGeneration else { return }
+                await self.send(.ping(), generation: generation)
             }
         }
 
         Task { [weak self] in
-            guard let self else { return }
-            await self.send(.hello(deviceID: self.deviceID, deviceName: UIDevice.current.name))
+            guard let self, generation == self.transportGeneration else { return }
+            await self.send(
+                .hello(deviceID: self.deviceID, deviceName: UIDevice.current.name),
+                generation: generation
+            )
+            guard generation == self.transportGeneration else { return }
             if let token = KeychainStore.shared.read(account: endpoint.id) {
-                await self.send(.authenticate(deviceID: self.deviceID, token: token))
+                await self.send(
+                    .authenticate(deviceID: self.deviceID, token: token),
+                    generation: generation
+                )
             }
         }
     }
 
-    func pair(using pin: String) {
-        guard let endpoint else { return }
-        let normalized = pin.filter { $0.isNumber }
-        guard normalized.count == 6 else {
-            lastError = "Le code doit contenir six chiffres."
-            return
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            await self.send(.pair(
-                deviceID: self.deviceID,
-                deviceName: UIDevice.current.name,
-                pin: normalized
-            ))
-            self.status = .pairingRequired(endpoint.name)
-        }
+    private func stopAllTransport() {
+        shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectPolicy.reset()
+        closeSocketTransport()
     }
 
-    func sendCommand(_ kind: RemoteCommandKind) {
-        if isDemo {
-            applyDemoCommand(kind)
-            return
-        }
-
-        guard status.isAuthenticated else {
-            lastError = "Le Mac n’est pas connecté."
-            return
-        }
-
-        let command = RemoteCommand(kind: kind)
-        Task { [weak self] in
-            await self?.send(.command(command))
-        }
-    }
-
-    func startDemo() {
-        closeTransport()
-        isDemo = true
-        endpoint = nil
-        pairingRequired = false
-        lastError = nil
-        lastAcknowledgement = nil
-        snapshot = .demo
-        status = .authenticated("Mode démo")
-    }
-
-    func disconnect(reason: String = "Fermé par l’utilisateur") {
-        closeTransport()
-        isDemo = false
-        endpoint = nil
-        pairingRequired = false
-        snapshot = nil
-        status = .disconnected(reason)
-    }
-
-    private func closeTransport() {
+    private func closeSocketTransport() {
+        transportGeneration &+= 1
         receiverTask?.cancel()
         heartbeatTask?.cancel()
         receiverTask = nil
@@ -157,22 +200,26 @@ final class RemoteConnection: ObservableObject {
         socket = nil
     }
 
-    private func send(_ message: RemoteClientMessage) async {
-        guard let socket else { return }
+    private func send(
+        _ message: RemoteClientMessage,
+        generation: UInt64
+    ) async {
+        guard generation == transportGeneration, let socket else { return }
         do {
             let data = try encoder.encode(message)
             try await socket.send(.data(data))
         } catch {
-            lastError = error.localizedDescription
-            status = .disconnected("Envoi impossible")
+            handleTransportFailure(error.localizedDescription, generation: generation)
         }
     }
 
-    private func receiveLoop() async {
+    private func receiveLoop(generation: UInt64) async {
         do {
             while !Task.isCancelled {
-                guard let socket else { return }
+                guard generation == transportGeneration, let socket else { return }
                 let message = try await socket.receive()
+                guard generation == transportGeneration else { return }
+
                 let data: Data
                 switch message {
                 case .data(let value):
@@ -188,15 +235,53 @@ final class RemoteConnection: ObservableObject {
             }
         } catch {
             guard !Task.isCancelled else { return }
-            snapshot = nil
-            pairingRequired = false
-            status = .disconnected(error.localizedDescription)
+            handleTransportFailure(error.localizedDescription, generation: generation)
+        }
+    }
+
+    private func handleTransportFailure(_ message: String, generation: UInt64) {
+        guard generation == transportGeneration,
+              shouldReconnect,
+              !isDemo,
+              endpoint != nil else { return }
+
+        closeSocketTransport()
+        let retryGeneration = transportGeneration
+        snapshot = nil
+        pairingRequired = false
+        guard reconnectTask == nil else { return }
+
+        guard let delay = reconnectPolicy.nextDelay() else {
+            shouldReconnect = false
+            lastError = RemoteLocalizedCopy.text("remote.error.reconnect_failed")
+            status = .disconnected(RemoteLocalizedCopy.text("remote.reason.mac_unavailable"))
+            return
+        }
+
+        let seconds = max(1, Int(delay.rounded()))
+        lastError = RemoteLocalizedCopy.format("remote.error.reconnecting", seconds)
+        status = .disconnected(RemoteLocalizedCopy.text("remote.reason.reconnecting"))
+        reconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.shouldReconnect,
+                  self.transportGeneration == retryGeneration else { return }
+            self.reconnectTask = nil
+            self.beginConnection()
         }
     }
 
     private func handle(_ message: RemoteServerMessage) {
         guard MixPilotRemoteProtocolVersion.supports(message.version) else {
-            lastError = "Version du protocole non compatible. Mets à jour MixPilot sur le Mac et l’iPhone."
+            lastError = RemoteLocalizedCopy.text("remote.error.protocol_incompatible")
+            shouldReconnect = false
+            reconnectTask?.cancel()
+            reconnectTask = nil
             return
         }
 
@@ -207,26 +292,34 @@ final class RemoteConnection: ObservableObject {
 
         case "paired":
             guard let endpoint, let token = message.sessionToken else {
-                lastError = "Réponse d’appairage incomplète."
+                lastError = RemoteLocalizedCopy.text("remote.error.pairing_incomplete")
                 return
             }
             do {
                 try KeychainStore.shared.save(token, account: endpoint.id)
+                reconnectPolicy.markReady()
                 pairingRequired = false
                 lastError = nil
                 status = .authenticated(endpoint.name)
                 let lastSequence = sequencePolicy.lastSequence(for: endpoint.id)
-                Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
+                let generation = transportGeneration
+                Task { [weak self] in
+                    await self?.send(.subscribe(lastSequence: lastSequence), generation: generation)
+                }
             } catch {
                 lastError = error.localizedDescription
             }
 
         case "authenticated":
+            reconnectPolicy.markReady()
             pairingRequired = false
             lastError = nil
             status = .authenticated(endpoint?.name ?? "Mac")
             let lastSequence = endpoint.flatMap { sequencePolicy.lastSequence(for: $0.id) }
-            Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
+            let generation = transportGeneration
+            Task { [weak self] in
+                await self?.send(.subscribe(lastSequence: lastSequence), generation: generation)
+            }
 
         case "snapshot":
             if let endpoint,
@@ -244,13 +337,13 @@ final class RemoteConnection: ObservableObject {
             }
 
         case "error":
-            lastError = message.message ?? "Erreur distante inconnue."
+            lastError = message.message ?? RemoteLocalizedCopy.text("remote.error.unknown")
 
         case "pong", "hello":
             break
 
         default:
-            lastError = "Message distant inconnu : \(message.type)"
+            lastError = RemoteLocalizedCopy.format("remote.error.unknown_message", message.type)
         }
     }
 
@@ -259,14 +352,18 @@ final class RemoteConnection: ObservableObject {
         let acknowledgement = RemoteCommandAcknowledgement(
             commandID: UUID(),
             accepted: true,
-            message: "Commande simulée"
+            message: RemoteLocalizedCopy.text("remote.demo.command_simulated")
         )
         lastAcknowledgement = acknowledgement
         lastError = nil
 
         switch kind {
         case .pauseAutopilot:
-            snapshot = copy(current, mode: .paused, alert: "Autopilote en pause depuis l’iPhone")
+            snapshot = copy(
+                current,
+                mode: .paused,
+                alert: RemoteLocalizedCopy.text("remote.demo.pause_alert")
+            )
         case .resumeAutopilot:
             snapshot = copy(current, mode: .live, alert: nil)
         case .skipTransition:
@@ -281,10 +378,10 @@ final class RemoteConnection: ObservableObject {
                 activeDeck: current.activeDeck,
                 elapsed: 0,
                 duration: 198,
-                transitionLabel: "Prochaine transition recalculée",
+                transitionLabel: RemoteLocalizedCopy.text("remote.demo.next_transition"),
                 transitionConfidence: 84,
                 audioStatus: current.audioStatus,
-                alert: "Transition suivante passée en mode démo",
+                alert: RemoteLocalizedCopy.text("remote.demo.next_alert"),
                 canPause: true,
                 canResume: false,
                 canSkipTransition: false,
@@ -292,9 +389,17 @@ final class RemoteConnection: ObservableObject {
                 canTakeManualControl: true
             )
         case .safeFade:
-            snapshot = copy(current, mode: .recovery, alert: "Safe Fade demandé depuis l’iPhone")
+            snapshot = copy(
+                current,
+                mode: .recovery,
+                alert: RemoteLocalizedCopy.text("remote.demo.safe_fade_alert")
+            )
         case .takeManualControl:
-            snapshot = copy(current, mode: .manualControl, alert: "Contrôle manuel activé")
+            snapshot = copy(
+                current,
+                mode: .manualControl,
+                alert: RemoteLocalizedCopy.text("remote.demo.manual_alert")
+            )
         }
     }
 

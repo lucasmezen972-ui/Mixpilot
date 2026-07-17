@@ -1,6 +1,15 @@
 -- MixPilot cloud updates, safe remote commands and incident aggregation.
 
-revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+-- Hosted Supabase projects may expose this helper, while local/fresh Postgres
+-- validation environments may not. Missing optional infrastructure must not
+-- abort the application migration chain.
+do $$
+begin
+    if to_regprocedure('public.rls_auto_enable()') is not null then
+        execute 'revoke execute on function public.rls_auto_enable() from public, anon, authenticated';
+    end if;
+end
+$$;
 
 alter table public.mixpilot_devices
     add column if not exists app_build integer,

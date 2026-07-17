@@ -90,7 +90,7 @@ public actor AutopilotEngine {
             state = .playing
         case .emergencyPlayback:
             markLastIncidentRecovered()
-            state = .playing
+            state = .manualControl
         }
         return snapshot()
     }
@@ -121,13 +121,13 @@ public actor AutopilotEngine {
         incidents.append(Incident(kind: kind, message: message(for: kind)))
 
         switch normalized(kind) {
-        case .audioSilence, .audioSourceLost, .internetLoss, .backendUnavailable:
+        case .audioSilence, .backendUnavailable:
             state = .emergencyPlayback
-        case .slowLoad, .loadTimeout, .wrongTrack, .transitionMismatch,
-             .audioClipping, .midiUnavailable, .powerDisconnected:
-            state = .recovering
-        case .checkpointMismatch:
+        case .audioSourceLost, .midiUnavailable, .checkpointMismatch:
             state = .manualControl
+        case .slowLoad, .loadTimeout, .wrongTrack, .transitionMismatch,
+             .internetLoss, .audioClipping, .powerDisconnected:
+            state = .recovering
         case .emergencyPlayerFailure:
             state = .failed
         case .seratoUnavailable:
@@ -158,15 +158,15 @@ public actor AutopilotEngine {
         case .internetLoss:
             "Internet indisponible : le Live local continue avec les ressources préparées"
         case .audioSilence:
-            "Silence critique : déclenchement de la musique de secours"
+            "Silence critique : musique de secours puis reprise manuelle"
         case .audioSourceLost:
-            "Source audio perdue : bascule vers la musique de secours"
+            "Source audio perdue : reprise manuelle sans lancer un son potentiellement en doublon"
         case .audioClipping:
             "Saturation détectée : réduction contrôlée des niveaux"
         case .midiUnavailable:
-            "Connexion MIDI perdue : contrôle automatique suspendu"
+            "Connexion MIDI perdue : reprise manuelle obligatoire"
         case .backendUnavailable:
-            "Logiciel DJ indisponible : musique de secours et reprise manuelle"
+            "Logiciel DJ indisponible : musique de secours puis reprise manuelle"
         case .powerDisconnected:
             "Alimentation débranchée : alerte et vérification de la batterie"
         case .checkpointMismatch:
@@ -174,7 +174,7 @@ public actor AutopilotEngine {
         case .emergencyPlayerFailure:
             "Musique de secours indisponible : arrêt sécurisé"
         case .seratoUnavailable:
-            "Logiciel DJ indisponible : musique de secours et reprise manuelle"
+            "Logiciel DJ indisponible : musique de secours puis reprise manuelle"
         }
     }
 

@@ -1,5 +1,12 @@
+import Foundation
 import Testing
 @testable import MixPilotCore
+
+private let validationContext = DJValidationPlatformContext(
+    operatingSystemVersion: "macOS 26.0",
+    hardwareModel: "MacTest1,1",
+    appBuild: "300"
+)
 
 @Test("Only device-confirmed evidence permits Live control")
 func onlyDeviceEvidencePermitsLiveControl() {
@@ -26,13 +33,13 @@ func onlyDeviceEvidencePermitsLiveControl() {
         evidence: .userRejected
     )
 
-    #expect(confirmed.permitsLiveControl)
-    #expect(!automated.permitsLiveControl)
-    #expect(!simulated.permitsLiveControl)
-    #expect(!rejected.permitsLiveControl)
+    #expect(confirmed.permitsLiveControl(in: validationContext))
+    #expect(!automated.permitsLiveControl(in: validationContext))
+    #expect(!simulated.permitsLiveControl(in: validationContext))
+    #expect(!rejected.permitsLiveControl(in: validationContext))
 }
 
-@Test("Live evidence requires software, controller and mapping identities")
+@Test("Live evidence requires software, controller, mapping and platform identities")
 func liveEvidenceRequiresFullyQualifiedContext() {
     let missingSoftware = DJCommandValidationRecord(
         key: validationKey(softwareVersion: nil),
@@ -49,39 +56,77 @@ func liveEvidenceRequiresFullyQualifiedContext() {
         status: .automatedSuccess,
         evidence: .deviceConfirmed
     )
-    let blankSoftware = DJCommandValidationRecord(
-        key: validationKey(softwareVersion: "  "),
+    let missingHardware = DJCommandValidationRecord(
+        key: validationKey(platformContext: DJValidationPlatformContext(
+            operatingSystemVersion: "macOS 26.0",
+            hardwareModel: nil,
+            appBuild: "300"
+        )),
         status: .automatedSuccess,
         evidence: .deviceConfirmed
     )
 
-    #expect(!missingSoftware.permitsLiveControl)
-    #expect(!missingController.permitsLiveControl)
-    #expect(!missingMapping.permitsLiveControl)
-    #expect(!blankSoftware.permitsLiveControl)
+    #expect(!missingSoftware.permitsLiveControl(in: validationContext))
+    #expect(!missingController.permitsLiveControl(in: validationContext))
+    #expect(!missingMapping.permitsLiveControl(in: validationContext))
+    #expect(!missingHardware.permitsLiveControl(in: validationContext))
 }
 
-@Test("Legacy device confirmations remain readable only with complete context")
-func legacyDeviceConfirmationStillPermitsLiveControl() {
-    let legacy = DJCommandValidationRecord(
+@Test("Evidence is rejected after the platform context changes")
+func evidenceIsRejectedAfterPlatformChange() {
+    let record = DJCommandValidationRecord(
         key: validationKey(),
         status: .automatedSuccess,
-        detail: "DEVICE_CONFIRMED"
-    )
-    let incompleteLegacy = DJCommandValidationRecord(
-        key: validationKey(softwareVersion: nil),
-        status: .automatedSuccess,
-        detail: "DEVICE_CONFIRMED"
-    )
-    let unrelatedLegacyDetail = DJCommandValidationRecord(
-        key: validationKey(),
-        status: .automatedSuccess,
-        detail: "AUTOMATED_SUCCESS"
+        evidence: .deviceConfirmed
     )
 
-    #expect(legacy.permitsLiveControl)
-    #expect(!incompleteLegacy.permitsLiveControl)
-    #expect(!unrelatedLegacyDetail.permitsLiveControl)
+    let newOS = DJValidationPlatformContext(
+        operatingSystemVersion: "macOS 26.1",
+        hardwareModel: "MacTest1,1",
+        appBuild: "300"
+    )
+    let newHardware = DJValidationPlatformContext(
+        operatingSystemVersion: "macOS 26.0",
+        hardwareModel: "MacTest2,1",
+        appBuild: "300"
+    )
+    let newBuild = DJValidationPlatformContext(
+        operatingSystemVersion: "macOS 26.0",
+        hardwareModel: "MacTest1,1",
+        appBuild: "301"
+    )
+
+    #expect(!record.permitsLiveControl(in: newOS))
+    #expect(!record.permitsLiveControl(in: newHardware))
+    #expect(!record.permitsLiveControl(in: newBuild))
+}
+
+@Test("Legacy confirmation without platform fields remains readable but cannot permit Live")
+func legacyConfirmationWithoutPlatformContextIsRejected() throws {
+    let legacyJSON = """
+    {
+      "key": {
+        "backend": "djay",
+        "softwareVersion": "test",
+        "controllerName": "MixPilot Virtual Controller",
+        "mappingVersion": "profile-1",
+        "action": "playA"
+      },
+      "status": "AUTOMATED_SUCCESS",
+      "validatedAt": 0,
+      "detail": "DEVICE_CONFIRMED"
+    }
+    """
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .secondsSince1970
+
+    let legacy = try decoder.decode(
+        DJCommandValidationRecord.self,
+        from: Data(legacyJSON.utf8)
+    )
+
+    #expect(!legacy.permitsLiveControl(in: validationContext))
+    #expect(!legacy.key.isFullyQualifiedForLive)
 }
 
 @Test("A typed non-device evidence cannot be upgraded by a legacy detail string")
@@ -93,19 +138,21 @@ func typedEvidenceTakesPriorityOverLegacyDetail() {
         detail: "DEVICE_CONFIRMED"
     )
 
-    #expect(!record.permitsLiveControl)
+    #expect(!record.permitsLiveControl(in: validationContext))
 }
 
 private func validationKey(
     softwareVersion: String? = "test",
     controllerName: String? = "MixPilot Virtual Controller",
-    mappingVersion: String? = "profile-1"
+    mappingVersion: String? = "profile-1",
+    platformContext: DJValidationPlatformContext = validationContext
 ) -> DJCommandValidationKey {
     DJCommandValidationKey(
         backend: .djay,
         softwareVersion: softwareVersion,
         controllerName: controllerName,
         mappingVersion: mappingVersion,
-        action: .playA
+        action: .playA,
+        platformContext: platformContext
     )
 }

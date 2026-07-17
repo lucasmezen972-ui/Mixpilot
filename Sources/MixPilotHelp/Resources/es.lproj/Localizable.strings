@@ -1,0 +1,71 @@
+"help.center.title" = "Centro de ayuda";
+"help.center.search" = "Buscar en la ayuda";
+"help.center.no_result" = "Ningún artículo coincide con la búsqueda.";
+"help.center.all_categories" = "Todos los temas";
+"help.center.offline_note" = "Esta ayuda funciona sin conexión.";
+"help.center.close" = "Cerrar";
+"help.category.start" = "Primeros pasos";
+"help.category.backend" = "Software DJ y mapeo";
+"help.category.preparation" = "Preparación";
+"help.category.live" = "Live";
+"help.category.remote" = "iPhone Remote";
+"help.category.safety" = "Seguridad";
+"help.category.troubleshooting" = "Solución de problemas";
+"help.language.fr" = "Français";
+"help.language.en" = "English";
+"help.language.es" = "Español";
+
+"help.getting_started.title" = "Primeros pasos con MixPilot";
+"help.getting_started.summary" = "Elige el software DJ, prepara el set, comprueba el sistema e inicia Live con seguridad.";
+"help.getting_started.body" = "1. Elige djay Pro, rekordbox o Serato DJ Pro.\n2. Prepara las pistas.\n3. Comprueba mapeo, permisos, audio y música de emergencia.\n4. Bloquea el plan.\n5. Activa Live solo sin bloqueos.\n\nInternet y el iPhone no son necesarios para mantener el audio.";
+"help.getting_started.keywords" = "inicio configuración primer uso instalación";
+
+"help.choose_backend.title" = "Elegir el software DJ correcto";
+"help.choose_backend.summary" = "Los tres backends son iguales en el producto, pero sus capacidades son diferentes.";
+"help.choose_backend.body" = "Selecciona el software abierto en el Mac. Un set bloqueado para un backend no puede iniciarse con otro. djay puede usar Automix supervisado; rekordbox puede usar un CSV verificado; Serato usa un controlador MIDI virtual. Una tarjeta no significa que todos los comandos estén validados.";
+"help.choose_backend.keywords" = "djay rekordbox serato backend software versión controlador";
+
+"help.midi_mapping.title" = "Configurar y validar el mapeo MIDI";
+"help.midi_mapping.summary" = "Cada comando crítico necesita el tipo correcto y una validación real.";
+"help.midi_mapping.body" = "Volúmenes, EQ, filtros y crossfader deben usar Control Change. Los botones momentáneos deben volver a reposo. La validación depende del software, versión, controlador, mapeo, macOS, modelo del Mac y build de MixPilot.";
+"help.midi_mapping.keywords" = "midi mapeo nota control change cc play pause volumen";
+
+"help.prepare_set.title" = "Preparar y bloquear un set";
+"help.prepare_set.summary" = "Ordena, analiza y conserva un plan determinista antes de Live.";
+"help.prepare_set.body" = "Importa una playlist o añade pistas preparadas. Comprueba BPM, duración, energía y perfil. Si cambia el software DJ, mapeo o biblioteca, repite la comprobación y vuelve a bloquear el set.";
+"help.prepare_set.keywords" = "playlist biblioteca pistas orden set bpm energía";
+
+"help.transitions.title" = "Entender las transiciones";
+"help.transitions.summary" = "MixPilot usa transiciones deterministas y alternativas conservadoras.";
+"help.transitions.body" = "Las transiciones incluyen Smooth Blend, Bass Swap, Rap Switch, Shatta Drop, Echo Exit y Safe Fade. Los volúmenes protegen el mix además del crossfader. Los frames antiguos se descartan.";
+"help.transitions.keywords" = "transición fundido bass rap shatta echo safe fade crossfader";
+
+"help.preflight.title" = "Resolver bloqueos de la comprobación";
+"help.preflight.summary" = "La comprobación separa estados listos, limitados, por confirmar y bloqueantes.";
+"help.preflight.body" = "Un bloqueo puede deberse al software cerrado, versión desconocida, permiso de Accesibilidad, puerto MIDI, mapeo incompleto, fuente de audio o música de emergencia. Corrige la causa y repite la comprobación.";
+"help.preflight.keywords" = "preflight comprobación bloqueo permiso accesibilidad audio midi";
+
+"help.live.title" = "Supervisar Live";
+"help.live.summary" = "El Mac controla el backend, el audio y los comandos durante todo el set.";
+"help.live.body" = "MixPilot reconcilia el software y los decks. Rechaza observaciones antiguas. Internet puede desaparecer sin detener Live local. La pérdida del software DJ, MIDI o audio exige control manual o emergencia.";
+"help.live.keywords" = "live autopiloto decks red internet supervisión";
+
+"help.iphone_remote.title" = "Usar MixPilot Remote en iPhone";
+"help.iphone_remote.summary" = "El iPhone supervisa; nunca controla directamente el software DJ.";
+"help.iphone_remote.body" = "Usa la misma red local, activa Remote en el Mac e introduce el código. Tras una desconexión, el iPhone realiza una reconexión limitada y solo acepta snapshots nuevos. No repite comandos antiguos.";
+"help.iphone_remote.keywords" = "iphone remote código wifi bonjour reconexión snapshot";
+
+"help.manual_control.title" = "Recuperar el control con seguridad";
+"help.manual_control.summary" = "MixPilot termina el punto seguro actual antes de detener automatizaciones.";
+"help.manual_control.body" = "Recupera el control cuando software, MIDI, audio o plan ya no coincidan. MixPilot no cancela bruscamente una transición y no reinicia la automatización sin una acción explícita.";
+"help.manual_control.keywords" = "manual control seguridad punto seguro detener";
+
+"help.emergency_audio.title" = "Configurar música de emergencia";
+"help.emergency_audio.summary" = "Archivos locales válidos pueden cubrir un silencio crítico.";
+"help.emergency_audio.body" = "Añade varios archivos reproducibles. Se ignoran duplicados e inválidos. Un silencio puede iniciar emergencia y devolver el control. La pérdida de la fuente de supervisión no reproduce audio automáticamente.";
+"help.emergency_audio.keywords" = "emergencia respaldo silencio archivo audio música";
+
+"help.troubleshooting.title" = "Solución rápida de problemas";
+"help.troubleshooting.summary" = "Comprobaciones útiles cuando MixPilot no inicia o pierde una función.";
+"help.troubleshooting.body" = "Software no detectado: abre la aplicación correcta. Mapeo rechazado: comprueba controlador y Note/CC. Accesibilidad denegada: autorízala en Ajustes. Audio no disponible: selecciona una ruta válida. iPhone no encontrado: comprueba Wi-Fi y Red local. Estado incoherente: recupera el control y repite la comprobación.";
+"help.troubleshooting.keywords" = "problema error permiso wifi audio mapeo";

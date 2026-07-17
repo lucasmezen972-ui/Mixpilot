@@ -1,0 +1,174 @@
+name: Final PR Validation
+
+# Manual-only while account-level runners are not proven to start jobs. This
+# workflow intentionally does not subscribe to push or pull_request events.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version used for the development DMG"
+        required: false
+        default: "0.3.0-pr31"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixpilot-final-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-supabase:
+    name: Fresh Supabase migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pinned Supabase CLI
+        run: npm install --no-save supabase@2.109.1
+
+      - name: Initialize local Supabase configuration when absent
+        run: |
+          if [[ ! -f supabase/config.toml ]]; then
+            npx supabase init
+          fi
+
+      - name: Rebuild a fresh local database from migrations
+        run: |
+          set -o pipefail
+          npx supabase start 2>&1 | tee supabase-start.log
+          npx supabase db reset 2>&1 | tee supabase-reset.log
+          npx supabase migration list --local 2>&1 | tee supabase-migrations.log
+
+      - name: Upload fresh-database logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-fresh-validation
+          path: |
+            supabase-start.log
+            supabase-reset.log
+            supabase-migrations.log
+          if-no-files-found: warn
+
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup || true
+
+  apple-builds:
+    name: macOS, iPhone, simulations and DMG
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          chmod +x Scripts/*.sh
+
+      - name: Static consistency checks
+        run: |
+          ./Scripts/check_package_manifest.sh
+          ./Scripts/check_source_architecture.sh
+          ./Scripts/check_runtime_safety.sh
+          ./Scripts/check_documentation_consistency.sh
+          python3 Scripts/check_help_localizations.py
+          ./Scripts/check_transport_reliability.sh
+          ./Scripts/check_validation_context.sh
+
+      - name: Complete Swift test suite
+        run: |
+          set -o pipefail
+          swift test --parallel 2>&1 | tee swift-test.log
+
+      - name: Simulate 50 tracks with failures on every backend
+        run: |
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures \
+            2>&1 | tee simulation-50-report.json
+
+      - name: Simulate 250 tracks with failures on every backend
+        run: |
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures \
+            2>&1 | tee simulation-250-report.json
+
+      - name: Build all macOS release products
+        run: |
+          swift build -c release --product MixPilotAutopilot
+          swift build -c release --product MixPilotHardwareProbeCLI
+          swift build -c release --product MixPilotMappingPublisherCLI
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate iPhone project
+        working-directory: Mobile/MixPilotRemote
+        run: xcodegen generate
+
+      - name: Build and XCTest iPhone Remote
+        working-directory: Mobile/MixPilotRemote
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > available-simulators.json
+          SIMULATOR_UDID="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('available-simulators.json').read_text())
+          for devices in payload.get('devices', {}).values():
+              for device in devices:
+                  if device.get('isAvailable') and 'iPhone' in device.get('name', ''):
+                      print(device['udid'])
+                      raise SystemExit(0)
+          raise SystemExit('No available iPhone simulator was found.')
+          PY
+          )"
+          xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          set -o pipefail
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee iphone-remote-xctest.log
+
+      - name: Build application and development DMG
+        env:
+          MIXPILOT_VERSION: ${{ inputs.version }}
+        run: |
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+
+      - name: Verify DMG and checksum
+        run: |
+          codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+
+      - name: Upload final validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-PR-final-validation
+          path: |
+            swift-test.log
+            simulation-50-report.json
+            simulation-250-report.json
+            Mobile/MixPilotRemote/iphone-remote-xctest.log
+            Mobile/MixPilotRemote/available-simulators.json
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: warn

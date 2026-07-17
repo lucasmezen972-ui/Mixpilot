@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MixPilotCore
 
@@ -5,6 +6,7 @@ private struct VerificationFixtureBackend: DJBackend {
     let identifier: DJBackendIdentifier = .serato
     let displayName = "Fixture"
     let result: DJCommandVerification
+    let state: DJBackendState = DJBackendState(isReliable: false)
 
     func detectEnvironment() async -> DJBackendEnvironment {
         DJBackendEnvironment(identifier: identifier, isInstalled: true, isRunning: true)
@@ -16,7 +18,7 @@ private struct VerificationFixtureBackend: DJBackend {
         DJBackendValidationReport(backend: identifier, items: [])
     }
 
-    func readState() async throws -> DJBackendState { DJBackendState(isReliable: false) }
+    func readState() async throws -> DJBackendState { state }
     func readDeckState(_ deck: DeckID) async throws -> DJDeckState { DJDeckState(deck: deck) }
 
     func execute(_ command: DJBackendCommand) async throws -> DJCommandReceipt {
@@ -32,6 +34,12 @@ private struct VerificationFixtureBackend: DJBackend {
 
     func takeManualControl() async {}
 }
+
+private let validatedFixture = DJCommandVerification(
+    status: .verified,
+    confidence: .validated,
+    detail: "confirmed"
+)
 
 @Test("Observed verification is downgraded")
 func observedVerificationIsDowngraded() async throws {
@@ -77,13 +85,7 @@ func weakVerifiedConfidenceIsDowngraded() async throws {
 @Test("Validated verification is preserved")
 func validatedVerificationIsPreserved() async throws {
     let backend = StrictVerificationDJBackend(
-        VerificationFixtureBackend(
-            result: DJCommandVerification(
-                status: .verified,
-                confidence: .validated,
-                detail: "confirmed"
-            )
-        )
+        VerificationFixtureBackend(result: validatedFixture)
     )
 
     let result = try await backend.verify(
@@ -93,4 +95,37 @@ func validatedVerificationIsPreserved() async throws {
 
     #expect(result.status == .verified)
     #expect(result.confidence == .validated)
+}
+
+@Test("Fresh reliable backend state is preserved")
+func freshReliableBackendStateIsPreserved() async throws {
+    let backend = StrictVerificationDJBackend(
+        VerificationFixtureBackend(
+            result: validatedFixture,
+            state: DJBackendState(observedAt: Date(), isReliable: true)
+        ),
+        maximumStateAge: 2
+    )
+
+    let state = try await backend.readState()
+
+    #expect(state.isReliable)
+}
+
+@Test("Stale reliable backend state is downgraded")
+func staleReliableBackendStateIsDowngraded() async throws {
+    let backend = StrictVerificationDJBackend(
+        VerificationFixtureBackend(
+            result: validatedFixture,
+            state: DJBackendState(
+                observedAt: Date().addingTimeInterval(-10),
+                isReliable: true
+            )
+        ),
+        maximumStateAge: 2
+    )
+
+    let state = try await backend.readState()
+
+    #expect(!state.isReliable)
 }

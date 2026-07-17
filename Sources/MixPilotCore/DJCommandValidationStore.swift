@@ -1,10 +1,83 @@
 import Foundation
+#if os(macOS)
+import Darwin
+#endif
+
+public struct DJValidationPlatformContext: Codable, Hashable, Sendable {
+    public var operatingSystemVersion: String?
+    public var hardwareModel: String?
+    public var appBuild: String?
+
+    public init(
+        operatingSystemVersion: String?,
+        hardwareModel: String?,
+        appBuild: String?
+    ) {
+        self.operatingSystemVersion = operatingSystemVersion
+        self.hardwareModel = hardwareModel
+        self.appBuild = appBuild
+    }
+
+    public static var current: Self {
+        Self(
+            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            hardwareModel: currentHardwareModel(),
+            appBuild: currentAppBuild()
+        )
+    }
+
+    public var isFullyQualified: Bool {
+        hasValue(operatingSystemVersion) && hasValue(hardwareModel) && hasValue(appBuild)
+    }
+
+    private func hasValue(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func currentAppBuild() -> String? {
+        if let bundleBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+           !bundleBuild.isEmpty {
+            return bundleBuild
+        }
+        if let environmentBuild = ProcessInfo.processInfo.environment["MIXPILOT_BUILD_ID"],
+           !environmentBuild.isEmpty {
+            return environmentBuild
+        }
+        guard let executableURL = Bundle.main.executableURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: executableURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return "development-\(Int(modificationDate.timeIntervalSince1970))"
+    }
+
+    private static func currentHardwareModel() -> String? {
+        #if os(macOS)
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 1 else {
+            return nil
+        }
+        var value = [CChar](repeating: 0, count: size)
+        let result = value.withUnsafeMutableBytes { buffer in
+            sysctlbyname("hw.model", buffer.baseAddress, &size, nil, 0)
+        }
+        guard result == 0 else { return nil }
+        return String(cString: value)
+        #else
+        return nil
+        #endif
+    }
+}
 
 public struct DJCommandValidationKey: Codable, Hashable, Sendable {
     public var backend: DJBackendIdentifier
     public var softwareVersion: String?
     public var controllerName: String?
     public var mappingVersion: String?
+    public var operatingSystemVersion: String?
+    public var hardwareModel: String?
+    public var appBuild: String?
     public var action: DJControlAction
 
     public init(
@@ -12,13 +85,25 @@ public struct DJCommandValidationKey: Codable, Hashable, Sendable {
         softwareVersion: String? = nil,
         controllerName: String? = nil,
         mappingVersion: String? = nil,
-        action: DJControlAction
+        action: DJControlAction,
+        platformContext: DJValidationPlatformContext = .current
     ) {
         self.backend = backend
         self.softwareVersion = softwareVersion
         self.controllerName = controllerName
         self.mappingVersion = mappingVersion
+        self.operatingSystemVersion = platformContext.operatingSystemVersion
+        self.hardwareModel = platformContext.hardwareModel
+        self.appBuild = platformContext.appBuild
         self.action = action
+    }
+
+    public var platformContext: DJValidationPlatformContext {
+        DJValidationPlatformContext(
+            operatingSystemVersion: operatingSystemVersion,
+            hardwareModel: hardwareModel,
+            appBuild: appBuild
+        )
     }
 
     public var storageKey: String {
@@ -27,12 +112,22 @@ public struct DJCommandValidationKey: Codable, Hashable, Sendable {
             softwareVersion ?? "unknown-software",
             controllerName ?? "unknown-controller",
             mappingVersion ?? "unknown-mapping",
-            action.rawValue
+            operatingSystemVersion ?? "unknown-os",
+            hardwareModel ?? "unknown-hardware",
+            appBuild ?? "unknown-build",
+            action.rawValue,
         ].joined(separator: "|")
     }
 
     public var isFullyQualifiedForLive: Bool {
-        hasValue(softwareVersion) && hasValue(controllerName) && hasValue(mappingVersion)
+        hasValue(softwareVersion) &&
+            hasValue(controllerName) &&
+            hasValue(mappingVersion) &&
+            platformContext.isFullyQualified
+    }
+
+    public func matches(_ context: DJValidationPlatformContext) -> Bool {
+        platformContext == context
     }
 
     private func hasValue(_ value: String?) -> Bool {
@@ -70,11 +165,18 @@ public struct DJCommandValidationRecord: Codable, Hashable, Sendable {
     }
 
     public var permitsLiveControl: Bool {
-        guard status == .automatedSuccess, key.isFullyQualifiedForLive else { return false }
+        permitsLiveControl(in: .current)
+    }
+
+    public func permitsLiveControl(in context: DJValidationPlatformContext) -> Bool {
+        guard status == .automatedSuccess,
+              key.isFullyQualifiedForLive,
+              key.matches(context) else {
+            return false
+        }
         if let evidence {
             return evidence == .deviceConfirmed
         }
-
         return detail == "DEVICE_CONFIRMED"
     }
 }
