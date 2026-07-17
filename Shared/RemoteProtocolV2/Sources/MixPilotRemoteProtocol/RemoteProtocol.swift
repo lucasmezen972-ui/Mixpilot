@@ -3,6 +3,10 @@ import Foundation
 public enum MixPilotRemoteProtocolVersion {
     public static let current = 2
     public static let minimumSupported = 1
+
+    public static func supports(_ version: Int) -> Bool {
+        (minimumSupported...current).contains(version)
+    }
 }
 
 public enum RemoteDJBackendIdentifier: String, Codable, CaseIterable, Sendable {
