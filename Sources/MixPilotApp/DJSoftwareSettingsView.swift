@@ -12,13 +12,13 @@ struct DJSoftwareSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     MixPilotSectionHero(
-                        eyebrow: "Ton environnement DJ",
-                        title: "Choisir le logiciel à piloter",
-                        subtitle: "djay Pro, rekordbox et Serato DJ Pro sont trois backends officiels. MixPilot adapte ensuite les transitions aux fonctions réellement disponibles.",
+                        eyebrow: AppLocalizedCopy.text("app.backend.hero.eyebrow"),
+                        title: AppLocalizedCopy.text("app.backend.hero.title"),
+                        subtitle: AppLocalizedCopy.text("app.backend.hero.subtitle"),
                         symbol: "music.note.house.fill",
                         accent: .cyan
                     ) {
-                        Button("Actualiser") { model.refreshEnvironment() }
+                        Button(AppLocalizedCopy.text("app.backend.refresh")) { model.refreshEnvironment() }
                             .buttonStyle(MixPilotSecondaryButtonStyle())
                     }
 
@@ -37,9 +37,9 @@ struct DJSoftwareSettingsView: View {
                                 .font(.title2)
                                 .foregroundStyle(.cyan)
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("Même importance, capacités différentes")
+                                Text(AppLocalizedCopy.text("app.backend.equal.title"))
                                     .font(.headline)
-                                Text("Être officiellement pris en charge ne signifie pas que toutes les commandes sont identiques. MixPilot vérifie la version, le mapping et les tests réalisés sur ce Mac avant d’autoriser le Live.")
+                                Text(AppLocalizedCopy.text("app.backend.equal.detail"))
                                     .font(.callout)
                                     .foregroundStyle(.white.opacity(0.58))
                             }
@@ -100,7 +100,11 @@ struct DJSoftwareSettingsView: View {
                         accent: environment?.isInstalled == true ? .green : .orange
                     )
                     if let version = environment?.softwareVersion {
-                        MixPilotStatusBadge(title: "Version \(version)", symbol: "number", accent: .blue)
+                        MixPilotStatusBadge(
+                            title: AppLocalizedCopy.format("app.backend.version_format", version),
+                            symbol: "number",
+                            accent: .blue
+                        )
                     }
                 }
 
@@ -110,29 +114,51 @@ struct DJSoftwareSettingsView: View {
                     .frame(minHeight: 42, alignment: .topLeading)
 
                 VStack(spacing: 9) {
-                    capabilityRow("Préparation du set", available: true, accent: accent)
                     capabilityRow(
-                        backend == .djay ? "Automix supervisé" : "Contrôle des decks",
+                        AppLocalizedCopy.text("app.backend.capability.prepare_set"),
+                        available: true,
+                        accent: accent
+                    )
+                    capabilityRow(
+                        AppLocalizedCopy.text(
+                            backend == .djay
+                                ? "app.backend.capability.automix"
+                                : "app.backend.capability.deck_control"
+                        ),
                         available: backend == .djay
                             ? capabilities[.automix].canBePlanned
                             : capabilities[.playPause].canBePlanned,
                         accent: accent
                     )
-                    capabilityRow("Lecture de la bibliothèque", available: capabilities[.libraryReading].canBePlanned, accent: accent)
-                    capabilityRow("Reprise manuelle", available: true, accent: accent)
+                    capabilityRow(
+                        AppLocalizedCopy.text("app.backend.capability.library"),
+                        available: capabilities[.libraryReading].canBePlanned,
+                        accent: accent
+                    )
+                    capabilityRow(
+                        AppLocalizedCopy.text("app.backend.capability.manual"),
+                        available: true,
+                        accent: accent
+                    )
                 }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("COMPATIBILITÉ")
+                        Text(AppLocalizedCopy.text("app.backend.compatibility"))
                             .font(.system(size: 8, weight: .bold, design: .rounded))
                             .tracking(1)
                             .foregroundStyle(.white.opacity(0.36))
-                        Text("\(readyCount) confirmées pour le Live • \(availableCount) disponibles")
+                        Text(AppLocalizedCopy.format(
+                            "app.backend.compatibility_summary_format",
+                            readyCount,
+                            availableCount
+                        ))
                             .font(.caption.bold())
                     }
                     Spacer()
-                    Text(environment?.isRunning == true ? "Connecté" : "À vérifier")
+                    Text(AppLocalizedCopy.text(
+                        environment?.isRunning == true ? "app.backend.connected" : "app.backend.check"
+                    ))
                         .font(.caption.bold())
                         .foregroundStyle(environment?.isRunning == true ? .green : .orange)
                 }
@@ -151,13 +177,13 @@ struct DJSoftwareSettingsView: View {
                 .frame(minHeight: 45, alignment: .topLeading)
 
                 HStack(spacing: 8) {
-                    Button("Configurer") {
+                    Button(AppLocalizedCopy.text("app.backend.configure")) {
                         model.selectBackend(backend)
                         model.selectedSection = .mapping
                     }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
 
-                    Button("Tester") {
+                    Button(AppLocalizedCopy.text("app.backend.test")) {
                         model.selectBackend(backend)
                         model.refreshEnvironment()
                         model.evaluatePreflight()
@@ -165,7 +191,7 @@ struct DJSoftwareSettingsView: View {
                     }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
 
-                    Button(selected ? "Utilisé" : "Utiliser") {
+                    Button(AppLocalizedCopy.text(selected ? "app.backend.used" : "app.backend.use")) {
                         model.selectBackend(backend)
                     }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: accent))
@@ -175,7 +201,7 @@ struct DJSoftwareSettingsView: View {
         }
         .overlay(alignment: .topTrailing) {
             if selected {
-                Text("ACTIF")
+                Text(AppLocalizedCopy.text("app.backend.active"))
                     .font(.system(size: 8, weight: .black, design: .rounded))
                     .tracking(1.1)
                     .foregroundStyle(accent)
@@ -199,9 +225,15 @@ struct DJSoftwareSettingsView: View {
     }
 
     private func installationLabel(_ environment: DJBackendEnvironment?) -> String {
-        guard let environment else { return "Non vérifié" }
-        if !environment.isInstalled { return "Non installé" }
-        return environment.isRunning ? "Ouvert" : "Installé"
+        guard let environment else {
+            return AppLocalizedCopy.text("app.backend.install.unknown")
+        }
+        if !environment.isInstalled {
+            return AppLocalizedCopy.text("app.backend.install.not_installed")
+        }
+        return AppLocalizedCopy.text(
+            environment.isRunning ? "app.backend.install.open" : "app.backend.install.installed"
+        )
     }
 
     private func configurationSummary(
@@ -209,44 +241,63 @@ struct DJSoftwareSettingsView: View {
         descriptor: DJBackendDescriptor?
     ) -> (title: String, detail: String, ready: Bool) {
         guard let descriptor else {
-            return ("Vérification nécessaire", "MixPilot n’a pas encore analysé ce logiciel sur ce Mac.", false)
+            return (
+                AppLocalizedCopy.text("app.backend.summary.verification_required"),
+                AppLocalizedCopy.text("app.backend.summary.no_analysis"),
+                false
+            )
         }
         if !descriptor.environment.isInstalled {
-            return ("Logiciel non installé", "Installe \(backend.displayName), puis relance la vérification.", false)
+            return (
+                AppLocalizedCopy.text("app.backend.summary.software_not_installed"),
+                AppLocalizedCopy.format("app.backend.summary.install_format", backend.displayName),
+                false
+            )
         }
         if !descriptor.environment.isRunning {
-            return ("Lance le logiciel", "Ouvre \(backend.displayName) pour tester la connexion et la version.", false)
+            return (
+                AppLocalizedCopy.text("app.backend.summary.launch"),
+                AppLocalizedCopy.format("app.backend.summary.open_format", backend.displayName),
+                false
+            )
         }
         let critical: [DJCapability] = backend == .djay
             ? [.automix, .trackStateReading]
             : [.trackLoading, .playPause, .channelVolume]
         let pending = critical.filter { !descriptor.capabilities[$0].isConfirmedForLive }
         if pending.isEmpty {
-            return ("Configuration prête", "Les fonctions critiques ont été confirmées pour cette version et cette configuration.", true)
+            return (
+                AppLocalizedCopy.text("app.backend.summary.ready"),
+                AppLocalizedCopy.text("app.backend.summary.ready_detail"),
+                true
+            )
         }
         return (
-            "\(pending.count) test(s) à terminer",
-            "MixPilot adaptera les transitions, mais le Live complet restera bloqué tant que les commandes critiques ne sont pas confirmées.",
+            AppLocalizedCopy.format("app.backend.summary.pending_title_format", pending.count),
+            AppLocalizedCopy.text("app.backend.summary.pending_detail"),
             false
         )
     }
 
     private func productSubtitle(for backend: DJBackendIdentifier) -> String {
         switch backend {
-        case .djay: "Autopilote natif et contrôle avancé"
-        case .rekordbox: "Mode Performance et installations professionnelles"
-        case .serato: "Contrôle MIDI avec configuration guidée"
+        case .djay:
+            AppLocalizedCopy.text("app.backend.subtitle.djay")
+        case .rekordbox:
+            AppLocalizedCopy.text("app.backend.subtitle.rekordbox")
+        case .serato:
+            AppLocalizedCopy.text("app.backend.subtitle.serato")
         }
     }
 
     private func modeDescription(for backend: DJBackendIdentifier) -> String {
         switch backend {
         case .djay:
-            "Mode Automix supervisé ou transitions MixPilot directes selon les commandes validées."
+            AppLocalizedCopy.text("app.backend.mode.djay")
         case .rekordbox:
-            "Import de bibliothèque, preset MIDI contrôlé et parcours Mode Performance."
+            AppLocalizedCopy.text("app.backend.mode.rekordbox")
         case .serato:
-            "Contrôleur virtuel, mapping sauvegardé et validation commande par commande."
+            AppLocalizedCopy.text("app.backend.mode.serato")
         }
     }
 
