@@ -14,6 +14,8 @@ CURRENT_REFERENCES=(
   Documentation/USER_JOURNEY.md
   Documentation/TERMINOLOGY.md
   Documentation/MULTI_BACKEND_ARCHITECTURE.md
+  Documentation/MULTI_BACKEND_AUDIT.md
+  Documentation/MULTI_BACKEND_REFACTOR_REPORT.md
   Documentation/BACKEND_CAPABILITY_MATRIX.md
   Documentation/DJAY_INTEGRATION.md
   Documentation/REKORDBOX_INTEGRATION.md
@@ -42,6 +44,20 @@ done
 
 for section in "Préparer" "Vérifier" "Live" "Avancé"; do
   grep -q "$section" README.md || { echo "Root README is missing primary area: $section" >&2; exit 1; }
+done
+
+for section in \
+  "Architecture avant" \
+  "Architecture après" \
+  "Résultats CI" \
+  "Capacités djay" \
+  "Capacités rekordbox" \
+  "Capacités Serato" \
+  "Risques restants"; do
+  grep -q "$section" Documentation/MULTI_BACKEND_REFACTOR_REPORT.md || {
+    echo "The refactor report is missing section: $section" >&2
+    exit 1
+  }
 done
 
 FORBIDDEN_PATTERN='Serato-only|Serato principal|djay expérimental|rekordbox expérimental|second backend|third backend|Serato source of truth|REQUIRES_SERATO_VALIDATION'
