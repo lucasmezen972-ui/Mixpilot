@@ -48,13 +48,64 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
     public func isAvailable(currentBuild: Int, installationID: UUID) -> Bool {
         guard build > currentBuild else { return false }
         guard rolloutPercentage > 0 else { return false }
+        guard hasRequiredPublisherMetadata else { return false }
+        guard Self.isAllowedDistributionURL(downloadURL) else { return false }
+        if let releasePageURL, !Self.isAllowedDistributionURL(releasePageURL) {
+            return false
+        }
         guard rolloutPercentage < 100 else { return true }
         return Self.rolloutBucket(for: installationID) < rolloutPercentage
     }
 
+    /// MixPilot currently opens a release page instead of silently installing
+    /// an update. An untrusted URL therefore falls back to the official project
+    /// releases page rather than being opened from cloud-controlled metadata.
     public var preferredOpenURL: URL {
-        releasePageURL ?? downloadURL
+        if let releasePageURL, Self.isAllowedDistributionURL(releasePageURL) {
+            return releasePageURL
+        }
+        if Self.isAllowedDistributionURL(downloadURL) {
+            return downloadURL
+        }
+        return Self.officialReleasesURL
     }
+
+    public var hasRequiredPublisherMetadata: Bool {
+        guard sha256.count == 64,
+              sha256.allSatisfy({ $0.isHexDigit }),
+              let signature,
+              signature.count >= 32 else {
+            return false
+        }
+        return true
+    }
+
+    public static func isAllowedDistributionURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              url.user == nil,
+              url.password == nil,
+              let host = url.host?.lowercased() else {
+            return false
+        }
+
+        let path = url.path
+        switch host {
+        case "github.com":
+            return path == "/lucasmezen972-ui/Mixpilot/releases" ||
+                path.hasPrefix("/lucasmezen972-ui/Mixpilot/releases/")
+        case "objects.githubusercontent.com":
+            return true
+        case "cqppkklfugbixpxwitab.supabase.co":
+            return path.hasPrefix("/storage/v1/object/public/mixpilot-releases/") ||
+                path.hasPrefix("/storage/v1/object/public/mixpilot-mappings/")
+        default:
+            return false
+        }
+    }
+
+    private static let officialReleasesURL = URL(
+        string: "https://github.com/lucasmezen972-ui/Mixpilot/releases"
+    )!
 
     private static func rolloutBucket(for installationID: UUID) -> Int {
         var hash: UInt64 = 1_469_598_103_934_665_603
