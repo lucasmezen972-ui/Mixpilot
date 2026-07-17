@@ -1,6 +1,5 @@
 #if os(macOS)
 import AppKit
-import MixPilotHelp
 import MixPilotRemoteBridge
 import SwiftUI
 
@@ -50,27 +49,27 @@ struct MixPilotAutopilotApp: App {
         .commands {
             MixPilotWindowCommands(cloud: cloud)
 
-            CommandMenu("MixPilot") {
-                Button("Préparer") {
+            CommandMenu(AppLocalizedCopy.command("commands.menu.mixpilot")) {
+                Button(AppLocalizedCopy.command("commands.prepare")) {
                     model.selectedSection = .studio
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Vérifier") {
+                Button(AppLocalizedCopy.command("commands.verify")) {
                     model.evaluatePreflight()
                     model.selectedSection = .preflight
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
-                Button("Live") {
+                Button(AppLocalizedCopy.command("commands.live")) {
                     model.selectedSection = .live
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("3", modifiers: [.command])
 
-                Button("Avancé") {
+                Button(AppLocalizedCopy.command("commands.advanced")) {
                     model.selectedSection = .feasibility
                     mainSurface = .workspace
                 }
@@ -79,10 +78,10 @@ struct MixPilotAutopilotApp: App {
                 Divider()
 
                 Button(remoteBridge.isRunning
-                       ? "Désactiver la télécommande iPhone"
+                       ? AppLocalizedCopy.command("commands.remote.disable")
                        : insecureRemoteDevelopmentOverrideEnabled
-                           ? "Activer la télécommande iPhone (développement)"
-                           : "Télécommande iPhone indisponible (sécurité)") {
+                           ? AppLocalizedCopy.command("commands.remote.enable_development")
+                           : AppLocalizedCopy.command("commands.remote.unavailable")) {
                     if remoteBridge.isRunning {
                         remoteBridge.stop()
                     } else if insecureRemoteDevelopmentOverrideEnabled {
@@ -93,7 +92,7 @@ struct MixPilotAutopilotApp: App {
                     }
                 }
 
-                Button("Afficher un nouveau code d’appairage…") {
+                Button(AppLocalizedCopy.command("commands.remote.new_pairing_code")) {
                     remoteBridge.rotatePairingCode()
                     showPairingCode()
                 }
@@ -101,31 +100,31 @@ struct MixPilotAutopilotApp: App {
 
                 Divider()
 
-                Button("Vérifier les mises à jour") {
+                Button(AppLocalizedCopy.command("commands.check_updates")) {
                     cloud.checkNow()
                 }
                 .keyboardShortcut("u", modifiers: [.command, .option])
 
-                Button("Exporter un diagnostic anonymisé…") {
+                Button(AppLocalizedCopy.command("commands.export_diagnostics")) {
                     model.exportDiagnostics()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Reprendre immédiatement la main", role: .destructive) {
+                Button(AppLocalizedCopy.command("commands.take_control_now"), role: .destructive) {
                     model.takeManualControl()
                 }
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
 
-        Window("Choisir le logiciel DJ", id: "dj-software") {
+        Window(AppLocalizedCopy.command("commands.window.choose_software"), id: "dj-software") {
             DJSoftwareSettingsView(model: model)
         }
         .defaultSize(width: 1_100, height: 760)
 
-        Window("Préparer un set rapidement", id: "quick-set") {
+        Window(AppLocalizedCopy.command("commands.window.quick_set"), id: "quick-set") {
             QuickSetView(model: model)
         }
         .defaultSize(width: 650, height: 380)
@@ -133,52 +132,52 @@ struct MixPilotAutopilotApp: App {
         // Backend-specific tools remain registered for the contextual card in
         // the Advanced workspace. They are intentionally absent from the global
         // menu so rekordbox, Serato and djay do not create parallel navigation.
-        Window("Outils rekordbox", id: "rekordbox-hub") {
+        Window(AppLocalizedCopy.command("commands.window.rekordbox_tools"), id: "rekordbox-hub") {
             RekordboxHubView(appModel: model)
         }
         .defaultSize(width: 1_320, height: 880)
 
-        Window("Inspection rekordbox", id: "rekordbox-compatibility") {
+        Window(AppLocalizedCopy.command("commands.window.rekordbox_inspection"), id: "rekordbox-compatibility") {
             RekordboxCompatibilityLabView(appModel: model)
         }
         .defaultSize(width: 1_080, height: 780)
 
-        Window("Validation réelle rekordbox", id: "rekordbox-device-validation") {
+        Window(AppLocalizedCopy.command("commands.window.rekordbox_validation"), id: "rekordbox-device-validation") {
             RekordboxDeviceValidationView(appModel: model)
         }
         .defaultSize(width: 1_240, height: 860)
 
-        Window("Mapping rekordbox", id: "automatic-rekordbox-mapping") {
+        Window(AppLocalizedCopy.command("commands.window.rekordbox_mapping"), id: "automatic-rekordbox-mapping") {
             AutomaticRekordboxMappingView(model: model)
         }
         .defaultSize(width: 1_020, height: 760)
 
-        Window("Configuration Serato", id: "automatic-serato-mapping") {
+        Window(AppLocalizedCopy.command("commands.window.serato_mapping"), id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
         .defaultSize(width: 1_020, height: 760)
 
-        Window("Répétition des transitions", id: "rehearsal") {
+        Window(AppLocalizedCopy.command("commands.window.rehearsal"), id: "rehearsal") {
             RehearsalWorkspace(model: model)
         }
         .defaultSize(width: 1_180, height: 780)
 
-        Window("Inspecteur de transitions", id: "transition-inspector") {
+        Window(AppLocalizedCopy.command("commands.window.transition_inspector"), id: "transition-inspector") {
             TransitionInspectorView(model: model)
         }
         .defaultSize(width: 1_120, height: 760)
 
-        Window("Analyse audio de préparation", id: "preparation-analysis") {
+        Window(AppLocalizedCopy.command("commands.window.audio_analysis"), id: "preparation-analysis") {
             PreparationAnalysisView(model: model)
         }
         .defaultSize(width: 1_040, height: 720)
 
-        Window("Centre de récupération", id: "recovery-center") {
+        Window(AppLocalizedCopy.command("commands.window.recovery"), id: "recovery-center") {
             RecoveryCenterView()
         }
         .defaultSize(width: 820, height: 620)
 
-        Window("Centre d’aide", id: "help-center") {
+        Window(AppLocalizedCopy.command("commands.window.help"), id: "help-center") {
             MixPilotHelpCenterView()
         }
         .defaultSize(width: 1_080, height: 760)
@@ -195,27 +194,30 @@ struct MixPilotAutopilotApp: App {
     private func showPairingCode() {
         let alert = NSAlert()
         guard remoteBridge.pairingCode != "------" else {
-            alert.messageText = "Appairage indisponible"
-            alert.informativeText = "MixPilot n’a pas pu générer un code cryptographiquement sûr. La télécommande reste désactivée."
+            alert.messageText = AppLocalizedCopy.command("commands.alert.pairing_unavailable.title")
+            alert.informativeText = AppLocalizedCopy.command("commands.alert.pairing_unavailable.detail")
             alert.alertStyle = .critical
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: AppLocalizedCopy.command("commands.alert.ok"))
             alert.runModal()
             return
         }
 
-        alert.messageText = "Appairer MixPilot Remote — développement"
-        alert.informativeText = "Ce transport local n’est pas encore chiffré. Utilise-le uniquement sur un réseau de développement isolé. Sur l’iPhone, sélectionne ce Mac puis saisis le code \(remoteBridge.pairingCode). Il expire dans deux minutes."
+        alert.messageText = AppLocalizedCopy.command("commands.alert.pairing_development.title")
+        alert.informativeText = AppLocalizedCopy.commandFormat(
+            "commands.alert.pairing_development.detail_format",
+            remoteBridge.pairingCode
+        )
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "J’ai compris")
+        alert.addButton(withTitle: AppLocalizedCopy.command("commands.alert.understood"))
         alert.runModal()
     }
 
     private func showRemoteSecurityWarning() {
         let alert = NSAlert()
-        alert.messageText = "Télécommande temporairement désactivée"
-        alert.informativeText = "Le transport iPhone–Mac actuel n’est pas encore chiffré. MixPilot le bloque dans les builds normaux. Pour un test de développement sur un réseau isolé, lance l’application avec MIXPILOT_ALLOW_INSECURE_REMOTE=1."
+        alert.messageText = AppLocalizedCopy.command("commands.alert.remote_disabled.title")
+        alert.informativeText = AppLocalizedCopy.command("commands.alert.remote_disabled.detail")
         alert.alertStyle = .critical
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: AppLocalizedCopy.command("commands.alert.ok"))
         alert.runModal()
     }
 }
@@ -224,46 +226,43 @@ private struct MixPilotWindowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var cloud: MixPilotCloudCoordinator
 
-    private let helpCatalog = MixPilotHelpCatalog.shared
-    private var helpLanguage: MixPilotHelpLanguage { .preferred() }
-
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Choisir le logiciel DJ") {
+            Button(AppLocalizedCopy.command("commands.choose_software")) {
                 openWindow(id: "dj-software")
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
 
-            Button("Préparer un set rapidement") {
+            Button(AppLocalizedCopy.command("commands.quick_set")) {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
         }
 
         CommandGroup(replacing: .help) {
-            Button(helpCatalog.localized("help.center.title", language: helpLanguage)) {
+            Button(AppLocalizedCopy.text("help.center.title")) {
                 openWindow(id: "help-center")
             }
             .keyboardShortcut("?", modifiers: [.command])
         }
 
-        CommandMenu("Avancé") {
-            Button("Répéter une transition") {
+        CommandMenu(AppLocalizedCopy.command("commands.advanced_menu")) {
+            Button(AppLocalizedCopy.command("commands.rehearse_transition")) {
                 openWindow(id: "rehearsal")
             }
-            Button("Inspecter les transitions") {
+            Button(AppLocalizedCopy.command("commands.inspect_transitions")) {
                 openWindow(id: "transition-inspector")
             }
-            Button("Analyser l’audio localement") {
+            Button(AppLocalizedCopy.command("commands.analyze_audio")) {
                 openWindow(id: "preparation-analysis")
             }
-            Button("Ouvrir le centre de récupération") {
+            Button(AppLocalizedCopy.command("commands.open_recovery")) {
                 openWindow(id: "recovery-center")
             }
 
             Divider()
 
-            Button("Vérifier les services en ligne") {
+            Button(AppLocalizedCopy.command("commands.check_online_services")) {
                 cloud.checkNow()
             }
         }
