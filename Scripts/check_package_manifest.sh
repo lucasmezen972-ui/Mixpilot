@@ -43,6 +43,21 @@ if missing_targets or missing_products:
         f"targets={sorted(missing_targets)}, products={sorted(missing_products)}"
     )
 
+core_target = next(
+    (target for target in package.get("targets", []) if target.get("name") == "MixPilotCore"),
+    None,
+)
+if core_target is None:
+    raise SystemExit("MixPilotCore target is missing")
+
+core_products = {
+    dependency.get("product", [None])[0]
+    for dependency in core_target.get("dependencies", [])
+    if "product" in dependency
+}
+if "Crypto" not in core_products:
+    raise SystemExit("MixPilotCore must depend on Swift Crypto for Linux-compatible SHA-256 support.")
+
 mac_targets = {
     "MixPilotMIDI",
     "MixPilotSystem",
@@ -77,6 +92,8 @@ else:
     }
     if any("supabase-swift" in url for url in dependency_urls):
         raise SystemExit("The Linux package graph must not resolve the macOS-only Supabase dependency.")
+    if not any("swift-crypto" in url for url in dependency_urls):
+        raise SystemExit("The Linux package graph must resolve Swift Crypto for portable hashing.")
 
 print(f"Package manifest consistency: OK ({host})")
 PY
