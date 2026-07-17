@@ -49,7 +49,7 @@ extension AppModel {
         } ?? []
         let fallbackCount = adaptations.filter { $0.usedFallback && $0.isExecutable }.count
         let blockedCount = adaptations.filter { !$0.isExecutable }.count
-        let projectBackendMatches = project?.backend == nil || project?.backend == selectedBackend
+        let projectBackendMatches = project == nil || project?.backend == selectedBackend
 
         preflightReport = PreflightEvaluator().evaluate(
             PreflightInput(
@@ -147,9 +147,11 @@ extension AppModel {
         guard project.backend != identifier else { return }
 
         project.selectBackend(identifier)
+        project.locked = false
         preparedProject = project
+        liveArmed = false
         _ = try await projectStore.save(project)
-        runtimeStatus = "Set associé à \(identifier.displayName) • vérification à refaire"
+        runtimeStatus = "Set associé à \(identifier.displayName) • inspecte les adaptations puis verrouille de nouveau le plan"
     }
 
     func legacySoftware(_ identifier: DJBackendIdentifier) -> DJSoftware {
