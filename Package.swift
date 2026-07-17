@@ -10,12 +10,17 @@ let dependencies: [Package.Dependency] = [
 
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
+    .library(name: "MixPilotRemoteProtocol", targets: ["MixPilotRemoteProtocol"]),
     .executable(name: "MixPilotSimulatorCLI", targets: ["MixPilotSimulatorCLI"]),
     .executable(name: "MixPilotMappingPublisherCLI", targets: ["MixPilotMappingPublisherCLI"]),
 ]
 
 var targets: [Target] = [
     .target(name: "MixPilotCore"),
+    .target(
+        name: "MixPilotRemoteProtocol",
+        path: "Shared/RemoteProtocolV2/Sources/MixPilotRemoteProtocol"
+    ),
     .executableTarget(
         name: "MixPilotSimulatorCLI",
         dependencies: ["MixPilotCore"]
@@ -27,6 +32,11 @@ var targets: [Target] = [
     .testTarget(
         name: "MixPilotCoreTests",
         dependencies: ["MixPilotCore"]
+    ),
+    .testTarget(
+        name: "MixPilotRemoteProtocolTests",
+        dependencies: ["MixPilotRemoteProtocol"],
+        path: "Shared/RemoteProtocolV2/Tests/MixPilotRemoteProtocolTests"
     ),
 ]
 
@@ -67,7 +77,7 @@ targets.append(
 targets.append(
     .target(
         name: "MixPilotRemoteBridge",
-        dependencies: ["MixPilotCore"],
+        dependencies: ["MixPilotCore", "MixPilotRemoteProtocol"],
         linkerSettings: [
             .linkedFramework("Network"),
             .linkedFramework("Security"),
@@ -89,6 +99,7 @@ targets.append(
             "MixPilotSystem",
             "MixPilotRuntime",
             "MixPilotRemoteBridge",
+            "MixPilotRemoteProtocol",
         ],
         linkerSettings: [
             .linkedFramework("SwiftUI"),
@@ -99,7 +110,7 @@ targets.append(
 targets.append(
     .testTarget(
         name: "MixPilotRemoteBridgeTests",
-        dependencies: ["MixPilotRemoteBridge"]
+        dependencies: ["MixPilotRemoteBridge", "MixPilotRemoteProtocol"]
     )
 )
 targets.append(
