@@ -32,6 +32,8 @@ jobs:
         run: ./Scripts/check_runtime_safety.sh
       - name: Documentation consistency
         run: ./Scripts/check_documentation_consistency.sh
+      - name: Localization consistency
+        run: python3 Scripts/check_localization_consistency.py
       - name: Unit tests
         id: unit-tests
         shell: bash
