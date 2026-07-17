@@ -14,126 +14,190 @@ struct RecoveryCenterView: View {
                     MixPilotSectionHero(
                         eyebrow: "Sécurité de session",
                         title: "Centre de récupération",
-                        subtitle: "Analyse le dernier checkpoint sans envoyer automatiquement la moindre commande.",
+                        subtitle: "Compare le dernier checkpoint à l’état réellement observé avant toute tentative de reprise.",
                         symbol: "lifepreserver.fill",
                         accent: decisionColor
                     ) {
-                        Button("RÉEXAMINER LE LOGICIEL DJ") { model.refresh() }
+                        Button("RÉEXAMINER") { model.refresh() }
                             .buttonStyle(MixPilotPrimaryButtonStyle(accent: decisionColor))
                     }
 
-                    MixPilotGlassCard(accent: decisionColor) {
-                        HStack(alignment: .top, spacing: 16) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 16).fill(decisionColor.opacity(0.14))
-                                Image(systemName: decisionSymbol)
-                                    .font(.system(size: 31, weight: .semibold))
-                                    .foregroundStyle(decisionColor)
-                            }
-                            .frame(width: 64, height: 64)
+                    decisionCard
 
-                            VStack(alignment: .leading, spacing: 6) {
-                                MixPilotStatusBadge(title: decisionBadge, symbol: decisionSymbol, accent: decisionColor)
-                                Text(decisionTitle)
-                                    .font(.system(size: 23, weight: .bold, design: .rounded))
-                                Text(model.status)
-                                    .font(.callout)
-                                    .foregroundStyle(.white.opacity(0.54))
-                            }
-                            Spacer()
-                        }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 330), spacing: 16)], spacing: 16) {
+                        checkpointCard
+                        observationCard
                     }
 
-                    HStack(alignment: .top, spacing: 16) {
-                        if let checkpoint = model.checkpoint {
-                            MixPilotGlassCard(accent: .purple) {
-                                VStack(alignment: .leading, spacing: 13) {
-                                    MixPilotPanelTitle(title: "Dernier état sauvegardé", symbol: "externaldrive.badge.timemachine", subtitle: checkpoint.projectName, accent: .purple)
-                                    recoveryRow("État", checkpoint.state.rawValue)
-                                    recoveryRow("Morceau", "\(checkpoint.currentTrackIndex + 1)")
-                                    recoveryRow("Deck actif", checkpoint.activeDeck.rawValue)
-                                    recoveryRow("Transitions terminées", "\(checkpoint.completedTransitionCount)")
-                                    recoveryRow("Dernière commande", checkpoint.lastCommand ?? "Aucune")
-                                    recoveryRow("Sauvegardé", checkpoint.updatedAt.formatted(date: .abbreviated, time: .standard))
-                                }
-                            }
-                        } else {
-                            MixPilotGlassCard(accent: .green) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    MixPilotPanelTitle(title: "Aucun checkpoint", symbol: "checkmark.circle.fill", subtitle: "Aucune session interrompue à récupérer.", accent: .green)
-                                    Text("Le centre reste disponible si une future session Live est interrompue.")
-                                        .font(.callout)
-                                        .foregroundStyle(.white.opacity(0.52))
-                                }
-                            }
-                        }
+                    MixPilotGlassCard(accent: .orange, elevation: .elevated) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            MixPilotPanelTitle(
+                                title: "Action recommandée",
+                                symbol: "signpost.right.and.left.fill",
+                                subtitle: "Décision conservatrice et réversible",
+                                accent: .orange
+                            )
 
-                        if let observation = model.observation {
-                            MixPilotGlassCard(accent: .cyan) {
-                                VStack(alignment: .leading, spacing: 13) {
-                                    MixPilotPanelTitle(title: "État observé", symbol: "eye.fill", subtitle: "Lecture uniquement", accent: .cyan)
-                                    observationRow(
-                                        observation.isRunning ? "Application détectée" : "Application absente",
-                                        observation.isRunning,
-                                        "app.badge.checkmark"
-                                    )
-                                    observationRow(
-                                        observation.accessibilityGranted ? "Accessibilité autorisée" : "Accessibilité bloquée",
-                                        observation.accessibilityGranted,
-                                        "hand.raised.fill"
-                                    )
-                                    recoveryRow("Éléments lisibles", "\(observation.visibleText.count)")
-                                }
-                            }
-                        }
-                    }
+                            MixPilotNotice(
+                                title: decisionBadge,
+                                message: actionExplanation,
+                                kind: noticeKind
+                            )
 
-                    MixPilotGlassCard(accent: .orange) {
-                        VStack(alignment: .leading, spacing: 13) {
-                            MixPilotPanelTitle(title: "Action recommandée", symbol: "signpost.right.and.left.fill", subtitle: "Décision conservatrice", accent: .orange)
-                            Text(actionExplanation)
-                                .font(.callout)
-                                .foregroundStyle(.white.opacity(0.62))
                             if model.checkpoint != nil {
-                                Button("ABANDONNER CETTE ANCIENNE SESSION") {
-                                    model.discardCheckpoint()
+                                HStack(spacing: 10) {
+                                    Button("ABANDONNER L’ANCIENNE SESSION") {
+                                        model.discardCheckpoint()
+                                    }
+                                    .buttonStyle(MixPilotDangerButtonStyle())
+
+                                    Button("RÉEXAMINER LE LOGICIEL DJ") {
+                                        model.refresh()
+                                    }
+                                    .buttonStyle(MixPilotSecondaryButtonStyle())
                                 }
-                                .buttonStyle(MixPilotDangerButtonStyle())
                             }
                         }
                     }
                 }
                 .padding(28)
-                .frame(maxWidth: 900, alignment: .topLeading)
+                .frame(maxWidth: 980, alignment: .topLeading)
             }
             .scrollIndicators(.hidden)
         }
-        .preferredColorScheme(.dark)
-        .frame(minWidth: 820, minHeight: 620)
+        .mixPilotWindowSurface(minWidth: 860, minHeight: 650)
         .onAppear { model.refresh() }
     }
 
-    private func recoveryRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.46))
-            Spacer()
-            Text(value)
-                .font(.callout.bold())
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
+    private var decisionCard: some View {
+        MixPilotGlassCard(accent: decisionColor, elevation: .elevated) {
+            HStack(alignment: .center, spacing: 18) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(decisionColor.opacity(0.13))
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(decisionColor.opacity(0.25), lineWidth: 1)
+                    Image(systemName: decisionSymbol)
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundStyle(decisionColor)
+                }
+                .frame(width: 72, height: 72)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    MixPilotStatusBadge(title: decisionBadge, symbol: decisionSymbol, accent: decisionColor)
+                    Text(decisionTitle)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .tracking(-0.25)
+                    Text(model.status)
+                        .font(.callout)
+                        .foregroundStyle(MixPilotPalette.textSecondary)
+                        .lineSpacing(2)
+                }
+                Spacer(minLength: 12)
+            }
         }
-        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    private var checkpointCard: some View {
+        if let checkpoint = model.checkpoint {
+            MixPilotGlassCard(accent: .purple) {
+                VStack(alignment: .leading, spacing: 14) {
+                    MixPilotPanelTitle(
+                        title: "Dernier état sauvegardé",
+                        symbol: "externaldrive.badge.timemachine",
+                        subtitle: checkpoint.projectName,
+                        accent: .purple
+                    )
+                    MixPilotSectionDivider(accent: .purple)
+                    MixPilotKeyValueRow(label: "État", value: checkpoint.state.rawValue, accent: .purple, symbol: "waveform.path")
+                    MixPilotKeyValueRow(label: "Morceau", value: "\(checkpoint.currentTrackIndex + 1)", accent: .purple, symbol: "music.note")
+                    MixPilotKeyValueRow(label: "Deck actif", value: checkpoint.activeDeck.rawValue, accent: .purple, symbol: "record.circle")
+                    MixPilotKeyValueRow(label: "Transitions terminées", value: "\(checkpoint.completedTransitionCount)", accent: .purple, symbol: "arrow.left.arrow.right")
+                    MixPilotKeyValueRow(label: "Dernière commande", value: checkpoint.lastCommand ?? "Aucune", accent: .purple, symbol: "terminal")
+                    MixPilotKeyValueRow(label: "Sauvegardé", value: checkpoint.updatedAt.formatted(date: .abbreviated, time: .standard), accent: .purple, symbol: "clock")
+                }
+            }
+        } else {
+            MixPilotEmptyState(
+                title: "Aucune session interrompue",
+                message: "Aucun checkpoint n’attend une reprise. Le centre restera disponible si une future session Live est interrompue.",
+                symbol: "checkmark.shield.fill",
+                accent: .green
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var observationCard: some View {
+        if let observation = model.observation {
+            MixPilotGlassCard(accent: .cyan) {
+                VStack(alignment: .leading, spacing: 14) {
+                    MixPilotPanelTitle(
+                        title: "État observé",
+                        symbol: "eye.fill",
+                        subtitle: "Lecture uniquement — aucune commande envoyée",
+                        accent: .cyan
+                    )
+                    MixPilotSectionDivider(accent: .cyan)
+                    observationRow(
+                        observation.isRunning ? "Application détectée" : "Application absente",
+                        observation.isRunning,
+                        "app.badge.checkmark"
+                    )
+                    observationRow(
+                        observation.accessibilityGranted ? "Accessibilité autorisée" : "Accessibilité bloquée",
+                        observation.accessibilityGranted,
+                        "hand.raised.fill"
+                    )
+                    MixPilotKeyValueRow(
+                        label: "Éléments lisibles",
+                        value: "\(observation.visibleText.count)",
+                        accent: .cyan,
+                        symbol: "text.viewfinder"
+                    )
+                }
+            }
+        } else {
+            MixPilotEmptyState(
+                title: "Observation indisponible",
+                message: "Lance un réexamen pour lire l’état du logiciel DJ et des permissions système.",
+                symbol: "eye.slash.fill",
+                accent: .orange
+            ) {
+                Button("RÉEXAMINER") { model.refresh() }
+                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .orange))
+            }
+        }
     }
 
     private func observationRow(_ title: String, _ positive: Bool, _ symbol: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: positive ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(positive ? .green : .red)
-            Image(systemName: symbol).foregroundStyle(.cyan)
-            Text(title).font(.callout)
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill((positive ? Color.green : Color.red).opacity(0.12))
+                Image(systemName: positive ? "checkmark" : "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(positive ? .green : .red)
+            }
+            .frame(width: 25, height: 25)
+            Image(systemName: symbol)
+                .foregroundStyle(.cyan)
+                .frame(width: 18)
+            Text(title)
+                .font(.callout.weight(.medium))
             Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var noticeKind: MixPilotNotice.Kind {
+        switch model.reconciliation?.decision {
+        case .resumeAutomatically, .discardCompletedSession: .success
+        case .requireObservation: .info
+        case .requireManualConfirmation: .warning
+        case .switchToEmergency: .danger
+        case nil: model.checkpoint == nil ? .success : .warning
         }
     }
 
