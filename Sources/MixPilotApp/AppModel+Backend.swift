@@ -41,7 +41,11 @@ extension AppModel {
         let descriptor = selectedBackend.flatMap { identifier in
             backendDescriptors.first { $0.identifier == identifier }
         }
-        let capabilities = descriptor?.capabilities ?? DJBackendCapabilities()
+        let rawCapabilities = descriptor?.capabilities ?? DJBackendCapabilities()
+        let accessibilityGranted = accessibilityStatus == "Autorisée"
+        let capabilities = rawCapabilities.applyingRuntimeAvailability(
+            accessibilityGranted: accessibilityGranted
+        )
         let liveCapabilities = capabilities.confirmedForLiveOnly()
         let project = preparedProject
         let adaptations = project.map {
@@ -57,7 +61,7 @@ extension AppModel {
                 backendEnvironment: descriptor?.environment,
                 backendCapabilities: capabilities,
                 backendValidation: backendValidationReport,
-                accessibilityGranted: accessibilityStatus == "Autorisée",
+                accessibilityGranted: accessibilityGranted,
                 midiAvailable: midiController != nil,
                 mappingCompletion: mappingProfile.liveControlCoverageRatio,
                 audioMonitorRunning: audioMonitor.isRunning,
