@@ -139,6 +139,14 @@ public struct CheckpointReconciler: Sendable {
         observedTrackTitle: String?,
         audioActive: Bool
     ) -> CheckpointReconciliationResult {
+        guard checkpoint.formatVersion <= LiveCheckpoint.currentFormatVersion else {
+            return manual(
+                checkpoint,
+                project: project,
+                explanation: "Le checkpoint provient d’une version plus récente de MixPilot. Aucune reprise n’est autorisée."
+            )
+        }
+
         guard checkpoint.projectID == project.id else {
             return manual(
                 checkpoint,
@@ -182,21 +190,42 @@ public struct CheckpointReconciler: Sendable {
         }
 
         let index = safeIndex(checkpoint, project: project)
-        let expectedTrack = project.tracks.indices.contains(index)
-            ? project.tracks[index].track
-            : nil
-        let observedMatches = expectedTrack.map { expected in
+        guard project.tracks.indices.contains(index) else {
+            return manual(
+                checkpoint,
+                project: project,
+                explanation: "Le morceau sauvegardé n’existe plus dans le projet."
+            )
+        }
+        let expectedTrack = project.tracks[index].track
+
+        guard checkpoint.lastConfirmedTrackID == expectedTrack.id else {
+            return manual(
+                checkpoint,
+                project: project,
+                explanation: "L’identité du dernier morceau confirmé ne correspond plus au projet."
+            )
+        }
+
+        guard isRecoverableState(checkpoint.state) else {
+            return manual(
+                checkpoint,
+                project: project,
+                explanation: "La session s’est arrêtée pendant un état qui exige une vérification complète des decks."
+            )
+        }
+
+        let observedMatches: Bool = {
             guard let observedTrackTitle else { return false }
-            return normalized(observedTrackTitle).contains(normalized(expected.title)) ||
-                normalized(expected.title).contains(normalized(observedTrackTitle))
-        } ?? false
+            return normalized(observedTrackTitle).contains(normalized(expectedTrack.title)) ||
+                normalized(expectedTrack.title).contains(normalized(observedTrackTitle))
+        }()
 
         if observedMatches && audioActive {
-            return CheckpointReconciliationResult(
-                decision: .resumeAutomatically,
-                proposedTrackIndex: index,
-                proposedDeck: checkpoint.activeDeck,
-                explanation: "Le backend, le titre et l’audio correspondent au dernier état confirmé."
+            return manual(
+                checkpoint,
+                project: project,
+                explanation: "Le backend, le titre et l’audio semblent correspondre. Confirme manuellement les decks sur le Mac avant toute reprise."
             )
         }
         if observedMatches {
@@ -204,7 +233,7 @@ public struct CheckpointReconciler: Sendable {
                 decision: .requireObservation,
                 proposedTrackIndex: index,
                 proposedDeck: checkpoint.activeDeck,
-                explanation: "Le bon titre est visible, mais l’audio doit encore être confirmé."
+                explanation: "Le bon titre semble visible, mais l’audio et les decks doivent encore être confirmés sur le Mac."
             )
         }
         return manual(
@@ -230,6 +259,15 @@ public struct CheckpointReconciler: Sendable {
             observedTrackTitle: observedTrackTitle,
             audioActive: audioActive
         )
+    }
+
+    private func isRecoverableState(_ state: AutopilotState) -> Bool {
+        switch state {
+        case .playing, .paused, .waitingForTransition:
+            true
+        default:
+            false
+        }
     }
 
     private func manual(
