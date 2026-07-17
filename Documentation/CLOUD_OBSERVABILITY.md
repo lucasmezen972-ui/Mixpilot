@@ -1,63 +1,147 @@
-# MixPilot Cloud Observability
+# Services en ligne et diagnostics MixPilot
 
-GitHub stores the source code, reviewed fixes, CI results, SQL migrations and future signed releases. The dedicated Supabase project `Mixpilot` (`cqppkklfugbixpxwitab`) supplies managed PostgreSQL, authentication and the online application state.
+Les services en ligne sont facultatifs. GitHub conserve le code, les migrations, les Pull Requests, les artefacts de release et la provenance des mappings. Le projet Supabase dédié `cqppkklfugbixpxwitab` fournit PostgreSQL, l’authentification et les états en ligne autorisés.
 
-## Why not a SQL database directly in GitHub?
+Une indisponibilité de ces services ne doit jamais :
 
-A Git repository is an append-oriented source-control system, not a transactional database. Storing mutable telemetry as commits would create conflicts, expose operational data, consume API limits and make online health checks unreliable.
+- arrêter la musique ;
+- interrompre une transition ;
+- empêcher le contrôle manuel ;
+- invalider une configuration locale déjà vérifiée ;
+- bloquer un Live préparé.
 
-## Data model
+## Pourquoi GitHub n’est pas la base de données Live
 
-- `mixpilot_devices`: one row per authenticated installation and heartbeat.
-- `mixpilot_sessions`: app and Live sessions.
-- `mixpilot_events`: append-only, privacy-filtered telemetry with idempotency keys.
-- `rekordbox_validation_reports`: versioned compatibility certificates.
-- `mixpilot_commands`: short-lived, allowlisted remote requests.
-- `mixpilot_releases`: published versions, checksums, rollout percentage and release notes.
-- `mixpilot_incidents`: aggregated error and critical event fingerprints.
-- `mixpilot_device_health`: security-invoker health view.
-- `mixpilot_latest_releases`: security-invoker update view.
+Git est un système de versionnement, pas une base transactionnelle. Écrire des sessions et diagnostics sous forme de commits créerait des conflits, exposerait les données opérationnelles et rendrait les heartbeats peu fiables.
 
-## Runtime connection
+## Données principales
 
-The macOS app connects automatically while it is running. Supabase anonymous authentication gives each installation its own persistent user identity without collecting an email address or password. RLS still isolates every device, session, event and validation report by `auth.uid()`.
+- `mixpilot_devices` : installation, backend actif, version et dernier heartbeat ;
+- `mixpilot_sessions` : sessions application et Live ;
+- `mixpilot_events` : diagnostics techniques filtrés et dédupliqués ;
+- `rekordbox_validation_reports` : certificats historiques rekordbox conservés pendant la généralisation ;
+- `mixpilot_commands` : demandes administratives courtes et allowlistées ;
+- `mixpilot_mapping_releases` : mappings publiés par logiciel, contrôleur et version ;
+- `mixpilot_compatibility_overrides` : correctifs ou blocages de compatibilité publiés ;
+- `mixpilot_device_health` : vue `security_invoker` propriétaire ;
+- `mixpilot_latest_mapping_releases` : vue `security_invoker` des mappings publiés.
 
-The app sends a heartbeat every 30 seconds. Every five minutes it checks for a published stable release and polls the strict command allowlist. Offline telemetry remains in a local atomic queue and is retried after reconnection.
+Les sessions peuvent enregistrer :
 
-Anonymous Sign-Ins must be enabled in Supabase under **Authentication → Providers → Anonymous Sign-Ins**. If it is disabled, MixPilot continues to work locally and displays the cloud as offline.
+- `dj_backend` ;
+- `dj_software_version` ;
+- contrôleur ;
+- version et SHA-256 du mapping ;
+- instantané des capacités ;
+- état de validation ;
+- mode Live ;
+- consentement aux diagnostics.
 
-## Privacy defaults
+## Connexion
 
-The client never uploads track titles, artists, albums, file paths, playlist names, audio, Spotify URLs, credentials, tokens, secrets or raw Accessibility text. Payloads contain technical state only: app version/build, safe command identifier, outcome, sanitized error category and runtime state.
+L’application peut utiliser une identité anonyme persistante sans collecter d’adresse e-mail. RLS isole les lignes par `auth.uid()`.
 
-This personal MixPilot build enables technical monitoring automatically because continuous support was explicitly requested. A future multi-user distribution must add an onboarding disclosure and telemetry preference before collection.
+L’application :
 
-## Security
+- maintient un heartbeat technique ;
+- vérifie les mises à jour et correctifs publiés ;
+- conserve localement les événements autorisés en cas de coupure ;
+- reprend l’envoi après reconnexion ;
+- continue entièrement en local lorsque Supabase est indisponible.
 
-- only the publishable key is embedded in the macOS client;
-- no `service_role` or secret key exists in the app or repository;
-- RLS ownership checks protect every client-facing table;
-- the privileged RLS helper cannot be executed by `anon` or `authenticated` roles;
-- the incident aggregation function lives in a private schema and is not client-callable;
-- remote command insertion remains restricted to an administrative backend;
-- the desktop command allowlist is limited to configuration refresh, telemetry flush, diagnostics and update checks;
-- remote commands cannot inject Swift, shell commands or arbitrary MIDI actions;
-- no remote start of a Live set;
-- fixes must pass GitHub CI and become a published release before the app can offer them;
-- the app opens the release page/download but never silently installs an unverified binary.
+## Consentement
 
-## Update flow
+Les diagnostics en ligne sont **désactivés par défaut**.
 
-1. A privacy-filtered event reaches Supabase.
-2. Error and critical events are aggregated into a stable incident fingerprint.
-3. The hourly MixPilot Bug Watch correlates new incidents with GitHub and CI.
-4. A clear low-risk fix may be prepared in a draft pull request.
-5. Nothing is merged or released without explicit approval.
-6. A release record includes version, monotonically increasing build, HTTPS download URL, SHA-256, optional signature, notes and rollout percentage.
-7. MixPilot checks the latest published release and displays **Une mise à jour est disponible** when its build is newer and the installation is included in the rollout.
+L’utilisateur peut les activer ou les désactiver. La préférence est enregistrée localement et transmise dans les lignes appareil/session afin de distinguer une installation active d’une installation consentante.
 
-## Deployment state
+Les mises à jour peuvent rester disponibles lorsque les diagnostics sont désactivés.
 
-The schema is deployed to the dedicated Supabase project. Security advisors report no active findings. Source-controlled migrations live under `supabase/migrations`, and the Swift client is pinned to the official Supabase SDK version used by the build.
+## Données interdites
 
-The cloud does not give an assistant unrestricted access to the Mac. It provides sanitized observability and a controlled release channel; operating-system access and arbitrary code execution remain outside the design.
+Le client ne doit pas transmettre par défaut :
+
+- titres, artistes, albums ou playlists ;
+- chemins locaux complets ;
+- audio brut ;
+- URL ou flux Spotify protégés ;
+- contenu brut de l’arbre Accessibilité ;
+- code d’appairage ;
+- token Remote ;
+- mot de passe, clé secrète ou header d’autorisation.
+
+Les payloads autorisés contiennent seulement des états techniques comme :
+
+- version et build ;
+- backend sélectionné ;
+- catégorie de commande ;
+- résultat ;
+- statut de validation ;
+- type d’erreur nettoyé ;
+- état général du runtime.
+
+## Rétention
+
+Les événements possèdent `expires_at`, fixé par défaut à trente jours. Une fonction privée permet la purge des événements expirés.
+
+Cette fonction :
+
+- vit dans le schéma privé `mixpilot_private` ;
+- n’est pas exécutable par `anon` ou `authenticated` ;
+- est réservée à `service_role`.
+
+Une stratégie planifiée d’appel doit être configurée côté infrastructure de production avant une distribution publique à grande échelle.
+
+## Sécurité
+
+- seule la clé publiable est embarquée dans l’application ;
+- aucune clé `service_role` n’existe dans le dépôt ou le client ;
+- toutes les tables exposées utilisent RLS ;
+- les appareils, sessions, événements et validations sont propriétaires ;
+- les mappings et correctifs sont lisibles uniquement lorsqu’ils sont publiés ;
+- les vues publiques utilisent `security_invoker` ;
+- `anon` n’a aucun privilège sur les vues applicatives ;
+- `authenticated` possède seulement `SELECT` sur ces vues ;
+- le client ne peut pas insérer une commande administrative ;
+- aucune commande distante ne peut injecter du Swift, du shell ou du MIDI arbitraire ;
+- aucun Live ne peut être démarré à distance ;
+- aucun mapping n’est appliqué pendant le Live.
+
+Les advisors Supabase ne signalent actuellement aucun problème de sécurité. Les avis de performance restants concernent uniquement des index encore peu utilisés sur un projet neuf ; ils sont conservés pour les requêtes prévues.
+
+## Mappings distants
+
+Le modèle est générique :
+
+- `software = djay | rekordbox | serato` ;
+- version du mapping ;
+- versions minimale et maximale du logiciel ;
+- contrôleur ;
+- format ;
+- profil ;
+- empreintes ;
+- provenance ;
+- statut ;
+- rollout ;
+- validations.
+
+Cependant, MixPilot ne publie actuellement que les formats réellement implémentés et validés. Un CSV rekordbox n’est jamais présenté comme un mapping djay ou Serato.
+
+## Flux de mise à jour
+
+1. Un événement technique autorisé est enregistré.
+2. Une anomalie peut être regroupée sans données musicales.
+3. Le code et les tests sont corrigés dans une branche GitHub.
+4. Rien n’est fusionné ou publié automatiquement.
+5. Une release contient version, build, URL HTTPS, SHA-256, notes et rollout.
+6. L’application propose la mise à jour ; elle ne remplace pas silencieusement un binaire non vérifié.
+
+## État du déploiement
+
+- schéma multi-backend appliqué ;
+- RLS vérifié ;
+- vues `security_invoker` vérifiées ;
+- privilèges des vues durcis ;
+- rétention de trente jours appliquée ;
+- migrations conservées sous `supabase/migrations` ;
+- services en ligne exclus du moteur Live.
