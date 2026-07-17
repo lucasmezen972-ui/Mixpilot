@@ -39,7 +39,7 @@ extension AppModel: MixPilotRemoteStateProvider {
             audioStatus: audioStatus,
             alert: unresolvedIncident ?? controlMessage,
             canPause: isLiveRunning && [.playing, .waitingForTransition].contains(control.phase),
-            canResume: isLiveRunning && control.phase == .paused,
+            canResume: isLiveRunning && control.phase == .paused && remoteResumeControlReady,
             canSkipTransition: isLiveRunning && control.phase == .waitingForTransition && control.incomingTrackVerified,
             canSafeFade: false,
             canTakeManualControl: isLiveRunning && control.phase != .manualControl
@@ -56,8 +56,14 @@ extension AppModel: MixPilotRemoteStateProvider {
             decision = await LiveRuntimeCoordinatorRegistry.shared.requestPause()
 
         case .resumeAutopilot:
+            guard remoteResumeControlReady else {
+                return .init(
+                    accepted: false,
+                    message: "La reprise reste bloquée tant que le backend actif, les commandes et l’état réel des decks ne sont pas de nouveau confirmés."
+                )
+            }
             decision = await LiveRuntimeCoordinatorRegistry.shared.requestResume(
-                midiReady: remoteResumeControlReady,
+                midiReady: true,
                 audioWatchdogReady: audioMonitor.isRunning
             )
 
@@ -73,14 +79,27 @@ extension AppModel: MixPilotRemoteStateProvider {
         return .init(accepted: decision.accepted, message: decision.message)
     }
 
+    private var remoteActiveBackendIdentifier: DJBackendIdentifier? {
+        if isLiveRunning, let runtimeCoordinator {
+            return runtimeCoordinator.backendIdentifier
+        }
+        return selectedBackend
+    }
+
     private var activeRemoteCapabilities: DJBackendCapabilities? {
-        guard let selectedBackend else { return nil }
-        return backendDescriptors.first { $0.identifier == selectedBackend }?.capabilities
+        guard let identifier = remoteActiveBackendIdentifier,
+              let descriptor = backendDescriptors.first(where: { $0.identifier == identifier }) else {
+            return nil
+        }
+        return descriptor.capabilities.applyingRuntimeAvailability(
+            accessibilityGranted: accessibilityStatus == "Autorisée"
+        )
     }
 
     private var remoteResumeControlReady: Bool {
-        guard let selectedBackend, let capabilities = activeRemoteCapabilities else { return false }
-        if selectedBackend == .djay {
+        guard let identifier = remoteActiveBackendIdentifier,
+              let capabilities = activeRemoteCapabilities else { return false }
+        if identifier == .djay {
             return capabilities.confirmsAllForLive([.automix, .trackStateReading, .transitionTrigger])
         }
         return capabilities.confirmsAllForLive([.trackLoading, .playPause, .channelVolume]) &&
@@ -88,29 +107,30 @@ extension AppModel: MixPilotRemoteStateProvider {
     }
 
     private var remoteBackendSummary: MixPilotRemoteBackendSummary? {
-        guard let selectedBackend,
-              let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }) else {
+        guard let identifier = remoteActiveBackendIdentifier,
+              let descriptor = backendDescriptors.first(where: { $0.identifier == identifier }),
+              let capabilities = activeRemoteCapabilities else {
             return nil
         }
-        let degraded = descriptor.capabilities.degradedCapabilities
+        let degraded = capabilities.degradedCapabilities
             .map(humanCapabilityName)
             .sorted()
 
         let directCritical: Set<DJCapability> = [.trackLoading, .playPause, .channelVolume]
-        let stateReady = descriptor.capabilities.confirmsForLive(.deckStateReading) ||
-            descriptor.capabilities.confirmsForLive(.trackStateReading)
+        let stateReady = capabilities.confirmsForLive(.deckStateReading) ||
+            capabilities.confirmsForLive(.trackStateReading)
         let modeLabel: String
-        if selectedBackend == .djay,
-           descriptor.capabilities.confirmsAllForLive([.automix, .trackStateReading, .transitionTrigger]) {
+        if identifier == .djay,
+           capabilities.confirmsAllForLive([.automix, .trackStateReading, .transitionTrigger]) {
             modeLabel = "Automix supervisé"
-        } else if descriptor.capabilities.confirmsAllForLive(directCritical), stateReady {
+        } else if capabilities.confirmsAllForLive(directCritical), stateReady {
             modeLabel = "MixPilot avancé"
         } else {
             modeLabel = "Configuration supervisée"
         }
 
         return MixPilotRemoteBackendSummary(
-            identifier: remoteIdentifier(selectedBackend),
+            identifier: remoteIdentifier(identifier),
             softwareVersion: descriptor.environment.softwareVersion,
             modeLabel: modeLabel,
             degradedCapabilities: degraded
