@@ -70,7 +70,7 @@ struct MixPilotMainShellView: View {
                     Text("MIXPILOT")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(1)
-                    Text("AUTOPILOTE DJ")
+                    Text(AppLocalizedCopy.text("app.brand.subtitle"))
                         .font(.system(size: 7, weight: .bold, design: .rounded))
                         .tracking(1.1)
                         .foregroundStyle(.cyan)
@@ -80,10 +80,10 @@ struct MixPilotMainShellView: View {
 
             divider
 
-            destination("Préparer", "waveform.path.ecg", section: .studio)
-            destination("Vérifier", "checkmark.shield.fill", section: .preflight)
-            destination("Live", "play.circle.fill", section: .live)
-            destination("Avancé", "gearshape.2.fill", section: .feasibility)
+            destination(AppLocalizedCopy.text("app.nav.prepare"), "waveform.path.ecg", section: .studio)
+            destination(AppLocalizedCopy.text("app.nav.verify"), "checkmark.shield.fill", section: .preflight)
+            destination(AppLocalizedCopy.text("app.nav.live"), "play.circle.fill", section: .live)
+            destination(AppLocalizedCopy.text("app.nav.advanced"), "gearshape.2.fill", section: .feasibility)
 
             divider
             servicesStatus
@@ -140,7 +140,7 @@ struct MixPilotMainShellView: View {
         .buttonStyle(.plain)
         .disabled(disabled || (compatibilityPaused && section == .live))
         .opacity(disabled ? 0.36 : 1)
-        .help(disabled ? "La navigation reste verrouillée pendant le Live" : title)
+        .help(disabled ? AppLocalizedCopy.text("app.nav.live_locked_help") : title)
     }
 
     private func primarySection(for section: SidebarSection) -> SidebarSection {
@@ -163,10 +163,12 @@ struct MixPilotMainShellView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(cloud.connectionState.isConnected ? .cyan : .orange)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("SERVICES EN LIGNE")
+                    Text(AppLocalizedCopy.text("app.services.title"))
                         .font(.system(size: 8, weight: .bold, design: .rounded))
                         .tracking(0.5)
-                    Text(cloud.connectionState.isConnected ? "Disponibles" : "Facultatifs")
+                    Text(AppLocalizedCopy.text(
+                        cloud.connectionState.isConnected ? "app.services.available" : "app.services.optional"
+                    ))
                         .font(.system(size: 8, weight: .medium, design: .rounded))
                         .foregroundStyle(MixPilotPalette.textTertiary)
                 }
@@ -175,7 +177,7 @@ struct MixPilotMainShellView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .help("Vérifier les mises à jour et correctifs de compatibilité")
+        .help(AppLocalizedCopy.text("app.services.check_help"))
     }
 
     private var runtimeSummary: some View {
@@ -185,7 +187,12 @@ struct MixPilotMainShellView: View {
                 .frame(width: 7, height: 7)
                 .shadow(color: model.isLiveRunning ? .green.opacity(0.75) : .cyan.opacity(0.65), radius: 7)
             VStack(alignment: .leading, spacing: 1) {
-                Text(model.isLiveRunning ? "AUTOPILOTE ACTIF" : (model.selectedBackend?.displayName.uppercased() ?? "BACKEND À CHOISIR"))
+                Text(
+                    model.isLiveRunning
+                        ? AppLocalizedCopy.text("app.runtime.active")
+                        : (model.selectedBackend?.displayName.uppercased()
+                           ?? AppLocalizedCopy.text("app.runtime.choose_backend"))
+                )
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .tracking(0.55)
                 Text(model.runtimeStatus)
@@ -214,18 +221,20 @@ struct MixPilotMainShellView: View {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 42, weight: .semibold))
                         .foregroundStyle(.red)
-                    Text("Live suspendu pour ta sécurité")
+                    Text(AppLocalizedCopy.text("app.compatibility_pause.title"))
                         .font(.system(size: 29, weight: .bold, design: .rounded))
-                    Text(cloud.activeCompatibilityOverride?.warnings.first
-                         ?? "Cette combinaison de versions doit être testée à nouveau avant le prochain Live.")
+                    Text(
+                        cloud.activeCompatibilityOverride?.warnings.first
+                            ?? AppLocalizedCopy.text("app.compatibility_pause.default_warning")
+                    )
                         .font(.callout)
                         .foregroundStyle(MixPilotPalette.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 620)
-                    Text("Aucune nouvelle commande automatique ne sera envoyée. Le contrôle manuel et la musique de secours restent disponibles.")
+                    Text(AppLocalizedCopy.text("app.compatibility_pause.detail"))
                         .font(.callout)
                         .multilineTextAlignment(.center)
-                    Button("Ouvrir Vérifier") {
+                    Button(AppLocalizedCopy.text("app.compatibility_pause.open_verify")) {
                         model.selectedSection = .preflight
                         surface = .workspace
                     }
