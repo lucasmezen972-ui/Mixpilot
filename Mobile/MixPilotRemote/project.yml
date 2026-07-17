@@ -16,6 +16,8 @@ settings:
 packages:
   MixPilotRemoteProtocol:
     path: ../../Shared/RemoteProtocolV2
+  MixPilotHelp:
+    path: ../..
 targets:
   MixPilotRemote:
     type: application
@@ -24,6 +26,7 @@ targets:
       - path: Sources
     dependencies:
       - package: MixPilotRemoteProtocol
+      - package: MixPilotHelp
     info:
       path: Sources/Info.plist
     settings:
@@ -42,6 +45,7 @@ targets:
     dependencies:
       - target: MixPilotRemote
       - package: MixPilotRemoteProtocol
+      - package: MixPilotHelp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
