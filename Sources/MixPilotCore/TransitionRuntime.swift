@@ -4,9 +4,9 @@ public struct TransitionFrame: Hashable, Sendable {
     public var index: Int
     public var elapsed: TimeInterval
     public var beat: Double
-    public var values: [SeratoAction: Double]
+    public var values: [DJControlAction: Double]
 
-    public init(index: Int, elapsed: TimeInterval, beat: Double, values: [SeratoAction: Double]) {
+    public init(index: Int, elapsed: TimeInterval, beat: Double, values: [DJControlAction: Double]) {
         self.index = index
         self.elapsed = elapsed
         self.beat = beat
@@ -55,7 +55,7 @@ public struct TransitionFrameGenerator: Sendable {
             let progress = Double(index) / Double(frameCount - 1)
             let elapsed = duration * progress
             let beat = totalBeats * progress
-            var values: [SeratoAction: Double] = [:]
+            var values: [DJControlAction: Double] = [:]
 
             for lane in plan.lanes {
                 let rawValue = interpolatedValue(in: lane, atBeat: beat)
@@ -98,7 +98,7 @@ public struct TransitionFrameGenerator: Sendable {
         for target: AutomationTarget,
         outgoingDeck: DeckID,
         incomingDeck: DeckID
-    ) -> SeratoAction? {
+    ) -> DJControlAction? {
         switch target {
         case .crossfader:
             return .crossfader
@@ -119,11 +119,11 @@ public struct TransitionFrameGenerator: Sendable {
 }
 
 public actor TransitionExecutor {
-    private let sender: any SeratoCommandSending
+    private let sender: any DJCommandSending
     private let frameGenerator: TransitionFrameGenerator
 
     public init(
-        sender: any SeratoCommandSending,
+        sender: any DJCommandSending,
         frameGenerator: TransitionFrameGenerator = TransitionFrameGenerator()
     ) {
         self.sender = sender
