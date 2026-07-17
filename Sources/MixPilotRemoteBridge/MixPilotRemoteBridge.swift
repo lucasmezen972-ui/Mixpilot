@@ -242,8 +242,14 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             return
         }
 
-        guard message.version == 1 else {
-            send(.simple("error", message: "Version du protocole non compatible."), to: session)
+        guard MixPilotRemoteProtocolVersion.supports(message.version) else {
+            send(
+                .simple(
+                    "error",
+                    message: "Version du protocole non compatible. Versions acceptées : \(MixPilotRemoteProtocolVersion.minimumSupported) à \(MixPilotRemoteProtocolVersion.current)."
+                ),
+                to: session
+            )
             return
         }
 
