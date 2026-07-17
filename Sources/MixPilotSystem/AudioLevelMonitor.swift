@@ -24,7 +24,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
     public typealias SampleHandler = @MainActor @Sendable (AudioLevelSample) -> Void
 
     private let engine = AVAudioEngine()
-    private let stateLock = NSLock()
+    private let stateLock = NSRecursiveLock()
     private let recoveryQueue = DispatchQueue(label: "com.mixpilot.audio-monitor.recovery")
 
     private var handler: SampleHandler?
@@ -59,6 +59,7 @@ public final class AudioLevelMonitor: @unchecked Sendable {
         }
 
         wantsRunning = true
+        recoveryScheduled = true
         self.bufferSize = bufferSize
         self.handler = handler
         recoveryPolicy.reset()
@@ -68,10 +69,12 @@ public final class AudioLevelMonitor: @unchecked Sendable {
         do {
             try installTapAndStartLocked(generation: currentGeneration)
             running = true
+            recoveryScheduled = false
             stateLock.unlock()
         } catch {
             cleanupEngineLocked()
             wantsRunning = false
+            recoveryScheduled = false
             self.handler = nil
             stateLock.unlock()
 
@@ -119,7 +122,9 @@ public final class AudioLevelMonitor: @unchecked Sendable {
         let delay = recoveryPolicy.nextDelay()
         let currentHandler = handler
         if delay == nil {
+            wantsRunning = false
             recoveryScheduled = false
+            handler = nil
         }
         stateLock.unlock()
 
@@ -160,6 +165,9 @@ public final class AudioLevelMonitor: @unchecked Sendable {
             let currentHandler = handler
             if delay != nil {
                 recoveryScheduled = true
+            } else {
+                wantsRunning = false
+                handler = nil
             }
             stateLock.unlock()
 
