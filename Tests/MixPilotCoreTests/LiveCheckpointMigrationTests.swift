@@ -25,14 +25,7 @@ func legacyCheckpointCannotResumeAutomatically() {
     let project = makeProject(backend: .djay)
     let checkpoint = makeCheckpoint(project: project, backend: nil)
 
-    let result = CheckpointReconciler().reconcile(
-        checkpoint: checkpoint,
-        project: project,
-        activeBackend: .djay,
-        backendRunning: true,
-        observedTrackTitle: project.tracks[0].track.title,
-        audioActive: true
-    )
+    let result = reconcile(checkpoint, project: project, backend: .djay)
 
     #expect(result.decision == .requireManualConfirmation)
     #expect(result.explanation.contains("ne précise pas"))
@@ -43,36 +36,87 @@ func checkpointBackendMismatchRequiresManualControl() {
     let project = makeProject(backend: .rekordbox)
     let checkpoint = makeCheckpoint(project: project, backend: .rekordbox)
 
+    let result = reconcile(checkpoint, project: project, backend: .serato)
+
+    #expect(result.decision == .requireManualConfirmation)
+    #expect(result.explanation.contains("ne correspond pas"))
+}
+
+@Test("Matching checkpoint still requires human confirmation")
+func matchingCheckpointRequiresHumanConfirmation() {
+    let project = makeProject(backend: .djay)
+    let checkpoint = makeCheckpoint(project: project, backend: .djay)
+
+    let result = reconcile(checkpoint, project: project, backend: .djay)
+
+    #expect(result.decision == .requireManualConfirmation)
+    #expect(result.proposedTrackIndex == 0)
+    #expect(result.proposedDeck == .a)
+    #expect(result.explanation.contains("Confirme manuellement"))
+}
+
+@Test("A visible title without active audio requires more observation")
+func matchingTitleWithoutAudioRequiresObservation() {
+    let project = makeProject(backend: .serato)
+    let checkpoint = makeCheckpoint(project: project, backend: .serato)
+
     let result = CheckpointReconciler().reconcile(
         checkpoint: checkpoint,
         project: project,
         activeBackend: .serato,
         backendRunning: true,
         observedTrackTitle: project.tracks[0].track.title,
-        audioActive: true
+        audioActive: false
     )
 
-    #expect(result.decision == .requireManualConfirmation)
-    #expect(result.explanation.contains("ne correspond pas"))
+    #expect(result.decision == .requireObservation)
 }
 
-@Test("A matching backend, title and active audio can propose controlled recovery")
-func matchingCheckpointCanProposeRecovery() {
+@Test("A transitional checkpoint cannot be resumed")
+func transitionCheckpointRequiresManualControl() {
+    let project = makeProject(backend: .rekordbox)
+    var checkpoint = makeCheckpoint(project: project, backend: .rekordbox)
+    checkpoint.state = .transitioning
+
+    let result = reconcile(checkpoint, project: project, backend: .rekordbox)
+
+    #expect(result.decision == .requireManualConfirmation)
+    #expect(result.explanation.contains("vérification complète"))
+}
+
+@Test("A missing confirmed track identity blocks recovery")
+func missingConfirmedTrackIdentityBlocksRecovery() {
     let project = makeProject(backend: .djay)
-    let checkpoint = makeCheckpoint(project: project, backend: .djay)
+    var checkpoint = makeCheckpoint(project: project, backend: .djay)
+    checkpoint.lastConfirmedTrackID = nil
 
-    let result = CheckpointReconciler().reconcile(
-        checkpoint: checkpoint,
-        project: project,
-        activeBackend: .djay,
-        backendRunning: true,
-        observedTrackTitle: project.tracks[0].track.title,
-        audioActive: true
-    )
+    let result = reconcile(checkpoint, project: project, backend: .djay)
 
-    #expect(result.decision == .resumeAutomatically)
-    #expect(result.proposedTrackIndex == 0)
-    #expect(result.proposedDeck == .a)
+    #expect(result.decision == .requireManualConfirmation)
+    #expect(result.explanation.contains("identité"))
+}
+
+@Test("A future checkpoint format is never trusted")
+func futureCheckpointFormatRequiresManualControl() {
+    let project = makeProject(backend: .serato)
+    var checkpoint = makeCheckpoint(project: project, backend: .serato)
+    checkpoint.formatVersion = LiveCheckpoint.currentFormatVersion + 1
+
+    let result = reconcile(checkpoint, project: project, backend: .serato)
+
+    #expect(result.decision == .requireManualConfirmation)
+    #expect(result.explanation.contains("version plus récente"))
+}
+
+@Test("A completed checkpoint is discarded")
+func completedCheckpointIsDiscarded() {
+    let project = makeProject(backend: .serato)
+    var checkpoint = makeCheckpoint(project: project, backend: .serato)
+    checkpoint.state = .completed
+
+    let result = reconcile(checkpoint, project: project, backend: .serato)
+
+    #expect(result.decision == .discardCompletedSession)
 }
 
 @Test("An unavailable recorded backend prioritizes local emergency audio")
@@ -91,6 +135,21 @@ func unavailableBackendUsesEmergencyDecision() {
 
     #expect(result.decision == .switchToEmergency)
     #expect(result.explanation.contains("Serato DJ Pro"))
+}
+
+private func reconcile(
+    _ checkpoint: LiveCheckpoint,
+    project: SetProject,
+    backend: DJBackendIdentifier
+) -> CheckpointReconciliationResult {
+    CheckpointReconciler().reconcile(
+        checkpoint: checkpoint,
+        project: project,
+        activeBackend: backend,
+        backendRunning: true,
+        observedTrackTitle: project.tracks[0].track.title,
+        audioActive: true
+    )
 }
 
 private func makeProject(backend: DJBackendIdentifier) -> SetProject {
