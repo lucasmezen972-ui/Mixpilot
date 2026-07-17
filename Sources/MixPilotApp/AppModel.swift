@@ -64,6 +64,7 @@ final class AppModel: ObservableObject {
     var backendRegistry: DJBackendRegistry?
     var runtimeCoordinator: LiveAutopilotCoordinator?
     var liveTask: Task<Void, Never>?
+    var liveReconciliationTask: Task<Void, Never>?
 
     let accessibilityBridge = DJAccessibilityBridge()
     let commandValidationStore = UserDefaultsDJCommandValidationStore()
@@ -99,6 +100,7 @@ final class AppModel: ObservableObject {
 
     deinit {
         liveTask?.cancel()
+        liveReconciliationTask?.cancel()
         audioMonitor.stop()
         connectivityMonitor.stop()
         sleepAssertion.release()
