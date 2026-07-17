@@ -44,8 +44,13 @@ if grep -RIn --exclude='DJBackend.swift' --exclude-dir=.build --exclude-dir=.git
 fi
 
 fail_if_found \
-  'djBackend:[[:space:]]*"rekordbox"|dj_backend["'"']?[[:space:]]*:[[:space:]]*"rekordbox"' \
-  'online services must serialize the selected backend dynamically' \
+  'djBackend:[[:space:]]*"rekordbox"' \
+  'online services must not hardcode rekordbox as the selected backend' \
+  Sources
+
+fail_if_found \
+  'dj_backend"?[[:space:]]*:[[:space:]]*"rekordbox"' \
+  'serialized cloud payloads must use the selected backend dynamically' \
   Sources
 
 for deleted in \
