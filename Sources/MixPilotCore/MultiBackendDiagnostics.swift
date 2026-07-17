@@ -1,5 +1,31 @@
 import Foundation
 
+public enum MixPilotDiagnosticValidationStatus: String, Codable, Sendable {
+    case automatedSuccess = "AUTOMATED_SUCCESS"
+    case simulatedSuccess = "SIMULATED_SUCCESS"
+    case requiresBackendValidation = "REQUIRES_BACKEND_VALIDATION"
+    case requiresDeviceValidation = "REQUIRES_DEVICE_VALIDATION"
+    case blockedByPlatform = "BLOCKED_BY_PLATFORM"
+    case failed = "FAILED"
+}
+
+public struct MixPilotDiagnosticValidation: Identifiable, Codable, Hashable, Sendable {
+    public var id: String { name }
+    public var name: String
+    public var status: MixPilotDiagnosticValidationStatus
+    public var detail: String
+
+    public init(
+        name: String,
+        status: MixPilotDiagnosticValidationStatus,
+        detail: String
+    ) {
+        self.name = DiagnosticRedactor.redact(name)
+        self.status = status
+        self.detail = DiagnosticRedactor.redact(detail)
+    }
+}
+
 public struct MixPilotDiagnosticSnapshot: Codable, Hashable, Sendable {
     public var generatedAt: Date
     public var appVersion: String
@@ -19,7 +45,7 @@ public struct MixPilotDiagnosticSnapshot: Codable, Hashable, Sendable {
     public var projectLocked: Bool
     public var autopilotState: AutopilotState
     public var completedTransitions: Int
-    public var validations: [DiagnosticValidation]
+    public var validations: [MixPilotDiagnosticValidation]
     public var recentEvents: [String]
 
     public init(
@@ -41,7 +67,7 @@ public struct MixPilotDiagnosticSnapshot: Codable, Hashable, Sendable {
         projectLocked: Bool,
         autopilotState: AutopilotState,
         completedTransitions: Int,
-        validations: [DiagnosticValidation],
+        validations: [MixPilotDiagnosticValidation],
         recentEvents: [String]
     ) {
         self.generatedAt = generatedAt
@@ -62,13 +88,7 @@ public struct MixPilotDiagnosticSnapshot: Codable, Hashable, Sendable {
         self.projectLocked = projectLocked
         self.autopilotState = autopilotState
         self.completedTransitions = max(0, completedTransitions)
-        self.validations = validations.map {
-            DiagnosticValidation(
-                name: DiagnosticRedactor.redact($0.name),
-                status: $0.status,
-                detail: DiagnosticRedactor.redact($0.detail)
-            )
-        }
+        self.validations = validations
         self.recentEvents = recentEvents.map(DiagnosticRedactor.redact)
     }
 }
