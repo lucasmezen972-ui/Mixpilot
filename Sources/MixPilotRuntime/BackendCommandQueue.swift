@@ -37,6 +37,7 @@ public struct BackendCommandQueueStatus: Codable, Hashable, Sendable {
 
 public actor BackendCommandQueue: DJCommandSending {
     private let backend: any DJBackend
+    private let backendIdentifier: DJBackendIdentifier
     private let timeout: Duration
     private let failureThreshold: Int
 
@@ -50,19 +51,22 @@ public actor BackendCommandQueue: DJCommandSending {
         failureThreshold: Int = 3
     ) {
         self.backend = backend
+        self.backendIdentifier = backend.identifier
         self.timeout = timeout
         self.failureThreshold = max(1, failureThreshold)
     }
 
+    /// Transition automation uses commands that have already passed the
+    /// configuration validation. Per-command observation remains best effort;
+    /// critical load/play checkpoints call `execute` directly and can require it.
     public func trigger(_ action: DJControlAction) async throws {
-        let expected = expectedEffect(for: action, value: nil)
         _ = try await execute(
             DJBackendCommand(
                 action: action,
                 idempotencyKey: nextIdempotencyKey(action)
             ),
-            expectedEffect: expected,
-            requireVerification: requiresImmediateVerification(action)
+            expectedEffect: expectedEffect(for: action, value: nil),
+            requireVerification: false
         )
     }
 
@@ -85,21 +89,26 @@ public actor BackendCommandQueue: DJCommandSending {
         requireVerification: Bool
     ) async throws -> DJCommandReceipt {
         guard !status.circuitOpen else { throw BackendCommandQueueError.circuitOpen }
-        if let existing = completed[command.idempotencyKey] {
-            return existing
-        }
+        if let existing = completed[command.idempotencyKey] { return existing }
 
+        let backend = self.backend
         do {
-            let receipt = try await withTimeout(timeout) {
-                try await self.backend.execute(command)
+            let receipt = try await withTimeout(timeout, action: command.action) {
+                try await backend.execute(command)
             }
             status.lastCommandAt = Date()
 
-            let verification = try await withTimeout(timeout) {
-                try await self.backend.verify(command: command, expectedEffect: expectedEffect)
+            let verification: DJCommandVerification?
+            do {
+                verification = try await withTimeout(timeout, action: command.action) {
+                    try await backend.verify(command: command, expectedEffect: expectedEffect)
+                }
+            } catch DJBackendError.stateUnavailable {
+                verification = nil
             }
 
-            if verification.status == .verified || verification.status == .observed {
+            if let verification,
+               verification.status == .verified || verification.status == .observed {
                 status.consecutiveFailures = 0
                 status.lastVerifiedAt = Date()
                 let verified = DJCommandReceipt(
@@ -107,13 +116,11 @@ public actor BackendCommandQueue: DJCommandSending {
                     status: verification.status,
                     detail: verification.detail
                 )
-                completed[command.idempotencyKey] = verified
-                trimCompletedCommands()
+                remember(verified, key: command.idempotencyKey)
                 return verified
             }
 
-            if requireVerification {
-                registerFailure()
+            guard !requireVerification else {
                 throw BackendCommandQueueError.verificationRequired(
                     command.action,
                     "La commande \(humanName(command.action)) n’a pas pu être confirmée. MixPilot suspend cette étape au lieu de continuer à l’aveugle."
@@ -121,8 +128,7 @@ public actor BackendCommandQueue: DJCommandSending {
             }
 
             status.consecutiveFailures = 0
-            completed[command.idempotencyKey] = receipt
-            trimCompletedCommands()
+            remember(receipt, key: command.idempotencyKey)
             return receipt
         } catch {
             registerFailure()
@@ -151,7 +157,7 @@ public actor BackendCommandQueue: DJCommandSending {
 
     private func nextIdempotencyKey(_ action: DJControlAction) -> String {
         sequence &+= 1
-        return "runtime|\(backend.identifier.rawValue)|\(action.rawValue)|\(sequence)"
+        return "runtime|\(backendIdentifier.rawValue)|\(action.rawValue)|\(sequence)"
     }
 
     private func expectedEffect(
@@ -171,15 +177,6 @@ public actor BackendCommandQueue: DJCommandSending {
         case .pauseA: .playback(false, deck: .a)
         case .pauseB: .playback(false, deck: .b)
         default: .stateChanged
-        }
-    }
-
-    private func requiresImmediateVerification(_ action: DJControlAction) -> Bool {
-        switch action {
-        case .playA, .playB, .pauseA, .pauseB, .loadA, .loadB:
-            true
-        default:
-            false
         }
     }
 
@@ -215,20 +212,24 @@ public actor BackendCommandQueue: DJCommandSending {
         }
     }
 
-    private func trimCompletedCommands() {
-        guard completed.count > 500 else { return }
-        completed.removeAll(keepingCapacity: true)
+    private func remember(_ receipt: DJCommandReceipt, key: String) {
+        completed[key] = receipt
+        if completed.count > 500 {
+            completed.removeAll(keepingCapacity: true)
+            completed[key] = receipt
+        }
     }
 
     private func withTimeout<T: Sendable>(
         _ duration: Duration,
+        action: DJControlAction,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: duration)
-                throw DJBackendError.commandTimedOut(.browserFocus)
+                throw DJBackendError.commandTimedOut(action)
             }
             guard let result = try await group.next() else {
                 throw DJBackendError.stateUnavailable("La commande n’a renvoyé aucun résultat.")
