@@ -106,6 +106,26 @@ grep -q 'coordinator.backendIdentifier == selectedBackend' Sources/MixPilotApp/A
   exit 1
 }
 
+grep -q 'startLiveReconciliation(expectedBackend:' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: Live must start periodic reconciliation for the active backend' >&2
+  exit 1
+}
+
+grep -q 'try await Task.sleep(for: .seconds(5))' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: backend liveness must be checked periodically during Live' >&2
+  exit 1
+}
+
+grep -q 'environment.isRunning' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: periodic Live reconciliation must detect a closed backend' >&2
+  exit 1
+}
+
+grep -q 'state.isReliable' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: state contradictions may only trigger handoff when the backend marks the observation reliable' >&2
+  exit 1
+}
+
 grep -q 'remoteActiveBackendIdentifier' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
   echo 'Architecture check failed: Remote snapshots must use the backend owned by the active Live coordinator' >&2
   exit 1
