@@ -9,7 +9,7 @@ RESOURCE_ROOT = ROOT / "Sources" / "MixPilotHelp" / "Resources"
 LANGUAGES = ("fr", "en", "es")
 KEY_PATTERN = re.compile(r'^\s*"([^"]+)"\s*=\s*"(?:[^"\\]|\\.)*"\s*;\s*$', re.MULTILINE)
 USED_REMOTE_KEY_PATTERN = re.compile(r'"(remote\.[A-Za-z0-9_.-]+)"')
-USED_APP_KEY_PATTERN = re.compile(r'"((?:app|commands|workspace)\.[A-Za-z0-9_.-]+)"')
+USED_APP_KEY_PATTERN = re.compile(r'"((?:app|commands|status|workspace)\.[A-Za-z0-9_.-]+)"')
 
 
 def keys_for(language: str, table: str) -> set[str]:
@@ -43,6 +43,7 @@ help_keys = require_parity("Localizable")
 remote_keys = require_parity("Remote")
 workspace_keys = require_parity("Workspace")
 command_keys = require_parity("Commands")
+status_keys = require_parity("Status")
 
 required_help_ui_keys = {
     "help.center.title",
@@ -93,6 +94,19 @@ missing_commands = sorted(required_command_keys - command_keys)
 if missing_commands:
     raise SystemExit(f"Missing critical command keys: {missing_commands}")
 
+required_status_keys = {
+    "status.live.arm_choose_backend",
+    "status.live.reconcile_state_lost",
+    "status.live.manual_safe_point",
+    "status.live.safe_point_suffix",
+    "status.event.manual_active",
+    "status.event.set_completed",
+    "status.backend.accessibility_required",
+}
+missing_status = sorted(required_status_keys - status_keys)
+if missing_status:
+    raise SystemExit(f"Missing critical status keys: {missing_status}")
+
 article_source = (ROOT / "Sources" / "MixPilotHelp" / "HelpCenter.swift").read_text(encoding="utf-8")
 article_ids = re.findall(r'article\("([^"]+)"', article_source)
 if len(article_ids) != 11 or len(article_ids) != len(set(article_ids)):
@@ -118,6 +132,9 @@ app_sources = [
     ROOT / "Sources" / "MixPilotApp" / "MixPilotMainShellView.swift",
     ROOT / "Sources" / "MixPilotApp" / "DJSoftwareSettingsView.swift",
     ROOT / "Sources" / "MixPilotApp" / "UnifiedWorkspaceView.swift",
+    ROOT / "Sources" / "MixPilotApp" / "AppModel.swift",
+    ROOT / "Sources" / "MixPilotApp" / "AppModel+Backend.swift",
+    ROOT / "Sources" / "MixPilotApp" / "AppModel+Live.swift",
 ]
 used_app_keys: set[str] = set()
 for source in app_sources:
@@ -125,7 +142,7 @@ for source in app_sources:
         raise SystemExit(f"Missing localized macOS source: {source}")
     used_app_keys.update(USED_APP_KEY_PATTERN.findall(source.read_text(encoding="utf-8")))
 
-undefined_app = sorted(used_app_keys - help_keys - workspace_keys - command_keys)
+undefined_app = sorted(used_app_keys - help_keys - workspace_keys - command_keys - status_keys)
 if undefined_app:
     raise SystemExit(f"macOS source uses undefined localization keys: {undefined_app}")
 
@@ -133,5 +150,6 @@ print(
     "Localization consistency: OK "
     f"({len(help_keys)} shared keys, {len(remote_keys)} Remote keys, "
     f"{len(workspace_keys)} workspace keys, {len(command_keys)} command keys, "
-    f"{len(article_ids)} articles, {len(used_app_keys)} macOS references)"
+    f"{len(status_keys)} status keys, {len(article_ids)} articles, "
+    f"{len(used_app_keys)} macOS references)"
 )
