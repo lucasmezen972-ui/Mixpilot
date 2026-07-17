@@ -15,7 +15,7 @@ public struct LiveRuntimeConfiguration: Codable, Hashable, Sendable {
         loadSettleSeconds: TimeInterval = 4,
         framesPerSecond: Int = 30,
         speedMultiplier: Double = 1,
-        strictTrackValidation: Bool = false
+        strictTrackValidation: Bool = true
     ) {
         self.preloadLeadSeconds = max(5, preloadLeadSeconds)
         self.loadSettleSeconds = max(0.5, loadSettleSeconds)
@@ -58,9 +58,7 @@ public enum LiveRuntimeError: Error, LocalizedError {
             "Le plan du set doit être verrouillé avant le Live."
         case .backendUnavailable(let name):
             "La connexion avec \(name) n’est pas disponible. Lance le logiciel et relance la vérification."
-        case .configurationBlocked(let detail):
-            detail
-        case .transitionUnavailable(let detail):
+        case .configurationBlocked(let detail), .transitionUnavailable(let detail):
             detail
         case .trackValidationFailed(let title):
             "Le morceau chargé n’a pas pu être confirmé : \(title). Reprends la main et vérifie le deck avant de continuer."
@@ -70,6 +68,9 @@ public enum LiveRuntimeError: Error, LocalizedError {
 
 public actor LiveAutopilotCoordinator {
     public typealias EventHandler = @Sendable (LiveRuntimeEvent) async -> Void
+
+    public nonisolated let backendIdentifier: DJBackendIdentifier
+    public nonisolated let backendDisplayName: String
 
     private let backend: any DJBackend
     private let commandQueue: BackendCommandQueue
@@ -98,24 +99,22 @@ public actor LiveAutopilotCoordinator {
         checkpointStore: LiveCheckpointStore? = LiveAutopilotCoordinator.makeDefaultCheckpointStore()
     ) {
         self.backend = backend
+        self.backendIdentifier = backend.identifier
+        self.backendDisplayName = backend.displayName
         let queue = BackendCommandQueue(backend: backend)
         self.commandQueue = queue
         self.transitionExecutor = TransitionExecutor(sender: queue)
         self.checkpointStore = checkpointStore
     }
 
-    public nonisolated var backendIdentifier: DJBackendIdentifier { backend.identifier }
-
     public func requestPause() async -> LiveRuntimeCommandDecision {
         let decision = controlPolicy.pauseDecision(phase: phase)
-        guard decision.accepted else { return decision }
-        if phase == .paused { return decision }
-
+        guard decision.accepted, phase != .paused else { return decision }
         pausedFromPhase = phase
         phase = .paused
         lastCommand = "remote:pause"
-        await saveCurrentCheckpoint(state: .paused)
-        await publishMirror(message: "Autopilote en pause au point sûr courant")
+        await saveCheckpoint(state: .paused)
+        await publishMirror("Autopilote en pause au point sûr courant")
         return decision
     }
 
@@ -131,14 +130,15 @@ public actor LiveAutopilotCoordinator {
             return .reject("Le projet actif ne permet pas de vérifier la reprise.")
         }
 
-        let expected = project.tracks[currentTrackIndex].track
-        let backendMatches = await verify(track: expected, deck: activeDeck)
+        let backendMatches = await verify(
+            track: project.tracks[currentTrackIndex].track,
+            deck: activeDeck
+        )
         let checkpoint = try? await checkpointStore?.load()
-        let deckMatches = checkpoint?.activeDeck == activeDeck
         let decision = controlPolicy.resumeDecision(
             pausedFrom: pausedFromPhase,
             seratoMatchesCheckpoint: backendMatches,
-            deckMatchesCheckpoint: deckMatches,
+            deckMatchesCheckpoint: checkpoint?.activeDeck == activeDeck,
             midiReady: midiReady,
             audioWatchdogReady: audioWatchdogReady
         )
@@ -148,8 +148,8 @@ public actor LiveAutopilotCoordinator {
         phase = pausedFromPhase ?? .playing
         pausedFromPhase = nil
         lastCommand = "remote:resume"
-        await saveCurrentCheckpoint(state: autopilotState(for: phase))
-        await publishMirror(message: "Autopilote repris depuis un point sûr")
+        await saveCheckpoint(state: autopilotState(for: phase))
+        await publishMirror("Autopilote repris depuis un point sûr")
         return decision
     }
 
@@ -161,29 +161,27 @@ public actor LiveAutopilotCoordinator {
         guard decision.accepted else { return decision }
         skipTransitionRequested = true
         lastCommand = "remote:skip-transition-as-safe-fade"
-        await saveCurrentCheckpoint(state: .waitingForTransition)
-        await publishMirror(message: "La prochaine transition utilisera un fondu de secours")
+        await saveCheckpoint(state: .waitingForTransition)
+        await publishMirror("La prochaine transition utilisera un fondu de secours")
         return decision
     }
 
     public func requestManualControl() async -> LiveRuntimeCommandDecision {
         if manualControlRequested || phase == .manualControl {
-            return .accept("Le contrôle manuel est déjà demandé ; aucune seconde action n’a été exécutée.")
+            return .accept("Le contrôle manuel est déjà actif.")
         }
 
         manualControlRequested = true
         pausedFromPhase = nil
         lastCommand = "remote:manual-control"
-        await saveCurrentCheckpoint(state: .manualControl)
+        await saveCheckpoint(state: .manualControl)
 
         if phase == .transitioning {
-            await publishMirror(message: "Contrôle manuel demandé ; la courbe en cours se termine sans nouvelle automation")
-            return .accept("La transition en cours se termine pour éviter une coupure brutale, puis MixPilot rend la main.")
+            await publishMirror("Contrôle manuel demandé ; la transition en cours se termine sans nouvelle automation")
+            return .accept("La transition en cours se termine sans nouvelle automation, puis MixPilot rend la main.")
         }
 
-        await commandQueue.takeManualControl()
-        phase = .manualControl
-        await publishMirror(message: "Contrôle manuel actif")
+        await finishManualControl()
         return .accept("Tu as repris la main. Aucune nouvelle commande automatique ne sera envoyée.")
     }
 
@@ -204,150 +202,151 @@ public actor LiveAutopilotCoordinator {
         guard project.locked else { throw LiveRuntimeError.projectNotLocked }
 
         await LiveRuntimeCoordinatorRegistry.shared.attach(self)
+        do {
+            try await runPreparedProject(project, configuration: configuration, onEvent: onEvent)
+            await LiveRuntimeCoordinatorRegistry.shared.detach(self)
+        } catch {
+            phase = .failed
+            await publishMirror("Le Live a été arrêté en sécurité")
+            await LiveRuntimeCoordinatorRegistry.shared.detach(self)
+            throw error
+        }
+    }
+
+    private func runPreparedProject(
+        _ project: SetProject,
+        configuration: LiveRuntimeConfiguration,
+        onEvent: @escaping EventHandler
+    ) async throws {
         currentProject = project
         eventHandler = onEvent
-        resetRuntimeState(project: project)
+        reset(project: project)
         await setPhase(.preflight, message: "Vérification du système")
-        await saveCurrentCheckpoint(state: .preflight)
+        await saveCheckpoint(state: .preflight)
         await onEvent(.preparing(projectName: project.name))
 
         let environment = await backend.detectEnvironment()
         await onEvent(.backendObserved(environment))
         guard environment.isRunning else {
-            throw LiveRuntimeError.backendUnavailable(backend.displayName)
+            throw LiveRuntimeError.backendUnavailable(backendDisplayName)
         }
 
         let validation = await backend.validateConfiguration()
         if validation.hasBlockingFailure {
-            let failures = validation.items
+            let details = validation.items
                 .filter { $0.status == .failed || $0.status == .blockedByPlatform }
                 .map(\.detail)
                 .joined(separator: " ")
             throw LiveRuntimeError.configurationBlocked(
-                failures.isEmpty
-                    ? "La configuration doit être terminée avant le Live."
-                    : failures
+                details.isEmpty ? "La configuration doit être terminée avant le Live." : details
             )
         }
-        let capabilities = await backend.capabilities()
 
-        guard await waitForAutomationPermission() else {
-            await finishManualControl()
-            return
+        let reportedCapabilities = await backend.capabilities()
+        let liveCapabilities = verifiedCapabilities(from: reportedCapabilities)
+        guard liveCapabilities.supportsAll([.trackLoading, .playPause, .channelVolume]) else {
+            throw LiveRuntimeError.configurationBlocked(
+                "Les commandes de chargement, lecture et volume ne sont pas toutes confirmées. Termine le test de connexion avant de lancer l’Autopilote."
+            )
+        }
+        if configuration.strictTrackValidation && !hasReliableStateReading(liveCapabilities) {
+            throw LiveRuntimeError.configurationBlocked(
+                "MixPilot ne peut pas encore confirmer l’état réel des decks avec cette configuration. La préparation et le contrôle manuel restent disponibles, mais l’Autopilote complet est bloqué pour éviter des commandes aveugles."
+            )
         }
 
-        if capabilities.supports(.visiblePlaylistReading) {
+        if liveCapabilities.supports(.visiblePlaylistReading) {
             try? await commandQueue.trigger(.browserFocus)
         }
 
         let first = project.tracks[0].track
         await setPhase(.loading, message: "Chargement du premier morceau")
         await onEvent(.loading(trackIndex: 0, track: first, deck: .a))
-        let firstVerified = try await load(
+        confirmedTrackID = try await load(
             first,
             on: .a,
             index: 0,
-            settleSeconds: configuration.loadSettleSeconds,
-            speedMultiplier: configuration.speedMultiplier,
-            strictValidation: configuration.strictTrackValidation,
+            configuration: configuration,
             onEvent: onEvent
-        )
-        confirmedTrackID = firstVerified ? first.id : nil
+        ) ? first.id : nil
 
-        guard await waitForAutomationPermission() else {
-            await finishManualControl()
-            return
-        }
-
-        try await play(deck: .a, strictValidation: configuration.strictTrackValidation)
+        try await play(deck: .a, requireVerification: configuration.strictTrackValidation)
         lastCommand = DJControlAction.playA.rawValue
         await setPhase(.playing, message: "Lecture du premier morceau")
-        await saveCurrentCheckpoint(state: .playing)
+        await saveCheckpoint(state: .playing)
         await onEvent(.playing(trackIndex: 0, track: first, deck: .a))
 
         for index in project.transitions.indices {
+            guard await automationAllowed() else {
+                await finishManualControl()
+                return
+            }
+
             currentTrackIndex = index
             completedTransitions = index
             nextTransitionIndex = index
             incomingTrackVerified = false
 
-            guard await waitForAutomationPermission() else {
-                await finishManualControl()
-                return
-            }
-
-            let currentPrepared = project.tracks[index]
-            let incomingPrepared = project.tracks[index + 1]
+            let outgoing = project.tracks[index]
+            let incoming = project.tracks[index + 1]
             let incomingDeck = activeDeck.opposite
-            let playDuration = max(5, currentPrepared.analysis.suggestedPlayDuration)
+            let playDuration = max(5, outgoing.analysis.suggestedPlayDuration)
             let preloadLead = min(configuration.preloadLeadSeconds, max(5, playDuration * 0.45))
-            let beforePreload = max(0, playDuration - preloadLead)
 
             await setPhase(.playing, message: "Lecture avant le préchargement")
-            guard try await controlledSleep(beforePreload, multiplier: configuration.speedMultiplier) else {
+            guard try await controlledSleep(
+                max(0, playDuration - preloadLead),
+                multiplier: configuration.speedMultiplier
+            ) else {
                 await finishManualControl()
                 return
             }
 
             await setPhase(.preloading, message: "Préchargement du morceau suivant")
-            await onEvent(.preloading(
-                trackIndex: index + 1,
-                track: incomingPrepared.track,
-                deck: incomingDeck
-            ))
-
-            if capabilities.supports(.visiblePlaylistReading) {
+            await onEvent(.preloading(trackIndex: index + 1, track: incoming.track, deck: incomingDeck))
+            if liveCapabilities.supports(.visiblePlaylistReading) {
                 try? await commandQueue.trigger(.browserDown)
             }
             incomingTrackVerified = try await load(
-                incomingPrepared.track,
+                incoming.track,
                 on: incomingDeck,
                 index: index + 1,
-                settleSeconds: configuration.loadSettleSeconds,
-                speedMultiplier: configuration.speedMultiplier,
-                strictValidation: configuration.strictTrackValidation,
+                configuration: configuration,
                 onEvent: onEvent
             )
-            if !incomingTrackVerified {
-                await onEvent(.warning(
-                    "Le morceau suivant n’a pas pu être confirmé. MixPilot continue uniquement avec les protections compatibles."
-                ))
-            }
 
             await setPhase(.waitingForTransition, message: "Transition prête")
-            let remainingLead = max(0, preloadLead - configuration.loadSettleSeconds)
-            guard try await controlledSleep(remainingLead, multiplier: configuration.speedMultiplier) else {
+            guard try await controlledSleep(
+                max(0, preloadLead - configuration.loadSettleSeconds),
+                multiplier: configuration.speedMultiplier
+            ) else {
                 await finishManualControl()
                 return
             }
 
-            var sourcePlan = project.transitions[index]
+            var requestedPlan = project.transitions[index]
             if skipTransitionRequested {
-                sourcePlan = controlPolicy.safeReplacement(for: sourcePlan)
+                requestedPlan = controlPolicy.safeReplacement(for: requestedPlan)
                 skipTransitionRequested = false
-                await onEvent(.warning("La transition a été remplacée par un fondu de secours, sans sauter de morceau."))
+                await onEvent(.warning("La prochaine transition utilisera une variante de secours sans changer l’ordre du set."))
             }
 
-            let adaptation = capabilityNegotiator.adapt(sourcePlan, to: capabilities)
+            let adaptation = capabilityNegotiator.adapt(requestedPlan, to: liveCapabilities)
             guard let plan = adaptation.selectedPlan else {
                 throw LiveRuntimeError.transitionUnavailable(adaptation.explanation)
             }
             if adaptation.usedFallback {
                 await onEvent(.transitionAdapted(
                     index: index,
-                    original: sourcePlan.kind,
+                    original: requestedPlan.kind,
                     selected: plan.kind,
                     explanation: adaptation.explanation
                 ))
             }
 
-            guard await waitForAutomationPermission() else {
-                await finishManualControl()
-                return
-            }
             await setPhase(.transitioning, message: "Transition en cours")
             lastCommand = "transition:\(plan.id.uuidString)"
-            await saveCurrentCheckpoint(state: .transitioning)
+            await saveCheckpoint(state: .transitioning)
             await onEvent(.transitionStarted(index: index, plan: plan, outgoingDeck: activeDeck))
 
             let summary = try await transitionExecutor.execute(
@@ -357,13 +356,12 @@ public actor LiveAutopilotCoordinator {
                 speedMultiplier: configuration.speedMultiplier
             )
 
-            activeDeck = activeDeck.opposite
+            activeDeck = incomingDeck
             currentTrackIndex = index + 1
             completedTransitions = index + 1
             nextTransitionIndex = project.transitions.indices.contains(index + 1) ? index + 1 : nil
-            confirmedTrackID = incomingTrackVerified ? incomingPrepared.id : nil
+            confirmedTrackID = incoming.id
             incomingTrackVerified = false
-            lastCommand = DJControlAction.play(deck: activeDeck).rawValue
 
             if manualControlRequested {
                 await finishManualControl()
@@ -371,13 +369,9 @@ public actor LiveAutopilotCoordinator {
             }
 
             await setPhase(.playing, message: "Transition terminée")
-            await saveCurrentCheckpoint(state: .playing)
+            await saveCheckpoint(state: .playing)
             await onEvent(.transitionCompleted(index: index, summary: summary))
-            await onEvent(.playing(
-                trackIndex: index + 1,
-                track: incomingPrepared.track,
-                deck: activeDeck
-            ))
+            await onEvent(.playing(trackIndex: index + 1, track: incoming.track, deck: activeDeck))
         }
 
         phase = .completed
@@ -385,24 +379,108 @@ public actor LiveAutopilotCoordinator {
         completedTransitions = project.transitions.count
         nextTransitionIndex = nil
         lastCommand = nil
-        await saveCurrentCheckpoint(state: .completed)
-        await publishMirror(message: "Set terminé")
+        await saveCheckpoint(state: .completed)
+        await publishMirror("Set terminé")
         await onEvent(.completed)
     }
 
-    public static func makeDefaultCheckpointStore() -> LiveCheckpointStore {
-        let root = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? FileManager.default.homeDirectoryForCurrentUser
-        return LiveCheckpointStore(
-            fileURL: root
-                .appendingPathComponent("MixPilot Autopilot", isDirectory: true)
-                .appendingPathComponent("live-checkpoint.json", isDirectory: false)
+    private func verifiedCapabilities(from reported: DJBackendCapabilities) -> DJBackendCapabilities {
+        var result = DJBackendCapabilities()
+        for capability in DJCapability.allCases {
+            let status = reported[capability]
+            result[capability] = isVerifiedForExecution(status)
+                ? status
+                : DJCapabilityStatus(
+                    availability: .unavailable,
+                    confidence: status.confidence,
+                    validation: status.validation,
+                    method: status.method,
+                    reason: status.reason ?? "Cette fonction doit encore être testée sur ce Mac."
+                )
+        }
+        return result
+    }
+
+    private func isVerifiedForExecution(_ status: DJCapabilityStatus) -> Bool {
+        guard status.availability == .available else { return false }
+        guard status.validation == .automatedSuccess else { return false }
+        return status.confidence == .validated || status.confidence == .documented
+    }
+
+    private func hasReliableStateReading(_ capabilities: DJBackendCapabilities) -> Bool {
+        capabilities.supports(.deckStateReading) ||
+            capabilities.supports(.trackStateReading) ||
+            (capabilities.supports(.automix) && capabilities.supports(.transitionTrigger))
+    }
+
+    private func load(
+        _ track: Track,
+        on deck: DeckID,
+        index: Int,
+        configuration: LiveRuntimeConfiguration,
+        onEvent: EventHandler
+    ) async throws -> Bool {
+        let action = DJControlAction.load(deck: deck)
+        let reference = DJTrackReference(
+            id: track.id.uuidString,
+            title: track.title,
+            artist: track.artist.isEmpty ? nil : track.artist
+        )
+        let command = DJBackendCommand(
+            action: action,
+            idempotencyKey: "load|\(backendIdentifier.rawValue)|\(track.id.uuidString)|\(deck.rawValue)"
+        )
+        let receipt = try await commandQueue.execute(
+            command,
+            expectedEffect: .loadedTrack(reference, deck: deck),
+            requireVerification: configuration.strictTrackValidation
+        )
+        lastCommand = action.rawValue
+        await saveCheckpoint(state: index == 0 ? .loadingInitialTrack : .preloadingNextTrack)
+
+        guard try await controlledSleep(
+            configuration.loadSettleSeconds,
+            multiplier: configuration.speedMultiplier
+        ) else { return false }
+
+        var verified = receipt.status == .verified || receipt.status == .observed
+        if !verified {
+            verified = await verify(track: track, deck: deck)
+        }
+        await onEvent(.loaded(trackIndex: index, track: track, deck: deck, verified: verified))
+        if configuration.strictTrackValidation && !verified {
+            throw LiveRuntimeError.trackValidationFailed(track.title)
+        }
+        return verified
+    }
+
+    private func play(deck: DeckID, requireVerification: Bool) async throws {
+        let action = DJControlAction.play(deck: deck)
+        let command = DJBackendCommand(
+            action: action,
+            idempotencyKey: "play|\(backendIdentifier.rawValue)|\(deck.rawValue)|\(currentTrackIndex)"
+        )
+        _ = try await commandQueue.execute(
+            command,
+            expectedEffect: .playback(true, deck: deck),
+            requireVerification: requireVerification
         )
     }
 
-    private func resetRuntimeState(project: SetProject) {
+    private func verify(track: Track, deck: DeckID) async -> Bool {
+        let reference = DJTrackReference(
+            id: track.id.uuidString,
+            title: track.title,
+            artist: track.artist.isEmpty ? nil : track.artist
+        )
+        guard let result = try? await backend.verify(
+            command: DJBackendCommand(action: .load(deck: deck)),
+            expectedEffect: .loadedTrack(reference, deck: deck)
+        ) else { return false }
+        return result.status == .verified || result.status == .observed
+    }
+
+    private func reset(project: SetProject) {
         activeDeck = .a
         currentTrackIndex = 0
         completedTransitions = 0
@@ -415,93 +493,26 @@ public actor LiveAutopilotCoordinator {
         pausedFromPhase = nil
     }
 
-    private func load(
-        _ track: Track,
-        on deck: DeckID,
-        index: Int,
-        settleSeconds: TimeInterval,
-        speedMultiplier: Double,
-        strictValidation: Bool,
-        onEvent: EventHandler
-    ) async throws -> Bool {
-        let action = DJControlAction.load(deck: deck)
-        let reference = DJTrackReference(
-            id: track.id.uuidString,
-            title: track.title,
-            artist: track.artist.isEmpty ? nil : track.artist
-        )
-        let command = DJBackendCommand(
-            action: action,
-            idempotencyKey: "load|\(backend.identifier.rawValue)|\(track.id.uuidString)|\(deck.rawValue)"
-        )
-        let receipt = try await commandQueue.execute(
-            command,
-            expectedEffect: .loadedTrack(reference, deck: deck),
-            requireVerification: strictValidation
-        )
-        lastCommand = action.rawValue
-        await saveCurrentCheckpoint(state: index == 0 ? .loadingInitialTrack : .preloadingNextTrack)
-
-        guard try await controlledSleep(settleSeconds, multiplier: speedMultiplier) else {
-            await finishManualControl()
-            return false
-        }
-
-        let verified = receipt.status == .verified || receipt.status == .observed || await verify(track: track, deck: deck)
-        await onEvent(.loaded(trackIndex: index, track: track, deck: deck, verified: verified))
-        if strictValidation && !verified {
-            throw LiveRuntimeError.trackValidationFailed(track.title)
-        }
-        return verified
-    }
-
-    private func play(deck: DeckID, strictValidation: Bool) async throws {
-        let action = DJControlAction.play(deck: deck)
-        let command = DJBackendCommand(
-            action: action,
-            idempotencyKey: "play|\(backend.identifier.rawValue)|\(deck.rawValue)|\(currentTrackIndex)"
-        )
-        _ = try await commandQueue.execute(
-            command,
-            expectedEffect: .playback(true, deck: deck),
-            requireVerification: strictValidation
-        )
-    }
-
-    private func verify(track: Track, deck: DeckID) async -> Bool {
-        let reference = DJTrackReference(
-            id: track.id.uuidString,
-            title: track.title,
-            artist: track.artist.isEmpty ? nil : track.artist
-        )
-        let command = DJBackendCommand(action: .load(deck: deck))
-        guard let verification = try? await backend.verify(
-            command: command,
-            expectedEffect: .loadedTrack(reference, deck: deck)
-        ) else { return false }
-        return verification.status == .verified || verification.status == .observed
-    }
-
     private func setPhase(_ newPhase: LiveRuntimePhase, message: String) async {
         phase = newPhase
-        await publishMirror(message: message)
+        await publishMirror(message)
     }
 
-    private func publishMirror(message: String) async {
+    private func publishMirror(_ message: String) async {
         let currentPhase = phase
         let pausedFrom = pausedFromPhase
-        let incomingVerified = incomingTrackVerified
+        let verified = incomingTrackVerified
         await MainActor.run {
             LiveRuntimeControlMirror.shared.update(
                 phase: currentPhase,
                 pausedFromPhase: pausedFrom,
-                incomingTrackVerified: incomingVerified,
+                incomingTrackVerified: verified,
                 message: message
             )
         }
     }
 
-    private func waitForAutomationPermission() async -> Bool {
+    private func automationAllowed() async -> Bool {
         while phase == .paused && !manualControlRequested {
             try? await Task.sleep(for: .milliseconds(100))
         }
@@ -514,7 +525,7 @@ public actor LiveAutopilotCoordinator {
     ) async throws -> Bool {
         var remaining = max(0, seconds / max(0.01, multiplier))
         while remaining > 0 {
-            guard await waitForAutomationPermission() else { return false }
+            guard await automationAllowed() else { return false }
             try Task.checkCancellation()
             let interval = min(0.25, remaining)
             try await Task.sleep(for: .seconds(interval))
@@ -528,14 +539,14 @@ public actor LiveAutopilotCoordinator {
         phase = .manualControl
         pausedFromPhase = nil
         lastCommand = "manual-control"
-        await saveCurrentCheckpoint(state: .manualControl)
-        await publishMirror(message: "Contrôle manuel actif")
+        await saveCheckpoint(state: .manualControl)
+        await publishMirror("Contrôle manuel actif")
         await eventHandler?(.manualControl)
     }
 
-    private func saveCurrentCheckpoint(state: AutopilotState) async {
+    private func saveCheckpoint(state: AutopilotState) async {
         guard let project = currentProject, let checkpointStore else { return }
-        let checkpoint = LiveCheckpoint(
+        try? await checkpointStore.save(LiveCheckpoint(
             projectID: project.id,
             projectName: project.name,
             currentTrackIndex: currentTrackIndex,
@@ -546,8 +557,7 @@ public actor LiveAutopilotCoordinator {
             lastConfirmedTrackID: confirmedTrackID,
             lastCommand: lastCommand,
             emergencyPlaybackActive: false
-        )
-        try? await checkpointStore.save(checkpoint)
+        ))
     }
 
     private func autopilotState(for phase: LiveRuntimePhase) -> AutopilotState {
@@ -564,6 +574,18 @@ public actor LiveAutopilotCoordinator {
         case .completed: .completed
         case .failed: .failed
         }
+    }
+
+    public static func makeDefaultCheckpointStore() -> LiveCheckpointStore {
+        let root = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.homeDirectoryForCurrentUser
+        return LiveCheckpointStore(
+            fileURL: root
+                .appendingPathComponent("MixPilot Autopilot", isDirectory: true)
+                .appendingPathComponent("live-checkpoint.json", isDirectory: false)
+        )
     }
 }
 #endif
