@@ -61,9 +61,10 @@ func newSetPersistsBackend() throws {
     #expect(!decoded.requiresBackendSelection)
 }
 
-@Test("Changing backend updates the project without changing the set plan")
-func changingBackendPreservesPreparedPlan() {
+@Test("Changing backend preserves the plan but removes the previous lock")
+func changingBackendPreservesPreparedPlanAndUnlocksIt() {
     var project = migrationProject(backend: .serato)
+    project.lock()
     let trackIDs = project.tracks.map(\.id)
     let transitionIDs = project.transitions.map(\.id)
 
@@ -72,4 +73,16 @@ func changingBackendPreservesPreparedPlan() {
     #expect(project.backend == .rekordbox)
     #expect(project.tracks.map(\.id) == trackIDs)
     #expect(project.transitions.map(\.id) == transitionIDs)
+    #expect(!project.locked)
+}
+
+@Test("Selecting the same backend keeps an existing project lock")
+func selectingSameBackendKeepsLock() {
+    var project = migrationProject(backend: .djay)
+    project.lock()
+
+    project.selectBackend(.djay)
+
+    #expect(project.backend == .djay)
+    #expect(project.locked)
 }
