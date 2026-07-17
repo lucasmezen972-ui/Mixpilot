@@ -96,7 +96,13 @@ private actor StandardDJBackendAdapter {
         let environment = await detectEnvironment()
         let profile = await midi.currentProfile()
         let records = await validationStore.validations(for: identifier)
-        let validatedActions = Set(records.filter(\.permitsLiveControl).map { $0.key.action })
+        let currentMapping = profile.validationIdentifier
+        let currentRecords = records.filter {
+            $0.key.softwareVersion == environment.softwareVersion &&
+                $0.key.controllerName == "MixPilot Virtual Controller" &&
+                $0.key.mappingVersion == currentMapping
+        }
+        let validatedActions = Set(currentRecords.filter(\.permitsLiveControl).map { $0.key.action })
 
         var result = DJBackendCapabilities()
         result[.processDetection] = status(
@@ -128,9 +134,9 @@ private actor StandardDJBackendAdapter {
                 confidence: fullyValidated ? .validated : fullyMapped ? .observed : .unverified,
                 validation: fullyValidated ? .automatedSuccess : fullyMapped ? .requiresDeviceValidation : .failed,
                 method: fullyMapped ? .coreMIDI : .unavailable,
-                lastValidatedAt: records.filter { actions.contains($0.key.action) }.map(\.validatedAt).max(),
+                lastValidatedAt: currentRecords.filter { actions.contains($0.key.action) }.map(\.validatedAt).max(),
                 testedSoftwareVersion: environment.softwareVersion,
-                mappingVersion: "profile-\(profile.schemaVersion)",
+                mappingVersion: currentMapping,
                 controllerName: "MixPilot Virtual Controller",
                 reason: fullyMapped
                     ? fullyValidated ? nil : "Le mapping existe, mais la réaction réelle doit encore être confirmée."
@@ -231,7 +237,7 @@ private actor StandardDJBackendAdapter {
         let key = validationKey(command.action, environment: environment, profile: profile)
         guard await validationStore.validation(for: key)?.permitsLiveControl == true else {
             throw DJBackendError.commandRejected(
-                "Cette commande n’a pas encore été confirmée avec \(displayName). Teste-la une fois avant le Live."
+                "Cette commande n’a pas encore été confirmée avec \(displayName) et ce mapping précis. Teste-la avant le Live."
             )
         }
 
@@ -439,7 +445,7 @@ private actor StandardDJBackendAdapter {
             backend: identifier,
             softwareVersion: environment.softwareVersion,
             controllerName: "MixPilot Virtual Controller",
-            mappingVersion: "profile-\(profile.schemaVersion)",
+            mappingVersion: profile.validationIdentifier,
             action: action
         )
     }
