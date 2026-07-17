@@ -137,7 +137,7 @@ public actor LiveAutopilotCoordinator {
         let checkpoint = try? await checkpointStore?.load()
         let decision = controlPolicy.resumeDecision(
             pausedFrom: pausedFromPhase,
-            seratoMatchesCheckpoint: backendMatches,
+            backendMatchesCheckpoint: backendMatches && checkpoint?.backend == backendIdentifier,
             deckMatchesCheckpoint: checkpoint?.activeDeck == activeDeck,
             midiReady: midiReady,
             audioWatchdogReady: audioWatchdogReady
@@ -200,6 +200,16 @@ public actor LiveAutopilotCoordinator {
     ) async throws {
         guard !project.tracks.isEmpty else { throw LiveRuntimeError.emptyProject }
         guard project.locked else { throw LiveRuntimeError.projectNotLocked }
+        guard let projectBackend = project.backend else {
+            throw LiveRuntimeError.configurationBlocked(
+                "Ce projet ne précise pas le logiciel DJ à utiliser. Choisis le backend, relance la vérification et verrouille de nouveau le plan."
+            )
+        }
+        guard projectBackend == backendIdentifier else {
+            throw LiveRuntimeError.configurationBlocked(
+                "Ce projet est verrouillé pour \(projectBackend.displayName), mais le Live utilise \(backendDisplayName). Sélectionne le bon logiciel DJ et relance la vérification."
+            )
+        }
 
         await LiveRuntimeCoordinatorRegistry.shared.attach(self)
         do {
@@ -243,8 +253,8 @@ public actor LiveAutopilotCoordinator {
         }
 
         let reportedCapabilities = await backend.capabilities()
-        let liveCapabilities = verifiedCapabilities(from: reportedCapabilities)
-        guard liveCapabilities.supportsAll([.trackLoading, .playPause, .channelVolume]) else {
+        let liveCapabilities = confirmedCapabilities(from: reportedCapabilities)
+        guard liveCapabilities.confirmsAllForLive([.trackLoading, .playPause, .channelVolume]) else {
             throw LiveRuntimeError.configurationBlocked(
                 "Les commandes de chargement, lecture et volume ne sont pas toutes confirmées. Termine le test de connexion avant de lancer l’Autopilote."
             )
@@ -255,7 +265,7 @@ public actor LiveAutopilotCoordinator {
             )
         }
 
-        if liveCapabilities.supports(.visiblePlaylistReading) {
+        if liveCapabilities.confirmsForLive(.visiblePlaylistReading) {
             try? await commandQueue.trigger(.browserFocus)
         }
 
@@ -304,7 +314,7 @@ public actor LiveAutopilotCoordinator {
 
             await setPhase(.preloading, message: "Préchargement du morceau suivant")
             await onEvent(.preloading(trackIndex: index + 1, track: incoming.track, deck: incomingDeck))
-            if liveCapabilities.supports(.visiblePlaylistReading) {
+            if liveCapabilities.confirmsForLive(.visiblePlaylistReading) {
                 try? await commandQueue.trigger(.browserDown)
             }
             incomingTrackVerified = try await load(
@@ -384,11 +394,11 @@ public actor LiveAutopilotCoordinator {
         await onEvent(.completed)
     }
 
-    private func verifiedCapabilities(from reported: DJBackendCapabilities) -> DJBackendCapabilities {
+    private func confirmedCapabilities(from reported: DJBackendCapabilities) -> DJBackendCapabilities {
         var result = DJBackendCapabilities()
         for capability in DJCapability.allCases {
             let status = reported[capability]
-            result[capability] = isVerifiedForExecution(status)
+            result[capability] = status.isConfirmedForLive
                 ? status
                 : DJCapabilityStatus(
                     availability: .unavailable,
@@ -401,16 +411,10 @@ public actor LiveAutopilotCoordinator {
         return result
     }
 
-    private func isVerifiedForExecution(_ status: DJCapabilityStatus) -> Bool {
-        guard status.availability == .available else { return false }
-        guard status.validation == .automatedSuccess else { return false }
-        return status.confidence == .validated || status.confidence == .documented
-    }
-
     private func hasReliableStateReading(_ capabilities: DJBackendCapabilities) -> Bool {
-        capabilities.supports(.deckStateReading) ||
-            capabilities.supports(.trackStateReading) ||
-            (capabilities.supports(.automix) && capabilities.supports(.transitionTrigger))
+        capabilities.confirmsForLive(.deckStateReading) ||
+            capabilities.confirmsForLive(.trackStateReading) ||
+            (capabilities.confirmsForLive(.automix) && capabilities.confirmsForLive(.transitionTrigger))
     }
 
     private func load(
@@ -549,6 +553,7 @@ public actor LiveAutopilotCoordinator {
         try? await checkpointStore.save(LiveCheckpoint(
             projectID: project.id,
             projectName: project.name,
+            backend: backendIdentifier,
             currentTrackIndex: currentTrackIndex,
             activeDeck: activeDeck,
             completedTransitionCount: completedTransitions,
