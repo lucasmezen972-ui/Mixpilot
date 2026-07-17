@@ -10,102 +10,146 @@ struct DJSoftwareSettingsView: View {
         ZStack {
             MixPilotPremiumBackground()
 
-            VStack(alignment: .leading, spacing: 22) {
-                MixPilotSectionHero(
-                    eyebrow: "Backend audio",
-                    title: "Choisir le logiciel DJ",
-                    subtitle: "Le moteur MixPilot reste identique ; seul le chemin de contrôle et d’observation change.",
-                    symbol: "music.note.house.fill",
-                    accent: accent
-                ) { EmptyView() }
-
-                HStack(spacing: 12) {
-                    ForEach(DJSoftware.allCases) { software in
-                        softwareCard(software)
-                    }
-                }
-
-                MixPilotGlassCard(accent: accent) {
-                    VStack(alignment: .leading, spacing: 13) {
-                        MixPilotPanelTitle(
-                            title: modeTitle,
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    MixPilotSectionHero(
+                        eyebrow: "Backend de contrôle",
+                        title: "Choisir le logiciel DJ",
+                        subtitle: "MixPilot conserve le même moteur de préparation et de sécurité. Le logiciel choisi détermine uniquement les moyens d’observation et de contrôle.",
+                        symbol: "music.note.house.fill",
+                        accent: accent
+                    ) {
+                        MixPilotStatusBadge(
+                            title: selection.displayName,
                             symbol: softwareSymbol,
-                            subtitle: modeDescription,
                             accent: accent
                         )
-                        Text(validationDescription)
-                            .font(.callout)
-                            .foregroundStyle(.white.opacity(0.56))
-                        HStack {
-                            MixPilotStatusBadge(
-                                title: selection == .serato ? "MIDI direct" : selection == .rekordbox ? "MIDI + bibliothèque" : "Automix observé",
-                                symbol: "checkmark.shield.fill",
-                                accent: accent
-                            )
-                            Spacer()
-                            Button("OUVRIR LE STUDIO") {
-                                model.selectedSection = .studio
-                            }
-                            .buttonStyle(MixPilotPrimaryButtonStyle(accent: accent))
+                    }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 205), spacing: 12)], spacing: 12) {
+                        ForEach(DJSoftware.allCases) { software in
+                            softwareCard(software)
                         }
                     }
-                }
 
-                Text("Le changement est appliqué immédiatement au diagnostic et au Préflight.")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.38))
+                    MixPilotGlassCard(accent: accent, elevation: .elevated) {
+                        VStack(alignment: .leading, spacing: 15) {
+                            HStack(alignment: .top, spacing: 14) {
+                                MixPilotPanelTitle(
+                                    title: modeTitle,
+                                    symbol: softwareSymbol,
+                                    subtitle: modeDescription,
+                                    accent: accent
+                                )
+                                Spacer()
+                                MixPilotStatusBadge(
+                                    title: selection == .serato ? "MIDI direct" : selection == .rekordbox ? "MIDI + bibliothèque" : "Automix observé",
+                                    symbol: "checkmark.shield.fill",
+                                    accent: accent
+                                )
+                            }
+
+                            MixPilotNotice(
+                                title: "Niveau de validation",
+                                message: validationDescription,
+                                kind: selection == .djay ? .warning : .info
+                            )
+
+                            HStack(spacing: 10) {
+                                Button("OUVRIR LE STUDIO") {
+                                    model.selectedSection = .studio
+                                }
+                                .buttonStyle(MixPilotPrimaryButtonStyle(accent: accent))
+
+                                Button("ACTUALISER LE DIAGNOSTIC") {
+                                    model.refreshEnvironment()
+                                    model.evaluatePreflight()
+                                }
+                                .buttonStyle(MixPilotSecondaryButtonStyle())
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 9) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(accent)
+                        Text("Le changement est appliqué immédiatement au diagnostic, au Studio et au Préflight.")
+                            .font(.caption)
+                            .foregroundStyle(MixPilotPalette.textTertiary)
+                    }
+                }
+                .padding(28)
+                .frame(maxWidth: 820, alignment: .topLeading)
             }
-            .padding(28)
-            .frame(maxWidth: 760)
+            .scrollIndicators(.hidden)
         }
-        .preferredColorScheme(.dark)
-        .frame(width: 720, height: 470)
+        .mixPilotWindowSurface(minWidth: 760, minHeight: 520)
     }
 
     private func softwareCard(_ software: DJSoftware) -> some View {
-        Button {
+        let selected = selection == software
+        let softwareAccent = color(for: software)
+
+        return Button {
             selection = software
             DJSoftwareSelectionStore.current = software
             model.refreshEnvironment()
             model.evaluatePreflight()
         } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12).fill(color(for: software).opacity(0.14))
-                        Image(systemName: symbol(for: software))
-                            .font(.title2)
-                            .foregroundStyle(color(for: software))
+            MixPilotGlassCard(
+                cornerRadius: 18,
+                padding: 16,
+                accent: softwareAccent,
+                elevation: selected ? .elevated : .standard,
+                interactive: true
+            ) {
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(softwareAccent.opacity(0.13))
+                            Image(systemName: symbol(for: software))
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(softwareAccent)
+                        }
+                        .frame(width: 46, height: 46)
+
+                        Spacer()
+
+                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(selected ? softwareAccent : .white.opacity(0.25))
                     }
-                    .frame(width: 45, height: 45)
-                    Spacer()
-                    Image(systemName: selection == software ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selection == software ? color(for: software) : .white.opacity(0.28))
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(software.displayName)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        Text(shortDescription(for: software))
+                            .font(.caption)
+                            .foregroundStyle(MixPilotPalette.textTertiary)
+                            .multilineTextAlignment(.leading)
+                            .lineSpacing(1.5)
+                    }
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(selected ? softwareAccent : .white.opacity(0.22))
+                            .frame(width: 6, height: 6)
+                        Text(selected ? "SÉLECTIONNÉ" : "SÉLECTIONNER")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .tracking(0.8)
+                            .foregroundStyle(selected ? softwareAccent : MixPilotPalette.textTertiary)
+                    }
                 }
-                Text(software.displayName)
-                    .font(.headline)
-                Text(shortDescription(for: software))
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.47))
-                    .multilineTextAlignment(.leading)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 145, alignment: .topLeading)
-            .background(
-                selection == software ? color(for: software).opacity(0.095) : .white.opacity(0.052),
-                in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(selection == software ? color(for: software).opacity(0.45) : .white.opacity(0.1), lineWidth: 1)
+                .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Utiliser \(software.displayName)")
     }
 
     private var accent: Color { color(for: selection) }
     private var modeTitle: String { "Mode \(selection.displayName)" }
-
     private var softwareSymbol: String { symbol(for: selection) }
 
     private var modeDescription: String {
@@ -126,15 +170,15 @@ struct DJSoftwareSettingsView: View {
         case .djay:
             "La file Automix reste conservatrice tant que l’arbre Accessibilité de la version installée n’a pas été validé."
         case .rekordbox:
-            "Les imports XML/JSON sont automatisés ; les commandes Live restent REQUIRES_DEVICE_VALIDATION."
+            "Les imports XML et JSON sont automatisés ; les commandes Live restent soumises à une validation réelle du contrôleur."
         }
     }
 
     private func shortDescription(for software: DJSoftware) -> String {
         switch software {
-        case .serato: "Mapping direct et contrôle des decks."
-        case .djay: "Automix et observation légère."
-        case .rekordbox: "Bibliothèque, MIDI et contrôle avancé."
+        case .serato: "Mapping direct et contrôle détaillé des decks."
+        case .djay: "Automix et observation légère, sans preset imposé."
+        case .rekordbox: "Bibliothèque, MIDI et contrôle avancé versionné."
         }
     }
 
