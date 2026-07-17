@@ -1,158 +1,99 @@
-# MixPilot Remote Protocol v1
+# MixPilot Remote Protocol v1 — historique
 
-Ce document est la source canonique du contrat réseau entre MixPilot Autopilot sur Mac et MixPilot Remote sur iPhone.
+Ce document décrit l’ancien contrat v1. Il n’est plus la source canonique.
 
-## Principes invariants
+La source actuelle est :
 
-- transport uniquement sur le réseau local ;
+```text
+Shared/RemoteProtocolV2
+```
+
+Le guide utilisateur se trouve dans :
+
+```text
+Mobile/MixPilotRemote/README.md
+```
+
+## Pourquoi v2
+
+Remote v1 transportait l’état du Live et les commandes de haut niveau, mais ne décrivait pas :
+
+- le backend actif ;
+- la version du logiciel DJ ;
+- le mode utilisé ;
+- le deck actif ;
+- l’état audio ;
+- les capacités temporairement dégradées.
+
+Ces informations sont nécessaires pour une interface identique avec djay Pro, rekordbox et Serato DJ Pro.
+
+## Invariants conservés
+
+Remote v2 conserve les garanties de v1 :
+
+- réseau local uniquement ;
 - découverte Bonjour `_mixpilot._tcp` ;
-- WebSocket avec sous-protocole `mixpilot-remote-v1` ;
-- le Mac est la seule source de vérité ;
-- aucun message ne contient de MIDI brut ;
-- aucune perte réseau ne change automatiquement le Live Mac ;
-- toute commande reçoit un `ack` accepté ou refusé ;
-- protocole `version: 1` obligatoire ;
-- dates encodées en ISO 8601 ;
-- commandes de plus de dix secondes refusées ;
-- UUID de commande dédupliqués ;
-- snapshots dont la séquence est inférieure au dernier snapshot accepté ignorés.
+- WebSocket ;
+- Mac source de vérité ;
+- aucun MIDI brut ;
+- aucune décision autonome de l’iPhone ;
+- aucune modification du Live après une perte réseau ;
+- commandes datées et dédupliquées ;
+- snapshots ordonnés ;
+- accusé accepté ou refusé ;
+- code d’appairage et jeton absents des diagnostics.
 
-## Appairage et rôles
+## Messages v1
 
-1. l’iPhone envoie `hello` ;
-2. le Mac répond `pairing_required` si aucun jeton valide n’est fourni ;
-3. le Mac affiche un code à six chiffres valable deux minutes ;
-4. l’iPhone envoie `pair` ;
-5. le Mac renvoie `paired` avec un jeton aléatoire de 256 bits ;
-6. le jeton est enregistré dans les Trousseaux iOS et macOS ;
-7. le premier appareil appairé devient l’appareil principal ;
-8. les appareils suivants reçoivent les snapshots mais restent en lecture seule ;
-9. après reconnexion, l’iPhone envoie `authenticate` ;
-10. le Mac répond `authenticated`, puis l’iPhone envoie `subscribe`.
-
-Les codes et jetons ne doivent jamais apparaître dans les logs ou diagnostics.
-
-## Messages client vers Mac
-
-### `hello`
-
-```json
-{
-  "version": 1,
-  "type": "hello",
-  "deviceID": "uuid-appareil",
-  "deviceName": "iPhone de Lucas"
-}
-```
-
-### `pair`
-
-```json
-{
-  "version": 1,
-  "type": "pair",
-  "deviceID": "uuid-appareil",
-  "deviceName": "iPhone de Lucas",
-  "pin": "482913"
-}
-```
-
-### `authenticate`
-
-```json
-{
-  "version": 1,
-  "type": "authenticate",
-  "deviceID": "uuid-appareil",
-  "token": "jeton-du-trousseau"
-}
-```
-
-### `subscribe`
-
-```json
-{
-  "version": 1,
-  "type": "subscribe",
-  "lastSequence": 41
-}
-```
-
-### `command`
-
-```json
-{
-  "version": 1,
-  "type": "command",
-  "command": {
-    "id": "uuid-commande",
-    "kind": "takeManualControl",
-    "issuedAt": "2026-07-15T22:31:05Z"
-  }
-}
-```
-
-Commandes v1 :
-
-| Commande | Statut RC2 | Sémantique |
-|---|---|---|
-| `takeManualControl` | `AUTOMATED_SUCCESS`, puis `REQUIRES_DEVICE_VALIDATION` | Arrête les futures automatisations ; une transition déjà engagée se termine pour éviter une coupure brutale. Idempotente. |
-| `pauseAutopilot` | `AUTOMATED_SUCCESS`, puis `REQUIRES_SERATO_VALIDATION` | Pause coopérative uniquement à un point sûr ; aucune nouvelle commande MIDI automatique. |
-| `resumeAutopilot` | `AUTOMATED_SUCCESS`, puis `REQUIRES_SERATO_VALIDATION` | Relecture de Serato, morceau/checkpoint, MIDI et watchdog obligatoires. Aucune reprise au milieu d’une courbe. |
-| `skipTransition` | `AUTOMATED_SUCCESS`, puis `REQUIRES_SERATO_VALIDATION` | Remplace uniquement la transition suivante par un Safe Fade contrôlé ; aucun changement de titre ni saut d’index. |
-| `safeFade` | `REQUIRES_DEVICE_VALIDATION` | Verrouillée tant que le routage audio réel et l’absence de blanc ne sont pas validés. |
-
-## Messages Mac vers client
-
-Messages :
+Les types historiques restent :
 
 - `hello` ;
-- `pairing_required` ;
-- `paired` ;
-- `authenticated` ;
+- `pair` ;
+- `authenticate` ;
+- `subscribe` ;
+- `command` ;
 - `snapshot` ;
 - `ack` ;
 - `error` ;
 - `pong`.
 
-### `snapshot`
+Les commandes internes restent des intentions de haut niveau :
 
-Le snapshot contient :
+- `pauseAutopilot` ;
+- `resumeAutopilot` ;
+- `skipTransition` ;
+- `safeFade` ;
+- `takeManualControl`.
 
-- `sequence` ;
-- `updatedAt` ;
-- `mode` : `idle`, `preflight`, `live`, `paused`, `manualControl`, `recovery` ;
-- `setName` ;
-- `currentTrack` et `nextTrack` ;
-- `elapsed`, `duration` ;
-- transition et confiance ;
-- alerte éventuelle ;
-- capacités `canPause`, `canResume`, `canSkipTransition`, `canSafeFade`, `canTakeManualControl`.
+Elles ne doivent jamais être affichées telles quelles à l’utilisateur. L’interface utilise :
 
-Les capacités affichées sont indicatives. Le Mac revalide toujours l’état réel au moment de la commande.
+- Mettre en pause ;
+- Reprendre ;
+- Changer la prochaine transition ;
+- Transition de secours ;
+- Reprendre la main.
 
-### `ack`
+## Migration vers v2
 
-```json
-{
-  "version": 1,
-  "type": "ack",
-  "acknowledgement": {
-    "commandID": "uuid-commande",
-    "accepted": false,
-    "message": "Reprise refusée : le morceau visible dans Serato ne correspond pas au checkpoint."
-  }
-}
-```
+Le décodeur v2 accepte encore un snapshot v1. Les champs nouveaux sont alors absents :
 
-Un refus n’est jamais transformé en succès visuel.
+- `backend = nil` ;
+- `activeDeck = nil` ;
+- `audioStatus = nil`.
 
-## Fixtures contractuelles
+MixPilot ne déduit pas Serato lorsqu’un snapshot historique ne contient pas de backend.
 
-Le fichier partagé suivant contient tous les messages v1 :
+Un client v1 peut donc être lu pendant la période de migration, mais il ne bénéficie pas des informations multi-backend de v2.
 
-```text
-Shared/RemoteProtocolV1/Fixtures/protocol-v1-fixtures.json
-```
+## Validation
 
-Il est décodé par les tests Swift du bridge Mac et par les tests du projet iPhone. Toute modification incompatible exige une nouvelle version de protocole.
+Les anciens statuts `REQUIRES_SERATO_VALIDATION` sont remplacés par :
+
+- `REQUIRES_BACKEND_VALIDATION` ;
+- `REQUIRES_DEVICE_VALIDATION`.
+
+La reprise vérifie le backend actif, le checkpoint, le deck, les commandes et l’audio. Elle n’est plus décrite comme une relecture spécifique de Serato.
+
+## Conservation
+
+Les anciennes fixtures et copies du protocole peuvent être conservées pour les tests de décodage historique. Toute évolution fonctionnelle doit être apportée à Remote v2, pas à v1.
