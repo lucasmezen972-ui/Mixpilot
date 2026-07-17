@@ -29,12 +29,7 @@ enum AppLocalizedCopy {
     }
 
     static func workspaceFormat(_ key: String, _ arguments: CVarArg...) -> String {
-        let format = workspace(key)
-        return String(
-            format: format,
-            locale: Locale(identifier: language.rawValue),
-            arguments: arguments
-        )
+        formatted(workspace(key), arguments)
     }
 
     static func command(_ key: String) -> String {
@@ -42,8 +37,19 @@ enum AppLocalizedCopy {
     }
 
     static func commandFormat(_ key: String, _ arguments: CVarArg...) -> String {
-        let format = command(key)
-        return String(
+        formatted(command(key), arguments)
+    }
+
+    static func status(_ key: String) -> String {
+        text(key, table: "Status")
+    }
+
+    static func statusFormat(_ key: String, _ arguments: CVarArg...) -> String {
+        formatted(status(key), arguments)
+    }
+
+    private static func formatted(_ format: String, _ arguments: [CVarArg]) -> String {
+        String(
             format: format,
             locale: Locale(identifier: language.rawValue),
             arguments: arguments
