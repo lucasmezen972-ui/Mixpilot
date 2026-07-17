@@ -2,9 +2,14 @@ import Foundation
 
 public struct StrictVerificationDJBackend: DJBackend {
     private let base: any DJBackend
+    private let maximumStateAge: TimeInterval
 
-    public init(_ base: any DJBackend) {
+    public init(
+        _ base: any DJBackend,
+        maximumStateAge: TimeInterval = 2
+    ) {
         self.base = base
+        self.maximumStateAge = max(0, maximumStateAge)
     }
 
     public var identifier: DJBackendIdentifier { base.identifier }
@@ -23,7 +28,11 @@ public struct StrictVerificationDJBackend: DJBackend {
     }
 
     public func readState() async throws -> DJBackendState {
-        try await base.readState()
+        var state = try await base.readState()
+        if !state.isReliableAndFresh(maximumAge: maximumStateAge) {
+            state.isReliable = false
+        }
+        return state
     }
 
     public func readDeckState(_ deck: DeckID) async throws -> DJDeckState {
