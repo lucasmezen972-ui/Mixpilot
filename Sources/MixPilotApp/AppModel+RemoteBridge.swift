@@ -56,11 +56,8 @@ extension AppModel: MixPilotRemoteStateProvider {
             decision = await LiveRuntimeCoordinatorRegistry.shared.requestPause()
 
         case .resumeAutopilot:
-            guard remoteResumeControlReady else {
-                return .init(
-                    accepted: false,
-                    message: "La reprise reste bloquée tant que le backend actif, les commandes et l’état réel des decks ne sont pas de nouveau confirmés."
-                )
+            if let rejection = await remoteResumeRejectionReason() {
+                return .init(accepted: false, message: rejection)
             }
             decision = await LiveRuntimeCoordinatorRegistry.shared.requestResume(
                 midiReady: true,
@@ -77,6 +74,35 @@ extension AppModel: MixPilotRemoteStateProvider {
             )
         }
         return .init(accepted: decision.accepted, message: decision.message)
+    }
+
+    private func remoteResumeRejectionReason() async -> String? {
+        await refreshEnvironmentNow()
+
+        guard isLiveRunning,
+              let activeIdentifier = remoteActiveBackendIdentifier,
+              let coordinator = runtimeCoordinator,
+              coordinator.backendIdentifier == activeIdentifier else {
+            return "La session Live active ne correspond plus au logiciel DJ attendu. Reprends la main depuis le Mac."
+        }
+
+        guard remoteResumeControlReady else {
+            return "La reprise reste bloquée tant que le backend actif, les commandes et les permissions ne sont pas de nouveau confirmés."
+        }
+
+        guard audioMonitor.isRunning else {
+            return "La surveillance audio n’est plus active. Réactive-la sur le Mac avant de reprendre l’autopilote."
+        }
+
+        guard let backendRegistry,
+              let backend = try? await backendRegistry.activeBackend(),
+              backend.identifier == activeIdentifier,
+              let currentState = try? await backend.readState(),
+              currentState.isReliable else {
+            return "MixPilot ne peut pas confirmer l’état réel des decks. La reprise distante reste refusée ; vérifie le logiciel DJ depuis le Mac."
+        }
+
+        return nil
     }
 
     private var remoteActiveBackendIdentifier: DJBackendIdentifier? {
