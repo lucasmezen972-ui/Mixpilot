@@ -32,10 +32,44 @@ func onlyDeviceEvidencePermitsLiveControl() {
     #expect(!rejected.permitsLiveControl)
 }
 
-@Test("Legacy device confirmations remain readable during migration")
+@Test("Live evidence requires software, controller and mapping identities")
+func liveEvidenceRequiresFullyQualifiedContext() {
+    let missingSoftware = DJCommandValidationRecord(
+        key: validationKey(softwareVersion: nil),
+        status: .automatedSuccess,
+        evidence: .deviceConfirmed
+    )
+    let missingController = DJCommandValidationRecord(
+        key: validationKey(controllerName: nil),
+        status: .automatedSuccess,
+        evidence: .deviceConfirmed
+    )
+    let missingMapping = DJCommandValidationRecord(
+        key: validationKey(mappingVersion: nil),
+        status: .automatedSuccess,
+        evidence: .deviceConfirmed
+    )
+    let blankSoftware = DJCommandValidationRecord(
+        key: validationKey(softwareVersion: "  "),
+        status: .automatedSuccess,
+        evidence: .deviceConfirmed
+    )
+
+    #expect(!missingSoftware.permitsLiveControl)
+    #expect(!missingController.permitsLiveControl)
+    #expect(!missingMapping.permitsLiveControl)
+    #expect(!blankSoftware.permitsLiveControl)
+}
+
+@Test("Legacy device confirmations remain readable only with complete context")
 func legacyDeviceConfirmationStillPermitsLiveControl() {
     let legacy = DJCommandValidationRecord(
         key: validationKey(),
+        status: .automatedSuccess,
+        detail: "DEVICE_CONFIRMED"
+    )
+    let incompleteLegacy = DJCommandValidationRecord(
+        key: validationKey(softwareVersion: nil),
         status: .automatedSuccess,
         detail: "DEVICE_CONFIRMED"
     )
@@ -46,6 +80,7 @@ func legacyDeviceConfirmationStillPermitsLiveControl() {
     )
 
     #expect(legacy.permitsLiveControl)
+    #expect(!incompleteLegacy.permitsLiveControl)
     #expect(!unrelatedLegacyDetail.permitsLiveControl)
 }
 
@@ -61,12 +96,16 @@ func typedEvidenceTakesPriorityOverLegacyDetail() {
     #expect(!record.permitsLiveControl)
 }
 
-private func validationKey() -> DJCommandValidationKey {
+private func validationKey(
+    softwareVersion: String? = "test",
+    controllerName: String? = "MixPilot Virtual Controller",
+    mappingVersion: String? = "profile-1"
+) -> DJCommandValidationKey {
     DJCommandValidationKey(
         backend: .djay,
-        softwareVersion: "test",
-        controllerName: "MixPilot Virtual Controller",
-        mappingVersion: "profile-1",
+        softwareVersion: softwareVersion,
+        controllerName: controllerName,
+        mappingVersion: mappingVersion,
         action: .playA
     )
 }
