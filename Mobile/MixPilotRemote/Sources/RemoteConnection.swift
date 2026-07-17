@@ -60,7 +60,7 @@ final class RemoteConnection: ObservableObject {
         guard let endpoint else { return }
         let normalized = pin.filter { $0.isNumber }
         guard normalized.count == 6 else {
-            lastError = "Le code doit contenir six chiffres."
+            lastError = RemoteLocalizedCopy.text("remote.error.code_six_digits")
             return
         }
 
@@ -87,7 +87,7 @@ final class RemoteConnection: ObservableObject {
         }
 
         guard status.isAuthenticated else {
-            lastError = "Le Mac n’est pas connecté."
+            lastError = RemoteLocalizedCopy.text("remote.error.mac_not_connected")
             return
         }
 
@@ -105,17 +105,17 @@ final class RemoteConnection: ObservableObject {
         pairingRequired = false
         lastError = nil
         lastAcknowledgement = nil
-        snapshot = .demo
-        status = .authenticated("Mode démo")
+        snapshot = RemotePresentationCopy.demoSnapshot
+        status = .authenticated(RemoteLocalizedCopy.text("remote.demo.status_name"))
     }
 
-    func disconnect(reason: String = "Fermé par l’utilisateur") {
+    func disconnect(reason: String? = nil) {
         stopAllTransport()
         isDemo = false
         endpoint = nil
         pairingRequired = false
         snapshot = nil
-        status = .disconnected(reason)
+        status = .disconnected(reason ?? RemoteLocalizedCopy.text("remote.reason.user_closed"))
     }
 
     private func beginConnection() {
@@ -133,7 +133,7 @@ final class RemoteConnection: ObservableObject {
 
         guard let url = components.url else {
             shouldReconnect = false
-            status = .failed("Adresse réseau invalide")
+            status = .failed(RemoteLocalizedCopy.text("remote.error.invalid_address"))
             return
         }
 
@@ -253,14 +253,14 @@ final class RemoteConnection: ObservableObject {
 
         guard let delay = reconnectPolicy.nextDelay() else {
             shouldReconnect = false
-            lastError = "La reconnexion automatique a échoué. Sélectionne de nouveau le Mac."
-            status = .disconnected("Mac indisponible")
+            lastError = RemoteLocalizedCopy.text("remote.error.reconnect_failed")
+            status = .disconnected(RemoteLocalizedCopy.text("remote.reason.mac_unavailable"))
             return
         }
 
         let seconds = max(1, Int(delay.rounded()))
-        lastError = "Connexion interrompue. Nouvelle tentative dans \(seconds) s."
-        status = .disconnected("Reconnexion en cours")
+        lastError = RemoteLocalizedCopy.format("remote.error.reconnecting", seconds)
+        status = .disconnected(RemoteLocalizedCopy.text("remote.reason.reconnecting"))
         reconnectTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(delay))
@@ -278,7 +278,7 @@ final class RemoteConnection: ObservableObject {
 
     private func handle(_ message: RemoteServerMessage) {
         guard MixPilotRemoteProtocolVersion.supports(message.version) else {
-            lastError = "Version du protocole non compatible. Mets à jour MixPilot sur le Mac et l’iPhone."
+            lastError = RemoteLocalizedCopy.text("remote.error.protocol_incompatible")
             shouldReconnect = false
             reconnectTask?.cancel()
             reconnectTask = nil
@@ -292,7 +292,7 @@ final class RemoteConnection: ObservableObject {
 
         case "paired":
             guard let endpoint, let token = message.sessionToken else {
-                lastError = "Réponse d’appairage incomplète."
+                lastError = RemoteLocalizedCopy.text("remote.error.pairing_incomplete")
                 return
             }
             do {
@@ -337,13 +337,13 @@ final class RemoteConnection: ObservableObject {
             }
 
         case "error":
-            lastError = message.message ?? "Erreur distante inconnue."
+            lastError = message.message ?? RemoteLocalizedCopy.text("remote.error.unknown")
 
         case "pong", "hello":
             break
 
         default:
-            lastError = "Message distant inconnu : \(message.type)"
+            lastError = RemoteLocalizedCopy.format("remote.error.unknown_message", message.type)
         }
     }
 
@@ -352,14 +352,18 @@ final class RemoteConnection: ObservableObject {
         let acknowledgement = RemoteCommandAcknowledgement(
             commandID: UUID(),
             accepted: true,
-            message: "Commande simulée"
+            message: RemoteLocalizedCopy.text("remote.demo.command_simulated")
         )
         lastAcknowledgement = acknowledgement
         lastError = nil
 
         switch kind {
         case .pauseAutopilot:
-            snapshot = copy(current, mode: .paused, alert: "Autopilote en pause depuis l’iPhone")
+            snapshot = copy(
+                current,
+                mode: .paused,
+                alert: RemoteLocalizedCopy.text("remote.demo.pause_alert")
+            )
         case .resumeAutopilot:
             snapshot = copy(current, mode: .live, alert: nil)
         case .skipTransition:
@@ -374,10 +378,10 @@ final class RemoteConnection: ObservableObject {
                 activeDeck: current.activeDeck,
                 elapsed: 0,
                 duration: 198,
-                transitionLabel: "Prochaine transition recalculée",
+                transitionLabel: RemoteLocalizedCopy.text("remote.demo.next_transition"),
                 transitionConfidence: 84,
                 audioStatus: current.audioStatus,
-                alert: "Transition suivante passée en mode démo",
+                alert: RemoteLocalizedCopy.text("remote.demo.next_alert"),
                 canPause: true,
                 canResume: false,
                 canSkipTransition: false,
@@ -385,9 +389,17 @@ final class RemoteConnection: ObservableObject {
                 canTakeManualControl: true
             )
         case .safeFade:
-            snapshot = copy(current, mode: .recovery, alert: "Safe Fade demandé depuis l’iPhone")
+            snapshot = copy(
+                current,
+                mode: .recovery,
+                alert: RemoteLocalizedCopy.text("remote.demo.safe_fade_alert")
+            )
         case .takeManualControl:
-            snapshot = copy(current, mode: .manualControl, alert: "Contrôle manuel activé")
+            snapshot = copy(
+                current,
+                mode: .manualControl,
+                alert: RemoteLocalizedCopy.text("remote.demo.manual_alert")
+            )
         }
     }
 
