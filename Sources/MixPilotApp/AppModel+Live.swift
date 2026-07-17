@@ -160,6 +160,8 @@ extension AppModel {
     ) {
         liveReconciliationTask?.cancel()
         liveReconciliationTask = Task { [weak self] in
+            var reliabilityTracker = LiveStateReliabilityTracker(failureThreshold: 2)
+
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(for: .seconds(5))
@@ -189,9 +191,20 @@ extension AppModel {
                         return
                     }
 
-                    guard let state = try? await backend.readState(), state.isReliable else {
+                    let state = try? await backend.readState()
+                    let stateIsReliable = state?.isReliable == true
+                    if reliabilityTracker.record(isReliable: stateIsReliable) {
+                        await self.requestSafeManualControl(
+                            reason: "MixPilot ne peut plus confirmer l’état réel des decks depuis dix secondes.",
+                            coordinator: coordinator
+                        )
+                        return
+                    }
+                    guard let state, state.isReliable else {
+                        self.runtimeStatus = "Lecture de l’état momentanément indisponible • nouvelle vérification dans 5 secondes"
                         continue
                     }
+
                     if let observedDeck = state.activeDeck,
                        observedDeck != self.snapshot.activeDeck {
                         await self.requestSafeManualControl(
