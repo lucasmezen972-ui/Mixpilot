@@ -10,7 +10,7 @@ struct CloudObservabilityTests {
             payload: [
                 "track_title": "Secret Song",
                 "artist": "Secret Artist",
-                "file_path": "/Users/lucas/Music/file.mp3",
+                "file_path": "/Users/example/Music/file.mp3",
                 "command": "PlayPause",
                 "latency_ms": "42"
             ]
