@@ -6,14 +6,21 @@ on:
     paths:
       - "Package.swift"
       - "Sources/MixPilotCore/**"
+      - "Sources/MixPilotRuntime/**"
+      - "Sources/MixPilotSystem/**"
+      - "Sources/MixPilotApp/**"
+      - "Sources/MixPilotRemoteBridge/**"
       - "Sources/MixPilotSimulatorCLI/**"
       - "Shared/RemoteProtocolV2/**"
       - "Tests/MixPilotCoreTests/**"
+      - "Tests/MixPilotRuntimeTests/**"
+      - "Tests/MixPilotSystemTests/**"
       - "README.md"
       - "DEVELOPMENT_STATUS.md"
       - "Documentation/**"
       - "Mobile/MixPilotRemote/README.md"
       - "Scripts/check_documentation_consistency.sh"
+      - "Scripts/check_source_architecture.sh"
       - ".github/workflows/core-ci.yml"
   push:
     branches:
@@ -39,6 +46,9 @@ jobs:
 
       - name: Swift toolchain
         run: swift --version
+
+      - name: Source architecture consistency
+        run: bash Scripts/check_source_architecture.sh
 
       - name: Documentation consistency
         run: bash Scripts/check_documentation_consistency.sh
