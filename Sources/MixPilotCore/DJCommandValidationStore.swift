@@ -32,26 +32,42 @@ public struct DJCommandValidationKey: Codable, Hashable, Sendable {
     }
 }
 
+public enum DJCommandValidationEvidence: String, Codable, Hashable, Sendable {
+    case deviceConfirmed
+    case automatedProbe
+    case simulated
+    case userRejected
+}
+
 public struct DJCommandValidationRecord: Codable, Hashable, Sendable {
     public var key: DJCommandValidationKey
     public var status: DJValidationStatus
+    public var evidence: DJCommandValidationEvidence?
     public var validatedAt: Date
     public var detail: String?
 
     public init(
         key: DJCommandValidationKey,
         status: DJValidationStatus,
+        evidence: DJCommandValidationEvidence? = nil,
         validatedAt: Date = Date(),
         detail: String? = nil
     ) {
         self.key = key
         self.status = status
+        self.evidence = evidence
         self.validatedAt = validatedAt
         self.detail = detail
     }
 
     public var permitsLiveControl: Bool {
-        status == .automatedSuccess && detail == "DEVICE_CONFIRMED"
+        guard status == .automatedSuccess else { return false }
+        if let evidence {
+            return evidence == .deviceConfirmed
+        }
+
+        // Compatibility with validations written before typed evidence existed.
+        return detail == "DEVICE_CONFIRMED"
     }
 }
 
