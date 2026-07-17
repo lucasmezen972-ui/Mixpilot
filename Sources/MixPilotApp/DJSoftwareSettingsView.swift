@@ -63,7 +63,7 @@ struct DJSoftwareSettingsView: View {
         let accent = color(for: backend)
         let environment = descriptor?.environment
         let capabilities = descriptor?.capabilities ?? DJBackendCapabilities()
-        let readyCount = DJCapability.allCases.filter { capabilities[$0].isVerifiedForLive }.count
+        let readyCount = DJCapability.allCases.filter { capabilities[$0].isConfirmedForLive }.count
         let availableCount = DJCapability.allCases.filter { capabilities[$0].canBePlanned }.count
         let missing = configurationSummary(backend, descriptor: descriptor)
 
@@ -128,7 +128,7 @@ struct DJSoftwareSettingsView: View {
                             .font(.system(size: 8, weight: .bold, design: .rounded))
                             .tracking(1)
                             .foregroundStyle(.white.opacity(0.36))
-                        Text("\(readyCount) validées • \(availableCount) disponibles")
+                        Text("\(readyCount) confirmées pour le Live • \(availableCount) disponibles")
                             .font(.caption.bold())
                     }
                     Spacer()
@@ -220,9 +220,9 @@ struct DJSoftwareSettingsView: View {
         let critical: [DJCapability] = backend == .djay
             ? [.automix, .trackStateReading]
             : [.trackLoading, .playPause, .channelVolume]
-        let pending = critical.filter { !descriptor.capabilities[$0].isVerifiedForLive }
+        let pending = critical.filter { !descriptor.capabilities[$0].isConfirmedForLive }
         if pending.isEmpty {
-            return ("Configuration prête", "Les fonctions critiques déclarées ont été validées pour cette configuration.", true)
+            return ("Configuration prête", "Les fonctions critiques ont été confirmées pour cette version et cette configuration.", true)
         }
         return (
             "\(pending.count) test(s) à terminer",
