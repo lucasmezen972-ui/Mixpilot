@@ -3,9 +3,8 @@
 
 The audit is intentionally portable so it can run locally or in a manual CI job.
 It verifies key parity, duplicate keys, placeholder compatibility, and literal
-localized-key references used by the shared help and iPhone Remote sources.
+localized-key references used by the shared help, macOS app and iPhone Remote.
 """
-
 from __future__ import annotations
 
 import collections
@@ -23,12 +22,15 @@ ENTRY_RE = re.compile(r'^\s*"((?:\\.|[^"\\])+)"\s*=\s*"((?:\\.|[^"\\])*)"\s*;\s*
 PLACEHOLDER_RE = re.compile(r'%(?:\d+\$)?(?:[-+0 #]*)(?:\d+|\*)?(?:\.\d+|\.\*)?(?:hh|h|ll|l|L|z|j|t)?[@aAcCdDeEfFgGiIoOsSuUxX]')
 REFERENCE_PATTERNS = (
     re.compile(r'RemoteLocalizedCopy\.(?:text|format)\(\s*"([^"]+)"'),
+    re.compile(r'AppLocalizedCopy\.(?:text|format)\(\s*"([^"]+)"'),
     re.compile(r'catalog\.localized\(\s*"([^"]+)"'),
     re.compile(r'localized\(\s*"([^"]+)"'),
 )
 SOURCE_ROOTS = (
     ROOT / "Mobile" / "MixPilotRemote" / "Sources",
     ROOT / "Sources" / "MixPilotApp",
+    ROOT / "Sources" / "MixPilotHelp",
+    ROOT / "Tests" / "MixPilotHelpTests",
 )
 
 
@@ -133,7 +135,12 @@ def main() -> int:
         return 1
 
     key_count = sum(len(catalog.values) for (language, _), catalog in catalogs.items() if language == "fr")
-    print(f"Localization consistency audit passed for {len(LANGUAGES)} languages and {key_count} reference keys.")
+    reference_count = len(collect_literal_references())
+    print(
+        "Localization consistency audit passed for "
+        f"{len(LANGUAGES)} languages, {key_count} reference keys and "
+        f"{reference_count} literal source references."
+    )
     return 0
 
 
