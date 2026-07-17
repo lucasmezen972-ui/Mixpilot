@@ -4,7 +4,8 @@ import AppKit
 import Foundation
 import MixPilotCore
 
-public struct SeratoWindowObservation: Hashable, Sendable {
+public struct DJWindowObservation: Hashable, Sendable {
+    public var backend: DJBackendIdentifier?
     public var isRunning: Bool
     public var processIdentifier: Int32?
     public var windowTitle: String?
@@ -13,6 +14,7 @@ public struct SeratoWindowObservation: Hashable, Sendable {
     public var observedAt: Date
 
     public init(
+        backend: DJBackendIdentifier? = nil,
         isRunning: Bool,
         processIdentifier: Int32?,
         windowTitle: String?,
@@ -20,6 +22,7 @@ public struct SeratoWindowObservation: Hashable, Sendable {
         accessibilityGranted: Bool,
         observedAt: Date = Date()
     ) {
+        self.backend = backend
         self.isRunning = isRunning
         self.processIdentifier = processIdentifier
         self.windowTitle = windowTitle
@@ -29,15 +32,20 @@ public struct SeratoWindowObservation: Hashable, Sendable {
     }
 
     public func contains(text: String) -> Bool {
-        let needle = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let needle = text.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
         return visibleText.contains {
-            $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                .contains(needle)
+            $0.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            ).contains(needle)
         }
     }
 }
 
-public struct SeratoLibraryRow: Identifiable, Hashable, Sendable {
+public struct DJLibraryRow: Identifiable, Hashable, Sendable {
     public var id: Int { index }
     public var index: Int
     public var fields: [String]
@@ -50,50 +58,53 @@ public struct SeratoLibraryRow: Identifiable, Hashable, Sendable {
     public var displayText: String { fields.joined(separator: " • ") }
 }
 
-public enum SeratoAccessibilityError: Error, LocalizedError {
-    case seratoNotRunning
+public enum DJAccessibilityError: Error, LocalizedError {
+    case backendNotSelected
+    case backendNotRunning(DJBackendIdentifier)
     case accessibilityNotGranted
-    case activationFailed
+    case activationFailed(DJBackendIdentifier)
 
     public var errorDescription: String? {
         switch self {
-        case .seratoNotRunning: "Serato DJ Pro n'est pas lancé."
-        case .accessibilityNotGranted: "La permission Accessibilité n'est pas accordée à MixPilot."
-        case .activationFailed: "Impossible d'activer la fenêtre Serato DJ Pro."
+        case .backendNotSelected:
+            "Choisis le logiciel DJ avant d’ouvrir ou d’observer son interface."
+        case .backendNotRunning(let backend):
+            "\(backend.displayName) n’est pas lancé."
+        case .accessibilityNotGranted:
+            "MixPilot n’a pas encore l’autorisation de lire l’interface. Active-la dans Réglages Système, puis relance le test."
+        case .activationFailed(let backend):
+            "La fenêtre de \(backend.displayName) n’a pas pu être activée. Ouvre le logiciel manuellement, puis réessaie."
         }
     }
 }
 
 @MainActor
-public final class SeratoAccessibilityBridge {
+public final class DJAccessibilityBridge {
     public init() {}
 
     public func requestAccessibilityPrompt() {
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        _ = AXIsProcessTrustedWithOptions([
+            "AXTrustedCheckOptionPrompt": true
+        ] as CFDictionary)
     }
 
-    public func activateSerato() throws {
-        guard let application = application(for: .serato) else {
-            throw SeratoAccessibilityError.seratoNotRunning
+    public func activate(_ backend: DJBackendIdentifier) throws {
+        guard let application = application(for: backend) else {
+            throw DJAccessibilityError.backendNotRunning(backend)
         }
         guard application.activate(options: [.activateAllWindows]) else {
-            throw SeratoAccessibilityError.activationFailed
+            throw DJAccessibilityError.activationFailed(backend)
         }
-    }
-
-    public func activate(_ software: DJSoftware? = nil) -> Bool {
-        application(for: software ?? DJSoftwareSelectionStore.current)?
-            .activate(options: [.activateAllWindows]) == true
     }
 
     public func observe(
-        software: DJSoftware? = nil,
+        backend: DJBackendIdentifier,
         maxDepth: Int = 5,
         maximumStrings: Int = 250
-    ) -> SeratoWindowObservation {
-        let resolvedSoftware = software ?? DJSoftwareSelectionStore.current
-        guard let application = application(for: resolvedSoftware) else {
-            return SeratoWindowObservation(
+    ) -> DJWindowObservation {
+        guard let application = application(for: backend) else {
+            return DJWindowObservation(
+                backend: backend,
                 isRunning: false,
                 processIdentifier: nil,
                 windowTitle: nil,
@@ -101,8 +112,10 @@ public final class SeratoAccessibilityBridge {
                 accessibilityGranted: AXIsProcessTrusted()
             )
         }
+
         guard AXIsProcessTrusted() else {
-            return SeratoWindowObservation(
+            return DJWindowObservation(
+                backend: backend,
                 isRunning: true,
                 processIdentifier: application.processIdentifier,
                 windowTitle: nil,
@@ -123,43 +136,66 @@ public final class SeratoAccessibilityBridge {
                 into: &strings
             )
         }
-        return SeratoWindowObservation(
+
+        return DJWindowObservation(
+            backend: backend,
             isRunning: true,
             processIdentifier: application.processIdentifier,
-            windowTitle: window.flatMap { stringAttribute($0, attribute: kAXTitleAttribute) },
+            windowTitle: window.flatMap {
+                stringAttribute($0, attribute: kAXTitleAttribute)
+            },
             visibleText: normalizedStrings(strings),
             accessibilityGranted: true
         )
     }
 
     public func libraryRows(
-        software: DJSoftware? = nil,
+        backend: DJBackendIdentifier,
         maxRows: Int = 500
-    ) -> [SeratoLibraryRow] {
-        let resolvedSoftware = software ?? DJSoftwareSelectionStore.current
-        guard AXIsProcessTrusted(), let application = application(for: resolvedSoftware) else { return [] }
+    ) -> [DJLibraryRow] {
+        guard AXIsProcessTrusted(),
+              let application = application(for: backend) else {
+            return []
+        }
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
         guard let window = preferredWindow(for: appElement) else { return [] }
 
         var rowElements: [AXUIElement] = []
-        collectRows(from: window, depth: 0, maxDepth: 12, maxRows: max(1, maxRows), into: &rowElements)
+        collectRows(
+            from: window,
+            depth: 0,
+            maxDepth: 12,
+            maxRows: max(1, maxRows),
+            into: &rowElements
+        )
         return rowElements.enumerated().compactMap { index, element in
             var strings: [String] = []
-            collectStrings(from: element, depth: 0, maxDepth: 5, maximumStrings: 30, into: &strings)
+            collectStrings(
+                from: element,
+                depth: 0,
+                maxDepth: 5,
+                maximumStrings: 30,
+                into: &strings
+            )
             let fields = normalizedStrings(strings)
-            return fields.isEmpty ? nil : SeratoLibraryRow(index: index, fields: fields)
+            return fields.isEmpty ? nil : DJLibraryRow(index: index, fields: fields)
         }
     }
 
-    private func application(for software: DJSoftware) -> NSRunningApplication? {
+    private func application(
+        for backend: DJBackendIdentifier
+    ) -> NSRunningApplication? {
         NSWorkspace.shared.runningApplications.first { application in
             let name = application.localizedName?.lowercased() ?? ""
             let bundle = application.bundleIdentifier?.lowercased() ?? ""
-            switch software {
+            switch backend {
             case .serato:
-                return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+                return name.contains("serato dj pro") ||
+                    name == "serato dj" ||
+                    bundle.contains("serato")
             case .djay:
-                return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
+                return DjayApplicationMatcher.matches(name: application.localizedName) ||
+                    bundle.contains("algoriddim.djay")
             case .rekordbox:
                 return RekordboxApplicationMatcher.matches(
                     name: application.localizedName,
@@ -186,9 +222,20 @@ public final class SeratoAccessibilityBridge {
             rows.append(element)
         }
         guard rows.count < maxRows,
-              let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
+              let children = arrayAttribute(
+                element,
+                attribute: kAXChildrenAttribute
+              ) else {
+            return
+        }
         for child in children {
-            collectRows(from: child, depth: depth + 1, maxDepth: maxDepth, maxRows: maxRows, into: &rows)
+            collectRows(
+                from: child,
+                depth: depth + 1,
+                maxDepth: maxDepth,
+                maxRows: maxRows,
+                into: &rows
+            )
             if rows.count >= maxRows { return }
         }
     }
@@ -201,13 +248,26 @@ public final class SeratoAccessibilityBridge {
         into strings: inout [String]
     ) {
         guard depth <= maxDepth, strings.count < maximumStrings else { return }
-        for attribute in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXHelpAttribute] {
-            if let value = stringAttribute(element, attribute: attribute), !value.isEmpty {
+        for attribute in [
+            kAXTitleAttribute,
+            kAXValueAttribute,
+            kAXDescriptionAttribute,
+            kAXHelpAttribute
+        ] {
+            if let value = stringAttribute(
+                element,
+                attribute: attribute
+            ), !value.isEmpty {
                 strings.append(value)
             }
             if strings.count >= maximumStrings { return }
         }
-        guard let children = arrayAttribute(element, attribute: kAXChildrenAttribute) else { return }
+        guard let children = arrayAttribute(
+            element,
+            attribute: kAXChildrenAttribute
+        ) else {
+            return
+        }
         for child in children {
             collectStrings(
                 from: child,
@@ -224,21 +284,39 @@ public final class SeratoAccessibilityBridge {
         var seen = Set<String>()
         return strings.compactMap {
             let cleaned = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !cleaned.isEmpty && seen.insert(cleaned).inserted ? cleaned : nil
+            return !cleaned.isEmpty && seen.insert(cleaned).inserted
+                ? cleaned
+                : nil
         }
     }
 
-    private func elementAttribute(_ element: AXUIElement, attribute: String) -> AXUIElement? {
+    private func elementAttribute(
+        _ element: AXUIElement,
+        attribute: String
+    ) -> AXUIElement? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
-              let value,
-              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard AXUIElementCopyAttributeValue(
+            element,
+            attribute as CFString,
+            &value
+        ) == .success,
+        let value,
+        CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
         return unsafeDowncast(value, to: AXUIElement.self)
     }
 
-    private func stringAttribute(_ element: AXUIElement, attribute: String) -> String? {
+    private func stringAttribute(
+        _ element: AXUIElement,
+        attribute: String
+    ) -> String? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+        guard AXUIElementCopyAttributeValue(
+            element,
+            attribute as CFString,
+            &value
+        ) == .success else {
             return nil
         }
         if let string = value as? String { return string }
@@ -246,12 +324,83 @@ public final class SeratoAccessibilityBridge {
         return nil
     }
 
-    private func arrayAttribute(_ element: AXUIElement, attribute: String) -> [AXUIElement]? {
+    private func arrayAttribute(
+        _ element: AXUIElement,
+        attribute: String
+    ) -> [AXUIElement]? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+        guard AXUIElementCopyAttributeValue(
+            element,
+            attribute as CFString,
+            &value
+        ) == .success else {
             return nil
         }
         return value as? [AXUIElement]
+    }
+}
+
+// Transitional source compatibility. New code uses the generic names above.
+@available(*, deprecated, renamed: "DJWindowObservation")
+public typealias SeratoWindowObservation = DJWindowObservation
+
+@available(*, deprecated, renamed: "DJLibraryRow")
+public typealias SeratoLibraryRow = DJLibraryRow
+
+@available(*, deprecated, renamed: "DJAccessibilityError")
+public typealias SeratoAccessibilityError = DJAccessibilityError
+
+@available(*, deprecated, renamed: "DJAccessibilityBridge")
+public typealias SeratoAccessibilityBridge = DJAccessibilityBridge
+
+public extension DJAccessibilityBridge {
+    @available(*, deprecated, message: "Pass a DJBackendIdentifier explicitly")
+    func activate(_ software: DJSoftware? = nil) -> Bool {
+        guard let backend = software?.backendIdentifier ??
+            DJSoftwareSelectionStore.selected?.backendIdentifier else {
+            return false
+        }
+        return (try? activate(backend)) != nil
+    }
+
+    @available(*, deprecated, message: "Pass a DJBackendIdentifier explicitly")
+    func observe(
+        software: DJSoftware? = nil,
+        maxDepth: Int = 5,
+        maximumStrings: Int = 250
+    ) -> DJWindowObservation {
+        guard let backend = software?.backendIdentifier ??
+            DJSoftwareSelectionStore.selected?.backendIdentifier else {
+            return DJWindowObservation(
+                isRunning: false,
+                processIdentifier: nil,
+                windowTitle: nil,
+                visibleText: [],
+                accessibilityGranted: AXIsProcessTrusted()
+            )
+        }
+        return observe(
+            backend: backend,
+            maxDepth: maxDepth,
+            maximumStrings: maximumStrings
+        )
+    }
+
+    @available(*, deprecated, message: "Pass a DJBackendIdentifier explicitly")
+    func libraryRows(
+        software: DJSoftware? = nil,
+        maxRows: Int = 500
+    ) -> [DJLibraryRow] {
+        guard let backend = software?.backendIdentifier ??
+            DJSoftwareSelectionStore.selected?.backendIdentifier else {
+            return []
+        }
+        return libraryRows(backend: backend, maxRows: maxRows)
+    }
+
+    @available(*, deprecated, message: "Use activate(.serato)")
+    func activateSerato() throws {
+        try activate(.serato)
     }
 }
 #endif
