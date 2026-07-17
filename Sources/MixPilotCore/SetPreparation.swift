@@ -148,6 +148,9 @@ public struct SetProject: Identifiable, Codable, Hashable, Sendable {
     }
 
     public mutating func selectBackend(_ identifier: DJBackendIdentifier) {
+        if backend != identifier {
+            locked = false
+        }
         backend = identifier
         formatVersion = Self.currentFormatVersion
         updatedAt = Date()
