@@ -2,20 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "MixPilotRemoteProtocol",
-    platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-    ],
-    products: [
-        .library(
-            name: "MixPilotRemoteProtocol",
-            targets: ["MixPilotRemoteProtocol"]
-        ),
+    name: "MixPilotRemoteAppModels",
+    platforms: [.macOS(.v14), .iOS(.v17)],
+    dependencies: [
+        .package(path: "../../Shared/RemoteProtocolV2"),
     ],
     targets: [
         .target(
-            name: "MixPilotRemoteProtocol",
+            name: "MixPilotRemoteAppModels",
+            dependencies: [
+                .product(name: "MixPilotRemoteProtocol", package: "RemoteProtocolV2"),
+            ],
             path: "Sources",
             sources: [
                 "RemoteModels.swift",
@@ -24,7 +21,10 @@ let package = Package(
         ),
         .testTarget(
             name: "MixPilotRemoteProtocolTests",
-            dependencies: ["MixPilotRemoteProtocol"],
+            dependencies: [
+                "MixPilotRemoteAppModels",
+                .product(name: "MixPilotRemoteProtocol", package: "RemoteProtocolV2"),
+            ],
             path: "Tests"
         ),
     ]

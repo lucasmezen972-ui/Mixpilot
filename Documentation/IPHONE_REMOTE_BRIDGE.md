@@ -1,92 +1,129 @@
 # Bridge MixPilot Mac–iPhone
 
-## Architecture vérifiée
+## Architecture
 
-Le bridge se trouve dans le target macOS séparé :
+Le bridge macOS se trouve dans :
 
 ```text
 Sources/MixPilotRemoteBridge/
 ```
 
-L’application iPhone reste indépendante :
+L’application iPhone se trouve dans :
 
 ```text
 Mobile/MixPilotRemote/
 ```
 
-Le moteur `MixPilotCore` ne dépend pas du projet iOS. Le bridge ne reçoit que des intentions de haut niveau et ne connaît aucune commande MIDI brute.
+Le contrat partagé se trouve dans :
+
+```text
+Shared/RemoteProtocolV2/
+```
+
+Le moteur ne dépend pas du projet iOS. Le bridge reçoit uniquement des intentions de haut niveau et ne connaît aucun message MIDI brut.
+
+## Source de vérité
+
+Le Mac reste l’unique composant autorisé à :
+
+- connaître le backend actif ;
+- lire ses capacités ;
+- vérifier l’état réel ;
+- accepter ou refuser une commande ;
+- gérer les checkpoints ;
+- déclencher le secours ;
+- rendre le contrôle manuel.
+
+L’iPhone fonctionne de la même manière avec djay Pro, rekordbox et Serato DJ Pro.
 
 ## Activation
 
-Le bridge est désactivé au lancement. Il est activé explicitement depuis le menu MixPilot sur le Mac. L’activation :
+Le bridge est activé explicitement depuis le Mac. L’activation :
 
 - crée un listener Network.framework local ;
 - publie `_mixpilot._tcp` par Bonjour ;
 - génère un code d’appairage à six chiffres ;
-- démarre l’envoi périodique des snapshots.
+- démarre l’envoi de snapshots ordonnés.
 
-La désactivation ferme le listener et toutes les sessions. Elle ne modifie pas le Live.
+La désactivation ferme le listener et les sessions distantes. Elle ne modifie pas le Live.
 
-## Sécurité réellement implémentée
+## Sécurité
 
-- code d’appairage valable deux minutes ;
-- comparaison du code et des jetons en temps constant ;
-- jeton aléatoire de 32 octets, soit 256 bits ;
-- stockage dans le Trousseau macOS et iOS ;
+- code d’appairage limité dans le temps ;
+- comparaison en temps constant ;
+- jeton aléatoire de 256 bits ;
+- stockage dans les Trousseaux macOS et iOS ;
 - premier appareil principal ;
 - appareils secondaires en lecture seule ;
-- commandes de plus de dix secondes refusées ;
-- UUID déjà reçu refusé ;
-- JSON invalide et version inconnue refusés ;
+- commandes anciennes refusées ;
+- UUID dédupliqués ;
+- JSON invalide ou version inconnue refusés ;
 - commande avant authentification refusée ;
 - snapshots séquencés ;
-- aucun code ou jeton dans le journal applicatif.
+- aucun code ou jeton dans les diagnostics.
+
+## Snapshot v2
+
+Le snapshot peut contenir :
+
+- backend actif ;
+- version du logiciel ;
+- mode utilisé ;
+- morceau actuel et suivant ;
+- deck actif ;
+- progression ;
+- transition prévue ;
+- état audio ;
+- capacités temporairement dégradées ;
+- actions autorisées par le Mac.
+
+Ces capacités restent indicatives. Le Mac revalide toujours la demande au moment de son exécution.
 
 ## Commandes
 
-### Contrôle manuel
+### Reprendre la main
 
-La commande est idempotente. Elle demande au coordinateur de cesser toute future automation. Lorsqu’une courbe de transition est déjà engagée, celle-ci peut se terminer afin d’éviter une rupture sonore, puis aucune nouvelle commande n’est émise.
+La commande est idempotente. Elle cesse les futures automatisations. Si une transition est déjà engagée, MixPilot termine uniquement la partie nécessaire pour éviter une coupure brutale, puis n’envoie plus de nouvelle commande.
 
-### Pause
+### Mettre en pause
 
-La Pause est coopérative :
+La pause est coopérative :
 
-- elle n’annule pas la Task principale ;
-- elle n’interrompt pas une courbe MIDI active ;
-- elle est acceptée uniquement en lecture stable ou en attente de transition ;
-- elle sauvegarde un checkpoint `.paused` ;
-- les attentes du coordinateur cessent de progresser tant que la pause est active.
+- elle n’annule pas brutalement la tâche Live ;
+- elle n’interrompt pas une courbe déjà engagée ;
+- elle est acceptée seulement à un point sûr ;
+- elle sauvegarde un checkpoint ;
+- le temps du moteur cesse de progresser pendant la pause.
 
-### Reprise
+### Reprendre
 
-La Reprise exige :
+La reprise exige :
 
 - un checkpoint de pause ;
-- le morceau attendu visible dans Serato ;
-- le même deck interne que le checkpoint ;
-- un mapping MIDI réellement confirmé ;
-- un watchdog audio actif ;
-- aucun arrêt au milieu d’une courbe MIDI.
+- le morceau attendu confirmé dans le backend actif ;
+- le même deck que le checkpoint ;
+- les commandes requises encore confirmées ;
+- la surveillance audio active ;
+- aucun retour au milieu d’une courbe interrompue.
 
-Un échec de vérification produit un `ack` refusé.
+Un échec produit un accusé refusé avec une explication humaine.
 
-### Skip Transition
+### Changer la prochaine transition
 
-En RC2, Skip ne saute aucun titre. Il remplace la transition planifiée vers le même morceau entrant par un Safe Fade contrôlé. Il est refusé tant que le morceau entrant n’est pas confirmé ou que le moteur n’est pas en attente de transition.
+Cette commande ne saute aucun morceau. Elle remplace la transition vers le même morceau entrant par une variante de secours sûre. Elle est refusée tant que le morceau entrant n’est pas confirmé ou que le moteur n’attend pas la transition.
 
-### Safe Fade distant
+### Transition de secours
 
-La commande directe reste verrouillée avec le statut `REQUIRES_DEVICE_VALIDATION`. Elle ne sera activée qu’après validation du routage audio réel, de la préparation du titre entrant ou du secours local, et de l’absence de blanc.
+La commande directe reste désactivée tant que le routage audio réel, le morceau entrant et l’absence de blanc ne sont pas validés sur la configuration cible.
 
 ## Perte réseau
 
-Une déconnexion, l’arrêt du listener, le verrouillage de l’iPhone ou une perte Wi-Fi :
+Une déconnexion, le verrouillage de l’iPhone ou une perte Wi-Fi :
 
-- supprime uniquement la session distante ;
+- ferme uniquement la session distante ;
 - n’appelle aucune commande métier ;
 - ne met pas le Live en pause ;
-- ne change pas de titre ;
+- ne change pas de morceau ;
 - ne déclenche pas le secours ;
 - n’envoie aucun MIDI.
 
@@ -94,7 +131,7 @@ Le Mac continue selon son état local.
 
 ## Validation
 
-- compilation et tests publics : `AUTOMATED_SUCCESS` ;
-- politiques de commandes : `AUTOMATED_SUCCESS` ;
-- découverte Bonjour, appairage physique et perte Wi-Fi : `REQUIRES_DEVICE_VALIDATION` ;
-- concordance réelle avec Serato : `REQUIRES_SERATO_VALIDATION`.
+- encodage, décodage, ordre et déduplication : `AUTOMATED_SUCCESS` lorsque les tests passent ;
+- scénarios de perte iPhone simulés : `SIMULATED_SUCCESS` ;
+- Bonjour, appairage physique, arrière-plan et perte Wi-Fi : `REQUIRES_DEVICE_VALIDATION` ;
+- concordance avec le backend réel : `REQUIRES_BACKEND_VALIDATION` puis `REQUIRES_DEVICE_VALIDATION`.

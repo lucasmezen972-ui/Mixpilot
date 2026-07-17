@@ -1,26 +1,60 @@
-# Architecture du MVP
+# Architecture MixPilot
+
+Ce document résume l’architecture actuelle. La référence détaillée est :
+
+- `Documentation/MULTI_BACKEND_ARCHITECTURE.md` ;
+- `Documentation/BACKEND_CAPABILITY_MATRIX.md`.
 
 ```mermaid
 flowchart LR
-    UI[SwiftUI App] --> Core[MixPilotCore]
-    UI --> MIDI[CoreMIDI Controller]
-    UI --> System[Serato Probe / Emergency Player]
-    Core --> Planner[Transition Planner]
-    Core --> Engine[Autopilot State Machine]
-    Core --> Simulator[Set Simulator]
-    MIDI -. commandes réelles .-> Serato[Serato DJ Pro]
-    System -. observation .-> Serato
-    Serato --> Spotify[Spotify Premium]
+    App[MixPilotApp\nPréparer · Vérifier · Live · Avancé] --> Runtime[MixPilotRuntime]
+    App --> System[MixPilotSystem]
+    App --> RemoteBridge[MixPilotRemoteBridge]
+
+    Runtime --> Core[MixPilotCore]
+    Runtime --> Backend[DJBackend actif]
+    System --> Core
+    System --> MIDI[MixPilotMIDI]
+    RemoteBridge --> RemoteProtocol[Remote Protocol v2]
+    iPhone[MixPilot Remote iPhone] --> RemoteProtocol
+
+    Backend --> Djay[DjayBackend]
+    Backend --> Rekordbox[RekordboxBackend]
+    Backend --> Serato[SeratoBackend]
+
+    Djay --> DJAYAPP[djay Pro]
+    Rekordbox --> RBAPP[rekordbox]
+    Serato --> SERATOAPP[Serato DJ Pro]
+
+    System -. facultatif .-> Online[Services en ligne]
 ```
 
-## Séparation des responsabilités
+## Règles de dépendance
 
-- `MixPilotCore` est indépendant des frameworks Apple et testable sur Linux/macOS.
-- `MixPilotMIDI` crée le port virtuel et émet les messages MIDI.
-- `MixPilotSystem` regroupe les interactions macOS, la détection Serato et le secours local.
-- `MixPilotApp` fournit l’interface native.
-- `MixPilotSimulatorCLI` exécute des sets accélérés en CI.
+- `MixPilotCore` ne dépend d’aucun logiciel DJ, framework d’interface ou service distant.
+- `MixPilotRuntime` reçoit un `DJBackend` et ne connaît pas son implémentation concrète.
+- `MixPilotMIDI` envoie des messages déjà autorisés ; il ne décide pas si une commande est sûre.
+- `MixPilotSystem` contient les adaptateurs macOS, l’audio, les fichiers et les services en ligne facultatifs.
+- `MixPilotRemoteBridge` laisse le Mac accepter ou refuser chaque intention iPhone.
+- aucune logique cloud n’entre dans le moteur de transitions ;
+- aucune logique iPhone n’entre dans les adaptateurs DJ.
 
-## Règle de validation
+## Contrat commun
 
-Les résultats du simulateur portent le statut `SIMULATED`. Les fonctions dépendant de Serato ne passent au statut `REAL` qu’après un test sur un Mac réel avec Serato DJ Pro.
+Chaque backend :
+
+- détecte son environnement ;
+- annonce ses capacités ;
+- valide sa configuration ;
+- exécute une commande universelle ;
+- vérifie séparément l’effet attendu ;
+- rend le contrôle manuel.
+
+Une commande envoyée n’est jamais considérée comme réussie sans preuve correspondante.
+
+## Validation
+
+- les tests unitaires valident les contrats et décisions logicielles ;
+- les simulations portent `SIMULATED_SUCCESS` ;
+- les fonctions dépendant du logiciel ou du matériel conservent `REQUIRES_BACKEND_VALIDATION` ou `REQUIRES_DEVICE_VALIDATION` ;
+- une CI verte ne constitue pas une validation matérielle.

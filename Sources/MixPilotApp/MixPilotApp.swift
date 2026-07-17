@@ -7,31 +7,69 @@ import SwiftUI
 struct MixPilotAutopilotApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var remoteBridge = MixPilotRemoteBridge()
+    @StateObject private var cloud = MixPilotCloudCoordinator()
+    @State private var mainSurface: MixPilotMainSurface = .home
+    private let cloudBackendContextStore = MixPilotCloudBackendContextStore()
 
     var body: some Scene {
-        WindowGroup("MixPilot Autopilot") {
-            BrandedRootView(model: model)
-                .frame(minWidth: 1_180, minHeight: 760)
+        WindowGroup("MixPilot") {
+            MixPilotMainShellView(model: model, surface: $mainSurface, cloud: cloud)
+                .frame(minWidth: 1_180, minHeight: 790)
+                .onAppear {
+                    let store = cloudBackendContextStore
+                    cloud.configureBackendContextProvider {
+                        await store.current()
+                    }
+                    publishCloudBackendContext()
+                    cloud.start(liveMode: model.isLiveRunning)
+                }
+                .onChange(of: model.isLiveRunning) { _, isLiveRunning in
+                    publishCloudBackendContext()
+                    cloud.setLiveMode(isLiveRunning)
+                }
+                .onChange(of: model.selectedBackend) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.backendStatus) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.midiStatus) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.preflightReport.generatedAt) { _, _ in
+                    publishCloudBackendContext()
+                }
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1_360, height: 900)
+        .defaultSize(width: 1_380, height: 920)
         .commands {
-            MixPilotWindowCommands()
+            MixPilotWindowCommands(cloud: cloud)
+
             CommandMenu("MixPilot") {
-                Button("Ouvrir le Studio") {
+                Button("Préparer") {
                     model.selectedSection = .studio
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Ouvrir le Préflight") {
+                Button("Vérifier") {
+                    model.evaluatePreflight()
                     model.selectedSection = .preflight
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
-                Button("Ouvrir le Live") {
+                Button("Live") {
                     model.selectedSection = .live
+                    mainSurface = .workspace
                 }
                 .keyboardShortcut("3", modifiers: [.command])
+
+                Button("Avancé") {
+                    model.selectedSection = .feasibility
+                    mainSurface = .workspace
+                }
+                .keyboardShortcut("4", modifiers: [.command])
 
                 Divider()
 
@@ -52,26 +90,61 @@ struct MixPilotAutopilotApp: App {
                 }
                 .disabled(!remoteBridge.isRunning)
 
-                Button("État : \(remoteBridge.status)") {}
-                    .disabled(true)
-
                 Divider()
 
-                Button("Exporter un diagnostic…") {
+                Button("Vérifier les mises à jour") {
+                    cloud.checkNow()
+                }
+                .keyboardShortcut("u", modifiers: [.command, .option])
+
+                Button("Exporter un diagnostic anonymisé…") {
                     model.exportDiagnostics()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Reprendre immédiatement le contrôle", role: .destructive) {
+                Button("Reprendre immédiatement la main", role: .destructive) {
                     model.takeManualControl()
                 }
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
 
-        Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
+        Window("Choisir le logiciel DJ", id: "dj-software") {
+            DJSoftwareSettingsView(model: model)
+        }
+        .defaultSize(width: 1_100, height: 760)
+
+        Window("Préparer un set rapidement", id: "quick-set") {
+            QuickSetView(model: model)
+        }
+        .defaultSize(width: 650, height: 380)
+
+        // Backend-specific tools remain registered for the contextual card in
+        // the Advanced workspace. They are intentionally absent from the global
+        // menu so rekordbox, Serato and djay do not create parallel navigation.
+        Window("Outils rekordbox", id: "rekordbox-hub") {
+            RekordboxHubView(appModel: model)
+        }
+        .defaultSize(width: 1_320, height: 880)
+
+        Window("Inspection rekordbox", id: "rekordbox-compatibility") {
+            RekordboxCompatibilityLabView(appModel: model)
+        }
+        .defaultSize(width: 1_080, height: 780)
+
+        Window("Validation réelle rekordbox", id: "rekordbox-device-validation") {
+            RekordboxDeviceValidationView(appModel: model)
+        }
+        .defaultSize(width: 1_240, height: 860)
+
+        Window("Mapping rekordbox", id: "automatic-rekordbox-mapping") {
+            AutomaticRekordboxMappingView(model: model)
+        }
+        .defaultSize(width: 1_020, height: 760)
+
+        Window("Configuration Serato", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
         .defaultSize(width: 1_020, height: 760)
@@ -97,6 +170,14 @@ struct MixPilotAutopilotApp: App {
         .defaultSize(width: 820, height: 620)
     }
 
+    private func publishCloudBackendContext() {
+        let context = model.onlineBackendContext
+        let store = cloudBackendContextStore
+        Task {
+            await store.update(context)
+        }
+    }
+
     private func showPairingCode() {
         let alert = NSAlert()
         alert.messageText = "Appairer MixPilot Remote"
@@ -109,35 +190,40 @@ struct MixPilotAutopilotApp: App {
 
 private struct MixPilotWindowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject var cloud: MixPilotCloudCoordinator
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Installer le mapping Serato automatiquement") {
-                openWindow(id: "automatic-serato-mapping")
+            Button("Choisir le logiciel DJ") {
+                openWindow(id: "dj-software")
             }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
+            .keyboardShortcut(",", modifiers: [.command, .shift])
 
-            Divider()
+            Button("Préparer un set rapidement") {
+                openWindow(id: "quick-set")
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+        }
 
-            Button("Ouvrir la répétition des transitions") {
+        CommandMenu("Avancé") {
+            Button("Répéter une transition") {
                 openWindow(id: "rehearsal")
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
-
-            Button("Ouvrir l’inspecteur de transitions") {
+            Button("Inspecter les transitions") {
                 openWindow(id: "transition-inspector")
             }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
-
-            Button("Ouvrir l’analyse audio de préparation") {
+            Button("Analyser l’audio localement") {
                 openWindow(id: "preparation-analysis")
             }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
-
             Button("Ouvrir le centre de récupération") {
                 openWindow(id: "recovery-center")
             }
-            .keyboardShortcut("u", modifiers: [.command, .shift])
+
+            Divider()
+
+            Button("Vérifier les services en ligne") {
+                cloud.checkNow()
+            }
         }
     }
 }

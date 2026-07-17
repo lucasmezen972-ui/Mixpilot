@@ -2,7 +2,20 @@
 import Foundation
 import MixPilotCore
 
-public actor MappedSeratoController: SeratoCommandSending {
+public enum MappedMIDIControllerError: Error, LocalizedError {
+    case continuousActionRequiresControlChange(DJControlAction)
+
+    public var errorDescription: String? {
+        switch self {
+        case .continuousActionRequiresControlChange(let action):
+            "La commande \(action.rawValue) doit utiliser un Control Change MIDI pour accepter une valeur continue."
+        }
+    }
+}
+
+public actor MappedMIDIController: DJCommandSending {
+    private static let momentaryPulseDuration: Duration = .milliseconds(12)
+
     private let controller: CoreMIDIController
     private var profile: MIDIMappingProfile
 
@@ -22,34 +35,83 @@ public actor MappedSeratoController: SeratoCommandSending {
         profile
     }
 
-    public func trigger(_ action: SeratoAction) async throws {
+    public func trigger(_ action: DJControlAction) async throws {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
         }
-        try controller.trigger(mapping)
+
+        switch mapping.kind {
+        case .note:
+            try controller.sendNoteOn(
+                channel: mapping.channel,
+                note: mapping.number,
+                velocity: mapping.maximumRawValue
+            )
+            do {
+                try await Task.sleep(for: Self.momentaryPulseDuration)
+            } catch {
+                try? controller.sendNoteOff(
+                    channel: mapping.channel,
+                    note: mapping.number,
+                    velocity: mapping.offRawValue
+                )
+                throw error
+            }
+            try controller.sendNoteOff(
+                channel: mapping.channel,
+                note: mapping.number,
+                velocity: mapping.offRawValue
+            )
+
+        case .controlChange where mapping.isMomentary:
+            try controller.sendControlChangeRaw(
+                channel: mapping.channel,
+                controller: mapping.number,
+                value: mapping.maximumRawValue
+            )
+            do {
+                try await Task.sleep(for: Self.momentaryPulseDuration)
+            } catch {
+                try? controller.sendControlChangeRaw(
+                    channel: mapping.channel,
+                    controller: mapping.number,
+                    value: mapping.offRawValue
+                )
+                throw error
+            }
+            try controller.sendControlChangeRaw(
+                channel: mapping.channel,
+                controller: mapping.number,
+                value: mapping.offRawValue
+            )
+
+        case .controlChange:
+            try controller.trigger(mapping)
+        }
     }
 
-    public func set(_ action: SeratoAction, value: Double) async throws {
+    public func set(_ action: DJControlAction, value: Double) async throws {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
+        }
+        guard mapping.kind == .controlChange else {
+            throw MappedMIDIControllerError.continuousActionRequiresControlChange(action)
         }
         try controller.set(mapping, normalizedValue: value)
     }
 
-    public func testCriticalMappings() async -> [SeratoAction: Bool] {
-        let critical: [SeratoAction] = [
-            .playA, .playB, .pauseA, .pauseB,
-            .syncA, .syncB, .loadA, .loadB,
-            .crossfader, .volumeA, .volumeB,
-            .lowEQA, .lowEQB,
-        ]
-        var result: [SeratoAction: Bool] = [:]
+    public func testCriticalMappings() async -> [DJControlAction: Bool] {
+        let critical = DJControlAction.automaticPresetCriticalActions.sorted { $0.rawValue < $1.rawValue }
+        var result: [DJControlAction: Bool] = [:]
         for action in critical {
-            result[action] = profile[action] != nil
+            result[action] = profile.hasRuntimeCompatibleMapping(for: action)
         }
         return result
     }
 }
+
+@available(*, deprecated, renamed: "MappedMIDIController")
+public typealias MappedSeratoController = MappedMIDIController
 
 public actor MIDIMappingProfileStore {
     private let fileURL: URL

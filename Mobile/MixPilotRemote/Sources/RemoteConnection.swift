@@ -1,4 +1,5 @@
 import Foundation
+import MixPilotRemoteProtocol
 import UIKit
 
 @MainActor
@@ -61,7 +62,10 @@ final class RemoteConnection: ObservableObject {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        request.setValue("mixpilot-remote-v1", forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        request.setValue(
+            "mixpilot-remote-v\(MixPilotRemoteProtocolVersion.current)",
+            forHTTPHeaderField: "Sec-WebSocket-Protocol"
+        )
 
         let socket = URLSession.shared.webSocketTask(with: request)
         self.socket = socket
@@ -191,8 +195,8 @@ final class RemoteConnection: ObservableObject {
     }
 
     private func handle(_ message: RemoteServerMessage) {
-        guard message.version == 1 else {
-            lastError = "Version du protocole non compatible."
+        guard MixPilotRemoteProtocolVersion.supports(message.version) else {
+            lastError = "Version du protocole non compatible. Mets à jour MixPilot sur le Mac et l’iPhone."
             return
         }
 
@@ -209,6 +213,7 @@ final class RemoteConnection: ObservableObject {
             do {
                 try KeychainStore.shared.save(token, account: endpoint.id)
                 pairingRequired = false
+                lastError = nil
                 status = .authenticated(endpoint.name)
                 let lastSequence = sequencePolicy.lastSequence(for: endpoint.id)
                 Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
@@ -218,6 +223,7 @@ final class RemoteConnection: ObservableObject {
 
         case "authenticated":
             pairingRequired = false
+            lastError = nil
             status = .authenticated(endpoint?.name ?? "Mac")
             let lastSequence = endpoint.flatMap { sequencePolicy.lastSequence(for: $0.id) }
             Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
@@ -233,6 +239,8 @@ final class RemoteConnection: ObservableObject {
             lastAcknowledgement = message.acknowledgement
             if message.acknowledgement?.accepted == false {
                 lastError = message.acknowledgement?.message
+            } else {
+                lastError = nil
             }
 
         case "error":
@@ -254,6 +262,7 @@ final class RemoteConnection: ObservableObject {
             message: "Commande simulée"
         )
         lastAcknowledgement = acknowledgement
+        lastError = nil
 
         switch kind {
         case .pauseAutopilot:
@@ -266,12 +275,15 @@ final class RemoteConnection: ObservableObject {
                 updatedAt: Date(),
                 mode: current.mode,
                 setName: current.setName,
+                backend: current.backend,
                 currentTrack: current.nextTrack ?? current.currentTrack,
                 nextTrack: nil,
+                activeDeck: current.activeDeck,
                 elapsed: 0,
                 duration: 198,
                 transitionLabel: "Prochaine transition recalculée",
                 transitionConfidence: 84,
+                audioStatus: current.audioStatus,
                 alert: "Transition suivante passée en mode démo",
                 canPause: true,
                 canResume: false,
@@ -292,12 +304,15 @@ final class RemoteConnection: ObservableObject {
             updatedAt: Date(),
             mode: mode,
             setName: value.setName,
+            backend: value.backend,
             currentTrack: value.currentTrack,
             nextTrack: value.nextTrack,
+            activeDeck: value.activeDeck,
             elapsed: value.elapsed,
             duration: value.duration,
             transitionLabel: value.transitionLabel,
             transitionConfidence: value.transitionConfidence,
+            audioStatus: value.audioStatus,
             alert: alert,
             canPause: mode == .live,
             canResume: mode == .paused,

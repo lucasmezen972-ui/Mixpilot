@@ -1,26 +1,71 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Keep the cross-platform test graph independent from macOS-only cloud and
+// hardware dependencies. Swift Crypto provides the Crypto module on Linux;
+// Apple platforms continue to use CryptoKit from the SDK.
+var dependencies: [Package.Dependency] = [
+    .package(
+        url: "https://github.com/apple/swift-crypto.git",
+        from: "3.0.0"
+    ),
+]
+
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
+    .library(name: "MixPilotRemoteProtocol", targets: ["MixPilotRemoteProtocol"]),
     .executable(name: "MixPilotSimulatorCLI", targets: ["MixPilotSimulatorCLI"]),
+    .executable(name: "MixPilotMappingPublisherCLI", targets: ["MixPilotMappingPublisherCLI"]),
 ]
 
 var targets: [Target] = [
-    .target(name: "MixPilotCore"),
+    .target(
+        name: "MixPilotCore",
+        dependencies: [
+            .product(name: "Crypto", package: "swift-crypto"),
+        ]
+    ),
+    .target(
+        name: "MixPilotRemoteProtocol",
+        path: "Shared/RemoteProtocolV2/Sources/MixPilotRemoteProtocol"
+    ),
     .executableTarget(
         name: "MixPilotSimulatorCLI",
         dependencies: ["MixPilotCore"]
     ),
+    .executableTarget(
+        name: "MixPilotMappingPublisherCLI",
+        dependencies: ["MixPilotCore"]
+    ),
     .testTarget(
         name: "MixPilotCoreTests",
-        dependencies: ["MixPilotCore"]
+        dependencies: ["MixPilotCore"],
+        path: "Tests/MixPilotCoreTests"
+    ),
+    .testTarget(
+        name: "MixPilotRemoteProtocolTests",
+        dependencies: ["MixPilotRemoteProtocol"],
+        path: "Shared/RemoteProtocolV2/Tests/MixPilotRemoteProtocolTests"
     ),
 ]
 
 #if os(macOS)
-products.append(.executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]))
-products.append(.executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]))
+dependencies.append(
+    .package(
+        url: "https://github.com/supabase/supabase-swift.git",
+        exact: "2.46.0"
+    )
+)
+
+products.append(contentsOf: [
+    .library(name: "MixPilotMIDI", targets: ["MixPilotMIDI"]),
+    .library(name: "MixPilotSystem", targets: ["MixPilotSystem"]),
+    .library(name: "MixPilotRuntime", targets: ["MixPilotRuntime"]),
+    .library(name: "MixPilotRemoteBridge", targets: ["MixPilotRemoteBridge"]),
+    .executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]),
+    .executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]),
+])
+
 targets.append(
     .target(
         name: "MixPilotMIDI",
@@ -31,13 +76,18 @@ targets.append(
 targets.append(
     .target(
         name: "MixPilotSystem",
-        dependencies: ["MixPilotCore"],
+        dependencies: [
+            "MixPilotCore",
+            "MixPilotMIDI",
+            .product(name: "Supabase", package: "supabase-swift"),
+        ],
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("ApplicationServices"),
             .linkedFramework("AVFoundation"),
             .linkedFramework("Network"),
             .linkedFramework("IOKit"),
+            .linkedFramework("Security"),
         ]
     )
 )
@@ -50,7 +100,7 @@ targets.append(
 targets.append(
     .target(
         name: "MixPilotRemoteBridge",
-        dependencies: ["MixPilotCore"],
+        dependencies: ["MixPilotCore", "MixPilotRemoteProtocol"],
         linkerSettings: [
             .linkedFramework("Network"),
             .linkedFramework("Security"),
@@ -72,6 +122,7 @@ targets.append(
             "MixPilotSystem",
             "MixPilotRuntime",
             "MixPilotRemoteBridge",
+            "MixPilotRemoteProtocol",
         ],
         linkerSettings: [
             .linkedFramework("SwiftUI"),
@@ -82,13 +133,22 @@ targets.append(
 targets.append(
     .testTarget(
         name: "MixPilotRemoteBridgeTests",
-        dependencies: ["MixPilotRemoteBridge"]
+        dependencies: ["MixPilotRemoteBridge", "MixPilotRemoteProtocol"],
+        path: "Tests/MixPilotRemoteBridgeTests"
     )
 )
 targets.append(
     .testTarget(
         name: "MixPilotSystemTests",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"],
+        path: "Tests/MixPilotSystemTests"
+    )
+)
+targets.append(
+    .testTarget(
+        name: "MixPilotRuntimeTests",
+        dependencies: ["MixPilotCore", "MixPilotRuntime"],
+        path: "Tests/MixPilotRuntimeTests"
     )
 )
 #endif
@@ -98,5 +158,6 @@ let package = Package(
     defaultLocalization: "fr",
     platforms: [.macOS(.v14)],
     products: products,
+    dependencies: dependencies,
     targets: targets
 )

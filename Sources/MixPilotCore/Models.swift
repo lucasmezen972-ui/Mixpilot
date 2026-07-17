@@ -155,10 +155,15 @@ public enum IncidentKind: String, Codable, CaseIterable, Sendable {
     case audioSourceLost
     case audioClipping
     case midiUnavailable
-    case seratoUnavailable
+    case backendUnavailable
     case powerDisconnected
     case checkpointMismatch
     case emergencyPlayerFailure
+
+    /// Historical raw value retained so old checkpoints and journals remain
+    /// decodable. New scenarios use `backendUnavailable`.
+    @available(*, deprecated, renamed: "backendUnavailable")
+    case seratoUnavailable
 }
 
 public struct Incident: Identifiable, Codable, Hashable, Sendable {
@@ -167,7 +172,12 @@ public struct Incident: Identifiable, Codable, Hashable, Sendable {
     public var message: String
     public var recovered: Bool
 
-    public init(id: UUID = UUID(), kind: IncidentKind, message: String, recovered: Bool = false) {
+    public init(
+        id: UUID = UUID(),
+        kind: IncidentKind,
+        message: String,
+        recovered: Bool = false
+    ) {
         self.id = id
         self.kind = kind
         self.message = message

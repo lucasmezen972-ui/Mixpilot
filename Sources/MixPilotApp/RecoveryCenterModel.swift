@@ -9,14 +9,15 @@ import MixPilotSystem
 final class RecoveryCenterModel: ObservableObject {
     @Published private(set) var checkpoint: LiveCheckpoint?
     @Published private(set) var project: SetProject?
-    @Published private(set) var observation: SeratoWindowObservation?
+    @Published private(set) var observation: DJWindowObservation?
     @Published private(set) var reconciliation: CheckpointReconciliationResult?
     @Published private(set) var status = "Recherche d’une session interrompue…"
     @Published private(set) var isLoading = false
 
     private let checkpointStore = LiveAutopilotCoordinator.makeDefaultCheckpointStore()
     private let projectStore: JSONProjectStore
-    private let accessibilityBridge = SeratoAccessibilityBridge()
+    private let accessibilityBridge = DJAccessibilityBridge()
+    private let backendSelectionStore = MigratingDJBackendSelectionStore()
 
     init() {
         let root = FileManager.default.urls(
@@ -33,47 +34,74 @@ final class RecoveryCenterModel: ObservableObject {
     func refresh() {
         guard !isLoading else { return }
         isLoading = true
-        status = "Lecture du checkpoint et observation de Serato…"
+        status = "Lecture du checkpoint et vérification du logiciel DJ…"
 
         Task {
+            defer { isLoading = false }
             do {
-                let loadedCheckpoint = try await checkpointStore.load()
-                let projects = try await projectStore.list()
-                let loadedProject = loadedCheckpoint.flatMap { checkpoint in
-                    projects.first { $0.id == checkpoint.projectID }
+                guard let loadedCheckpoint = try await checkpointStore.load() else {
+                    checkpoint = nil
+                    project = nil
+                    observation = nil
+                    reconciliation = nil
+                    status = "Aucune session interrompue n’a été détectée."
+                    return
                 }
-                let currentObservation = accessibilityBridge.observe(maxDepth: 6, maximumStrings: 400)
+
+                if loadedCheckpoint.state == .completed {
+                    try await checkpointStore.clear()
+                    checkpoint = nil
+                    project = nil
+                    observation = nil
+                    reconciliation = nil
+                    status = "La session précédente était terminée ; son checkpoint a été nettoyé."
+                    return
+                }
+
+                let projects = try await projectStore.list()
+                let loadedProject = projects.first { $0.id == loadedCheckpoint.projectID }
+                let recordedBackend = loadedCheckpoint.backend ?? loadedProject?.backend
+                let activeBackend = await backendSelectionStore.loadSelection()
+                let backendToObserve = activeBackend ?? recordedBackend
+                let currentObservation = backendToObserve.map {
+                    accessibilityBridge.observe(
+                        backend: $0,
+                        maxDepth: 6,
+                        maximumStrings: 400
+                    )
+                }
 
                 checkpoint = loadedCheckpoint
                 project = loadedProject
                 observation = currentObservation
 
-                if let loadedCheckpoint, let loadedProject {
-                    let expectedTitle = loadedProject.tracks.indices.contains(loadedCheckpoint.currentTrackIndex)
-                        ? loadedProject.tracks[loadedCheckpoint.currentTrackIndex].track.title
-                        : nil
+                if let loadedProject {
+                    let expectedTitle = loadedProject.tracks.indices.contains(
+                        loadedCheckpoint.currentTrackIndex
+                    ) ? loadedProject.tracks[loadedCheckpoint.currentTrackIndex].track.title : nil
                     let observedTitle = expectedTitle.flatMap { title in
-                        currentObservation.contains(text: title) ? title : nil
+                        currentObservation?.contains(text: title) == true ? title : nil
                     }
                     reconciliation = CheckpointReconciler().reconcile(
                         checkpoint: loadedCheckpoint,
                         project: loadedProject,
+                        activeBackend: activeBackend,
+                        backendRunning: currentObservation?.isRunning == true,
                         observedTrackTitle: observedTitle,
-                        seratoRunning: currentObservation.isRunning,
                         audioActive: false
                     )
                     status = reconciliation?.explanation ?? "État à vérifier"
-                } else if loadedCheckpoint != nil {
-                    reconciliation = nil
-                    status = "Le checkpoint existe, mais son projet sauvegardé est introuvable. Contrôle manuel obligatoire."
                 } else {
                     reconciliation = nil
-                    status = "Aucune session interrompue n’a été détectée."
+                    status = "Le checkpoint existe, mais son projet sauvegardé est introuvable. Contrôle manuel obligatoire."
                 }
             } catch {
-                status = "Impossible de lire la récupération : \(error.localizedDescription)"
+                checkpoint = nil
+                project = nil
+                observation = nil
+                reconciliation = nil
+                status = "La récupération locale n’a pas pu être lue. Aucun redémarrage automatique n’est autorisé."
             }
-            isLoading = false
         }
     }
 
@@ -83,10 +111,11 @@ final class RecoveryCenterModel: ObservableObject {
                 try await checkpointStore.clear()
                 checkpoint = nil
                 project = nil
+                observation = nil
                 reconciliation = nil
                 status = "Checkpoint supprimé. Une nouvelle session peut être lancée."
             } catch {
-                status = "Impossible de supprimer le checkpoint : \(error.localizedDescription)"
+                status = "Le checkpoint n’a pas pu être supprimé. Aucune reprise automatique ne sera tentée."
             }
         }
     }

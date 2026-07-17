@@ -1,110 +1,53 @@
-# MixPilot 0.3.0-rc.2 — Statut de release candidate
+# Statut de la refonte multi-backend
 
-## Identité
+## État actuel
 
-- Version : `0.3.0-rc.2`
-- Branche : `release/0.3.0-rc.2`
-- Base : `develop` consolidé par la PR #14
-- Pull Request : #17 vers `main`
-- Fusion vers `main` : **interdite avant la campagne matérielle guidée**
+- branche : `feature/first-class-multi-backend` ;
+- Pull Request : #29 vers `release/0.3.0-rc.2` ;
+- état : ouverte, mergeable et brouillon ;
+- aucune fusion vers `main` ;
+- aucune publication automatique.
 
-## Consolidation effectuée
+La RC `0.3.0-rc.2` est une base historique. Ses anciens résultats CI ne valident pas les changements de la PR #29.
 
-- PR #14 fusionnée dans `develop` au commit `06e980d068b86cf0c06237ffa563d5b31f2d35ef` ;
-- PR #9 remplacée après port manuel de ses éléments utiles ;
-- PR #11 reprise et consolidée pour l’iPhone ;
-- PR #12 RC1 fermée comme obsolète ;
-- PR #13 reprise et enrichie pour le bridge Mac ;
-- PR #18 fusionnée dans `develop` au commit `67237855deb3da8e7543ed6e9b562957dce139b2` pour corriger la validation des checksums.
+## Migration réalisée
 
-## Composants réellement présents
+- djay Pro, rekordbox et Serato DJ Pro utilisent le contrat `DJBackend` ;
+- aucun backend n’est choisi implicitement ;
+- le runtime Live adapte les transitions aux capacités disponibles ;
+- une capacité doit être réellement confirmée avant le Live ;
+- sans lecture d’état fiable, aucune première commande d’Autopilote complet ne part ;
+- les projets locaux mémorisent le backend choisi tout en relisant les anciens projets sans inventer Serato ;
+- l’interface principale contient Préparer, Vérifier, Live et Avancé ;
+- Remote v2 affiche le backend et le mode réel ;
+- les services en ligne restent facultatifs et utilisent le backend sélectionné ;
+- les diagnostics en ligne sont désactivés par défaut ;
+- Supabase utilise RLS, des vues `security_invoker` et une rétention de trente jours ;
+- les simulations et documents sont désormais multi-backend.
 
-### Mac
+## État GitHub Actions
 
-- target `MixPilotAutopilot` ;
-- target `MixPilotHardwareProbeCLI` ;
-- target `MixPilotRemoteBridge` ;
-- préparation de set, analyse et transitions ;
-- mapping MIDI avec confirmations ;
-- préflight, watchdog et secours ;
-- répétition, inspecteur et analyse de préparation ;
-- checkpoints, récupération et diagnostics ;
-- commandes distantes de haut niveau protégées.
+Les workflows macOS, iPhone et Linux échouent avant leur première étape : aucun checkout, aucune commande Swift, aucun log de compilation et aucun artefact.
 
-### iPhone
+Il s’agit d’un blocage GitHub Actions du dépôt. Ce comportement ne permet de déclarer ni succès ni échec du code actuel.
 
-- projet XcodeGen `Mobile/MixPilotRemote` ;
-- iOS 17+ ;
-- Réseau local et Bonjour `_mixpilot._tcp` ;
-- stockage Keychain ;
-- découverte, appairage, authentification et snapshots ;
-- mode démo explicitement identifié comme simulation ;
-- package SwiftPM testant les fichiers de modèles réellement utilisés par l’app.
+## Validation non acquise
 
-## Résultats automatisés de la RC2
+Restent à exécuter sur le commit courant :
 
-Commit technique figé : `d0ce9c08559b491b47d7b478f99d87449519f955`.
+- tests Swift ;
+- simulations 50 et 250 titres ;
+- build macOS Release ;
+- build iOS Simulator ;
+- DMG et checksum ;
+- tests matériels djay, rekordbox et Serato ;
+- lecture réelle de l’état des decks ;
+- routage audio, récupération et endurance ;
+- appairage et perte Wi-Fi sur appareils physiques ;
+- signature Developer ID et notarisation.
 
-### macOS CI
+## Règle de sortie
 
-Run : `29459910562`.
+La PR #29 reste brouillon jusqu’au retour d’une CI réellement exécutée et à la campagne décrite dans `Documentation/FINAL_VALIDATION.md`.
 
-- tests unitaires : `AUTOMATED_SUCCESS` ;
-- simulation 50 titres : `SIMULATED_SUCCESS` ;
-- simulation 250 titres : `SIMULATED_SUCCESS` ;
-- build Release application : `AUTOMATED_SUCCESS` ;
-- build Release probe : `AUTOMATED_SUCCESS` ;
-- package DMG : `AUTOMATED_SUCCESS` ;
-- validation checksum : `AUTOMATED_SUCCESS` ;
-- artifact `MixPilot-Autopilot-development` : `AUTOMATED_SUCCESS`.
-
-### iPhone Remote CI
-
-Run : `29459910656`.
-
-- génération XcodeGen : `AUTOMATED_SUCCESS` ;
-- build iOS Simulator : `AUTOMATED_SUCCESS` ;
-- contrats Remote v1 : `AUTOMATED_SUCCESS` ;
-- snapshots anciens/dupliqués : `AUTOMATED_SUCCESS`.
-
-## Commandes distantes
-
-| Commande | Présence | Statut RC2 |
-|---|---|---|
-| `takeManualControl` | Implémentée et idempotente | `AUTOMATED_SUCCESS`, `REQUIRES_DEVICE_VALIDATION` |
-| `pauseAutopilot` | Implémentée, coopérative, sans annuler la Task principale | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `resumeAutopilot` | Implémentée avec revalidation Serato, deck, MIDI et watchdog | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `skipTransition` | Conserve le titre et remplace la technique par un Safe Fade contrôlé | `AUTOMATED_SUCCESS`, `REQUIRES_SERATO_VALIDATION` |
-| `safeFade` | Refus explicite | `REQUIRES_DEVICE_VALIDATION` |
-
-## Release workflow
-
-Run final : `29459907907`.
-
-- artifact : `MixPilot-Autopilot-0.3.0-rc.2` ;
-- DMG : `AUTOMATED_SUCCESS` ;
-- manifest : `AUTOMATED_SUCCESS` ;
-- checksum SHA-256 : `cab6e3a3252a9e138edccacd52c35abcb7d66bd361c7fcfbcc3ac756d363e100` ;
-- signature : ad hoc de développement ;
-- notarisation : non effectuée et non revendiquée ;
-- Developer ID : absent de cette RC interne.
-
-Les commits documentaires ultérieurs ne redéclenchent plus la fabrication du DMG.
-
-## Ce qui n’est pas encore `REAL_SUCCESS`
-
-- mapping et contrôle Serato réels ;
-- chargement Spotify répétable ;
-- routage audio réel ;
-- absence de blanc sur le système de son cible ;
-- appairage Mac/iPhone physiques ;
-- perte et retour Wi-Fi réels ;
-- endurance de deux heures ;
-- Safe Fade distant ;
-- Developer ID et notarisation.
-
-## Blocage actuel
-
-Tout le travail automatisable prévu pour RC2 est terminé et vert.
-
-Le prochain blocage est matériel : campagne humaine unique définie dans `Documentation/FINAL_VALIDATION.md` sur MacBook Pro M1, Serato DJ Pro, Spotify Premium, système audio réel et iPhone physique.
+Une réussite avec un backend ne valide jamais automatiquement les deux autres. `REAL_SUCCESS` doit toujours être associé à la version du logiciel, au mapping, au matériel, au commit MixPilot et à la preuve observée.

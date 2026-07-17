@@ -1,131 +1,166 @@
-# Validation finale guidée — MixPilot 0.3.0-rc.2
+# Validation finale guidée de MixPilot
 
-Cette campagne humaine n’est lancée qu’après une CI entièrement verte et la génération du DMG avec checksum valide.
+Cette campagne valide la refonte multi-backend sur le matériel réel. Elle ne commence qu’après une CI entièrement exécutable et verte, puis la génération d’un DMG dont le checksum a été contrôlé.
 
-## Statut avant campagne
+La procédure détaillée commune est complétée par `Documentation/MULTI_BACKEND_VALIDATION.md` et par les guides de chaque intégration.
 
-Les éléments suivants restent obligatoirement classés :
+## Statuts autorisés
 
-- Serato, Spotify et mapping MIDI : `REQUIRES_SERATO_VALIDATION` ;
-- routage audio, latence, MacBook Pro M1 et iPhone : `REQUIRES_DEVICE_VALIDATION` ;
-- moteur, simulations et builds publics : `AUTOMATED_SUCCESS` ou `SIMULATED_SUCCESS` selon le cas.
+- `AUTOMATED_SUCCESS` : test ou build réellement exécuté avec succès ;
+- `SIMULATED_SUCCESS` : scénario logiciel réussi sans matériel DJ réel ;
+- `REAL_SUCCESS` : résultat observé sur la configuration matérielle et logicielle indiquée ;
+- `REQUIRES_BACKEND_VALIDATION` : comportement du logiciel DJ encore à confirmer ;
+- `REQUIRES_DEVICE_VALIDATION` : matériel, audio, réseau local ou installation physique encore à confirmer ;
+- `BLOCKED_BY_PLATFORM` : capacité non garantie proprement avec les interfaces disponibles.
 
-## Préconditions
+Une simulation, un mapping présent sur disque ou une commande envoyée ne constituent jamais une validation Live.
 
-- MacBook Pro M1 sous macOS 14 ou supérieur, branché au secteur ;
-- Serato DJ Pro installé et lancé ;
-- Spotify Premium connecté dans Serato ;
-- sortie audio réelle ou configuration équivalente ;
-- au moins 30 minutes de musique locale de secours ;
-- iPhone sous iOS 17 ou supérieur ;
-- Mac et iPhone sur le même réseau local ;
-- DMG et application iPhone issus du même protocole Remote v1.
+## Préconditions communes
 
-## Phase A — Installation Mac et permissions
+- Mac Apple Silicon sous macOS 14 ou supérieur, branché au secteur ;
+- MixPilot construit depuis le commit testé ;
+- musique locale de secours d’au moins trente minutes ;
+- système audio de test dont la coupure ne met personne en danger ;
+- iPhone sous iOS 17 ou supérieur pour les phases Remote ;
+- aucun événement public ni matériel de production pendant la campagne ;
+- sauvegarde des mappings existants avant toute modification.
 
-1. installer le DMG de la RC2 ;
+## Matrice minimale
+
+La campagne doit être exécutée séparément pour :
+
+1. djay Pro ;
+2. rekordbox en Mode Performance ;
+3. Serato DJ Pro.
+
+Chaque rapport doit enregistrer la version du logiciel, macOS, le contrôleur ou profil utilisé, le mapping, le commit MixPilot et la date du test.
+
+## Phase A — Installation et permissions
+
+1. installer le DMG de test ;
 2. lancer MixPilot depuis Applications ;
-3. accorder Accessibilité, capture d’écran et audio lorsque demandé ;
-4. relancer l’application après les changements de permissions ;
-5. exporter un premier diagnostic.
+3. accorder uniquement les permissions expliquées par l’application ;
+4. relancer après les changements de permission ;
+5. vérifier qu’aucun logiciel DJ n’est choisi implicitement ;
+6. exporter un diagnostic anonymisé.
 
-Critère : aucune permission critique ne reste bloquée.
+Critère : l’application démarre sans backend par défaut et explique chaque action manuelle nécessaire.
 
-## Phase B — Serato et mapping MIDI
+## Phase B — Sélection et détection du backend
 
-1. lancer Serato et connecter Spotify ;
-2. afficher une playlist de test ;
-3. sélectionner `MixPilot Virtual Controller` ;
-4. mapper Play, Pause, Cue, Sync, Load, volumes, EQ, filtres, pitch, crossfader, effets et boucles ;
-5. confirmer dans MixPilot chaque réaction réellement observée.
+Pour chacun des trois logiciels :
 
-Critère : les actions critiques sont réellement confirmées. La présence d’un mapping dans un fichier ne suffit pas.
+1. sélectionner explicitement le backend ;
+2. vérifier l’installation, le lancement et la version détectée ;
+3. fermer puis rouvrir le logiciel ;
+4. vérifier qu’un changement de backend est refusé pendant le Live ;
+5. confirmer qu’un ancien projet sans backend demande un choix.
 
-## Phase C — Préparation de playlist
+Critère : aucune donnée, commande ou télémétrie n’est attribuée à un autre backend.
 
-1. importer une playlist locale ;
-2. vérifier titres, artistes, ordre, BPM et durées ;
-3. lancer l’analyse temporaire sur quelques morceaux ;
-4. vérifier les marqueurs et les transitions ;
-5. inspecter toutes les transitions sous le seuil de confiance ;
-6. verrouiller le plan.
+## Phase C — Bibliothèque et préparation
 
-Répéter avec une playlist Spotify de dix titres dans Serato.
+1. ouvrir une playlist de copie ;
+2. importer les lignes visibles ou le format documentaire disponible ;
+3. contrôler l’ordre, le nombre de morceaux, BPM et durées ;
+4. préparer les marqueurs et transitions ;
+5. inspecter les transitions à faible confiance ;
+6. changer de backend hors Live et vérifier que le plan musical est conservé mais doit être revérifié ;
+7. verrouiller le projet pour le backend choisi.
 
-Critère : aucun mauvais titre, doublon ou décalage d’ordre.
+Critère : aucun mauvais titre, doublon ou ordre modifié silencieusement.
 
-## Phase D — Sept familles de transitions
+## Phase D — Mapping et commandes
 
-Tester :
+Pour chaque backend :
 
-- Smooth Blend ;
-- Bass Swap ;
-- Rap Switch ;
-- Shatta Drop ;
-- Echo Exit ;
-- Safe Fade ;
-- Hard Cut contrôlé.
+1. sauvegarder le mapping existant ;
+2. importer ou configurer le profil selon la méthode officiellement disponible ;
+3. tester séparément Load, Play/Pause, Cue, Sync et volumes ;
+4. tester ensuite EQ, filtre, crossfader, boucles et effets lorsqu’ils sont exposés ;
+5. confirmer chaque réaction dans MixPilot ;
+6. provoquer un test refusé et vérifier que la capacité reste bloquée ;
+7. restaurer le mapping précédent.
 
-Vérifier le deck sortant, le deck entrant, les EQ, le crossfader, le niveau, la continuité sonore et l’arrêt du deck sortant.
+Critère : seules les commandes réellement confirmées pour la version et le mapping testés peuvent être planifiées en Live.
 
-Critère : dix transitions consécutives sans inversion de deck, blanc ou double chargement.
+## Phase E — Lecture fiable de l’état
 
-## Phase E — Watchdog et secours
+1. charger un morceau sur chaque deck ;
+2. vérifier le morceau, le deck actif, lecture/pause et position lorsque disponibles ;
+3. modifier la disposition de l’interface ;
+4. provoquer une observation ambiguë ;
+5. vérifier que MixPilot bascule en configuration supervisée.
+
+Critère impératif : sans lecture d’état fiable, l’Autopilote complet n’envoie aucune première commande.
+
+## Phase F — Transitions et dégradation
+
+Tester les sept familles : Smooth Blend, Bass Swap, Rap Switch, Shatta Drop, Echo Exit, Safe Fade et Hard Cut contrôlé.
+
+Pour chaque backend, répéter les tests avec :
+
+- crossfader indisponible ;
+- effets indisponibles ;
+- EQ partiel ;
+- commande retardée ;
+- commande non confirmée ;
+- mapping incompatible.
+
+Critère : MixPilot utilise un fallback confirmé, demande une intervention ou bloque le Live. Il ne commande jamais une fonction non validée.
+
+## Phase G — Watchdog, secours et récupération
 
 1. activer la surveillance audio ;
 2. provoquer un silence contrôlé ;
-3. couper le routage audio ;
+3. perdre la source audio ;
 4. interrompre Internet ;
-5. fermer Serato pendant que le secours local joue ;
-6. vérifier fade-in, enchaînement des fichiers et retour au contrôle manuel.
+5. fermer le backend actif ;
+6. tester le lecteur local de secours ;
+7. interrompre puis relancer MixPilot ;
+8. vérifier le checkpoint et reprendre uniquement depuis un état cohérent.
 
-Critère : aucun changement contradictoire et aucun blanc supérieur à une seconde après le déclenchement critique lorsque le secours est prêt.
+Critère : aucune reprise aveugle, aucun changement contradictoire et contrôle manuel toujours disponible.
 
-## Phase F — Récupération
+## Phase H — Remote iPhone v2
 
-1. arrêter MixPilot pendant une session de test ;
-2. relancer l’application ;
-3. ouvrir le Centre de récupération ;
-4. vérifier le rapprochement entre checkpoint, morceau et deck réels ;
-5. confirmer qu’aucune reprise aveugle n’est exécutée ;
-6. reprendre manuellement ou depuis un point sûr.
+1. activer explicitement le bridge Mac ;
+2. vérifier Bonjour `_mixpilot._tcp` ;
+3. appairer l’iPhone et contrôler le stockage Trousseau ;
+4. vérifier le backend et le mode réellement affichés ;
+5. tester pause, reprise, skip et reprise manuelle ;
+6. tester les refus du Mac ;
+7. couper le Wi-Fi, verrouiller l’iPhone et fermer l’app ;
+8. vérifier qu’aucune perte réseau ne modifie le Live Mac.
 
-## Phase G — Endurance Mac
+Critère : le Mac reste la seule source de vérité et aucun MIDI brut ne traverse le protocole Remote.
+
+## Phase I — Services en ligne
+
+1. lancer MixPilot avec diagnostics désactivés ;
+2. vérifier que mises à jour et Live local restent indépendants ;
+3. activer explicitement les diagnostics ;
+4. contrôler le backend, la version et le mapping enregistrés ;
+5. vérifier l’absence de titre, artiste, playlist, chemin, audio, texte Accessibilité et secret ;
+6. couper Internet pendant le Live ;
+7. rétablir Internet et vérifier la reprise de la file locale.
+
+Critère : aucune panne Supabase ne bloque, ne démarre ou ne modifie le Live.
+
+## Phase J — Endurance
+
+Pour chaque backend autorisé en mode complet :
 
 1. préparer un set d’au moins deux heures ;
-2. lancer le préflight complet ;
+2. exécuter le préflight ;
 3. laisser le Mac sans interaction ;
-4. surveiller mémoire, CPU, veille, incidents et récupération ;
+4. surveiller CPU, mémoire, veille, audio, commandes et incidents ;
 5. exporter le diagnostic final.
 
-Critères : aucun crash, aucune mise en veille, toutes les transitions prévues terminées et aucun incident non récupéré.
+Critère : aucun crash, aucune commande aveugle, aucune veille et aucun incident critique non récupéré.
 
-## Phase H — Installation iPhone et appairage
+## Décision de publication
 
-1. installer l’application iPhone issue de la RC2 ;
-2. activer explicitement le bridge sur le Mac ;
-3. vérifier la découverte Bonjour `_mixpilot._tcp` ;
-4. saisir le code à six chiffres ;
-5. vérifier le stockage du jeton dans le Trousseau ;
-6. appairer un second appareil ou réinstaller l’app pour vérifier le mode lecture seule.
+Une configuration peut recevoir `REAL_SUCCESS` uniquement si le rapport contient ses versions et preuves. Une réussite avec djay ne valide ni rekordbox ni Serato, et inversement.
 
-Critère : un seul appareil principal ; les autres ne peuvent pas commander le Mac.
-
-## Phase I — Réseau et commandes distantes
-
-1. vérifier les snapshots et leur ordre ;
-2. envoyer `takeManualControl` deux fois et vérifier l’idempotence ;
-3. tester les commandes autorisées de la RC2 ;
-4. vérifier les refus explicites des commandes verrouillées ;
-5. couper puis rétablir le Wi-Fi ;
-6. verrouiller puis déverrouiller l’iPhone ;
-7. arrêter l’app iPhone ;
-8. vérifier que le Live Mac ne change jamais du seul fait d’une perte réseau.
-
-## Phase J — Diagnostics
-
-Exporter les diagnostics Mac et iPhone. Vérifier qu’ils ne contiennent ni jeton, ni code d’appairage, ni mot de passe, ni audio protégé, ni donnée Spotify sensible.
-
-## Décision
-
-Une fonctionnalité non validée reste verrouillée et marquée `REQUIRES_SERATO_VALIDATION` ou `REQUIRES_DEVICE_VALIDATION`. Elle ne doit jamais être annoncée comme fiable pour masquer une limite de plateforme ou l’absence de matériel réel.
+La PR de refonte reste en brouillon et aucune fusion vers `main`, publication de mapping stable ou release publique n’est autorisée tant que la CI actuelle ne s’exécute pas réellement et que les campagnes matérielles correspondantes ne sont pas terminées.

@@ -13,6 +13,7 @@ BUILD_DIR="$ROOT/build"
 BRANDING_DIR="$ROOT/Branding"
 VERSION="${MIXPILOT_VERSION:-0.1.0}"
 VERSION="${VERSION#v}"
+PUBLISHER="${MIXPILOT_PUBLISHER:-TRADIKOM BY LUCAS MEZEN}"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
@@ -54,14 +55,21 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.mixpilot.autopilot</string>
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleGetInfoString</key><string>$APP_NAME $VERSION — $PUBLISHER</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>MixPilot utilise l’audio uniquement pour surveiller le niveau et détecter les silences.</string>
-  <key>NSScreenCaptureUsageDescription</key><string>MixPilot observe Serato afin de confirmer les titres chargés et les erreurs.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>MixPilot peut observer l’interface visible du logiciel DJ sélectionné afin de confirmer les titres, les decks et les erreurs.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>MixPilot utilise le réseau local uniquement pour connecter l’application Remote sur ton iPhone au Mac.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_mixpilot._tcp</string>
+  </array>
 </dict>
 </plist>
 PLIST

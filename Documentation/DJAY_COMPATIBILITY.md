@@ -1,0 +1,55 @@
+# Compatibilité djay — premier lot
+
+## Objectif
+
+Conserver le moteur MixPilot existant et ajouter djay comme deuxième logiciel DJ sélectionnable, sans retirer Serato.
+
+## Réalisé
+
+- sélection persistante entre Serato DJ Pro et djay Pro ;
+- détection du processus sélectionné ;
+- observation Accessibilité et lecture des lignes visibles dans le logiciel choisi ;
+- préflight adapté au backend ;
+- MIDI et mapping optionnels pour djay Automix ;
+- batterie et musique locale de secours non bloquantes ;
+- fenêtre de sélection du logiciel DJ ;
+- fenêtre de préparation rapide d’un set visible ;
+- tests automatisés dédiés ;
+- build Release et DMG validés.
+
+## Validation automatisée
+
+Commit technique validé : `2468c6a4b779420af9e0d7fa96c0fbd1eefc61bc`.
+
+Run macOS CI : `29471160734`.
+
+- tests Swift : `AUTOMATED_SUCCESS` ;
+- simulation 50 titres : `SIMULATED_SUCCESS` ;
+- simulation 250 titres : `SIMULATED_SUCCESS` ;
+- application Release : `AUTOMATED_SUCCESS` ;
+- probe matériel Release : `AUTOMATED_SUCCESS` ;
+- DMG et checksum : `AUTOMATED_SUCCESS`.
+
+## Parcours rapide actuel
+
+1. choisir Serato ou djay ;
+2. afficher une playlist dans le logiciel choisi ;
+3. ouvrir `Préparer un set rapidement` ;
+4. cliquer sur `Capturer et préparer le set` ;
+5. MixPilot lit les lignes visibles, prépare les transitions, verrouille le plan et ouvre le préflight.
+
+## Limites actuelles
+
+- MixPilot ne remplit pas encore automatiquement la file Automix de djay ;
+- MixPilot ne déclenche pas encore automatiquement la lecture dans djay ;
+- la lecture exacte des lignes Spotify visibles dans djay doit être validée sur le Mac réel ;
+- aucun contrôle MIDI détaillé djay n’est revendiqué.
+
+## Statuts
+
+- sélection et persistance : `AUTOMATED_SUCCESS` ;
+- détection djay : `AUTOMATED_SUCCESS` ;
+- préflight backend-aware : `AUTOMATED_SUCCESS` ;
+- capture générique via Accessibilité : `REQUIRES_DEVICE_VALIDATION` ;
+- remplissage de la file Automix : `REQUIRES_DEVICE_VALIDATION` ;
+- démarrage automatique du set : `REQUIRES_DEVICE_VALIDATION`.

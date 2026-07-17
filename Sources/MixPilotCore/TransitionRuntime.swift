@@ -4,9 +4,9 @@ public struct TransitionFrame: Hashable, Sendable {
     public var index: Int
     public var elapsed: TimeInterval
     public var beat: Double
-    public var values: [SeratoAction: Double]
+    public var values: [DJControlAction: Double]
 
-    public init(index: Int, elapsed: TimeInterval, beat: Double, values: [SeratoAction: Double]) {
+    public init(index: Int, elapsed: TimeInterval, beat: Double, values: [DJControlAction: Double]) {
         self.index = index
         self.elapsed = elapsed
         self.beat = beat
@@ -55,7 +55,7 @@ public struct TransitionFrameGenerator: Sendable {
             let progress = Double(index) / Double(frameCount - 1)
             let elapsed = duration * progress
             let beat = totalBeats * progress
-            var values: [SeratoAction: Double] = [:]
+            var values: [DJControlAction: Double] = [:]
 
             for lane in plan.lanes {
                 let rawValue = interpolatedValue(in: lane, atBeat: beat)
@@ -98,7 +98,7 @@ public struct TransitionFrameGenerator: Sendable {
         for target: AutomationTarget,
         outgoingDeck: DeckID,
         incomingDeck: DeckID
-    ) -> SeratoAction? {
+    ) -> DJControlAction? {
         switch target {
         case .crossfader:
             return .crossfader
@@ -118,12 +118,19 @@ public struct TransitionFrameGenerator: Sendable {
     }
 }
 
+public protocol DJTransitionCommandSending: DJCommandSending {
+    func trigger(
+        _ action: DJControlAction,
+        requireVerification: Bool
+    ) async throws
+}
+
 public actor TransitionExecutor {
-    private let sender: any SeratoCommandSending
+    private let sender: any DJCommandSending
     private let frameGenerator: TransitionFrameGenerator
 
     public init(
-        sender: any SeratoCommandSending,
+        sender: any DJCommandSending,
         frameGenerator: TransitionFrameGenerator = TransitionFrameGenerator()
     ) {
         self.sender = sender
@@ -143,35 +150,70 @@ public actor TransitionExecutor {
             framesPerSecond: framesPerSecond
         )
         let duration = frames.last?.elapsed ?? 0
+        let speed = max(0.01, speedMultiplier)
+        let clock = ContinuousClock()
 
-        try await sender.trigger(.sync(deck: incomingDeck))
-        try await sender.trigger(.play(deck: incomingDeck))
+        try await trigger(.sync(deck: incomingDeck), requireVerification: false)
+        try await trigger(.play(deck: incomingDeck), requireVerification: true)
 
-        var previousElapsed: TimeInterval = 0
-        for frame in frames {
+        let startedAt = clock.now
+        let quantizationStep = 1.0 / 127.0
+        var lastSentValues: [DJControlAction: Double] = [:]
+        var processedFrames = 0
+
+        for (position, frame) in frames.enumerated() {
             try Task.checkCancellation()
-            let delay = max(0, frame.elapsed - previousElapsed) / max(0.01, speedMultiplier)
-            if delay > 0 {
-                try await Task.sleep(for: .seconds(delay))
-            }
-            for action in frame.values.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
-                if let value = frame.values[action] {
-                    try await sender.set(action, value: value)
+
+            let target = startedAt.advanced(by: .seconds(frame.elapsed / speed))
+            if position + 1 < frames.count {
+                let nextFrame = frames[position + 1]
+                let nextTarget = startedAt.advanced(by: .seconds(nextFrame.elapsed / speed))
+                if clock.now >= nextTarget {
+                    continue
                 }
             }
-            previousElapsed = frame.elapsed
+            if clock.now < target {
+                try await clock.sleep(until: target)
+            }
+
+            let isFinalFrame = position == frames.count - 1
+            for action in frame.values.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+                guard let value = frame.values[action] else { continue }
+                if !isFinalFrame,
+                   let previous = lastSentValues[action],
+                   abs(previous - value) < quantizationStep {
+                    continue
+                }
+                try await sender.set(action, value: value)
+                lastSentValues[action] = value
+            }
+            processedFrames += 1
         }
 
-        try await sender.trigger(.pause(deck: outgoingDeck))
+        try await trigger(.pause(deck: outgoingDeck), requireVerification: true)
         try await sender.set(.volume(deck: incomingDeck), value: 1)
         try await sender.set(.lowEQ(deck: incomingDeck), value: 1)
 
         return TransitionExecutionSummary(
-            frameCount: frames.count,
+            frameCount: processedFrames,
             duration: duration,
             outgoingDeck: outgoingDeck,
             incomingDeck: incomingDeck,
             completed: true
         )
+    }
+
+    private func trigger(
+        _ action: DJControlAction,
+        requireVerification: Bool
+    ) async throws {
+        if let controlledSender = sender as? any DJTransitionCommandSending {
+            try await controlledSender.trigger(
+                action,
+                requireVerification: requireVerification
+            )
+        } else {
+            try await sender.trigger(action)
+        }
     }
 }

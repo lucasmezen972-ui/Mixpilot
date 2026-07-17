@@ -14,7 +14,10 @@ public actor AutopilotEngine {
     public func load(tracks: [Track], plans: [TransitionPlan]) throws {
         guard !tracks.isEmpty else { throw AutopilotError.emptySet }
         guard plans.count == max(0, tracks.count - 1) else {
-            throw AutopilotError.invalidPlanCount(expected: max(0, tracks.count - 1), actual: plans.count)
+            throw AutopilotError.invalidPlanCount(
+                expected: max(0, tracks.count - 1),
+                actual: plans.count
+            )
         }
         self.tracks = tracks
         self.plans = plans
@@ -27,7 +30,9 @@ public actor AutopilotEngine {
 
     public func start() throws {
         guard !tracks.isEmpty else { throw AutopilotError.emptySet }
-        guard state == .idle || state == .paused else { throw AutopilotError.invalidState(state) }
+        guard state == .idle || state == .paused else {
+            throw AutopilotError.invalidState(state)
+        }
         state = .preflight
     }
 
@@ -63,11 +68,9 @@ public actor AutopilotEngine {
         case .loadingInitialTrack:
             state = .playing
         case .playing:
-            if currentIndex >= tracks.count - 1 {
-                state = .completed
-            } else {
-                state = .preloadingNextTrack
-            }
+            state = currentIndex >= tracks.count - 1
+                ? .completed
+                : .preloadingNextTrack
         case .preloadingNextTrack:
             state = .validatingNextTrack
         case .validatingNextTrack:
@@ -97,7 +100,9 @@ public actor AutopilotEngine {
         let completed = min(currentIndex, total)
         let current = tracks.indices.contains(currentIndex) ? tracks[currentIndex] : nil
         let next = tracks.indices.contains(currentIndex + 1) ? tracks[currentIndex + 1] : nil
-        let progress = total == 0 ? (state == .completed ? 1 : 0) : Double(completed) / Double(total)
+        let progress = total == 0
+            ? (state == .completed ? 1 : 0)
+            : Double(completed) / Double(total)
 
         return LiveSnapshot(
             state: state,
@@ -113,11 +118,10 @@ public actor AutopilotEngine {
     }
 
     private func handle(incident kind: IncidentKind) {
-        let incident = Incident(kind: kind, message: message(for: kind))
-        incidents.append(incident)
+        incidents.append(Incident(kind: kind, message: message(for: kind)))
 
-        switch kind {
-        case .audioSilence, .audioSourceLost, .internetLoss, .seratoUnavailable:
+        switch normalized(kind) {
+        case .audioSilence, .audioSourceLost, .internetLoss, .backendUnavailable:
             state = .emergencyPlayback
         case .slowLoad, .loadTimeout, .wrongTrack, .transitionMismatch,
              .audioClipping, .midiUnavailable, .powerDisconnected:
@@ -126,7 +130,14 @@ public actor AutopilotEngine {
             state = .manualControl
         case .emergencyPlayerFailure:
             state = .failed
+        case .seratoUnavailable:
+            state = .emergencyPlayback
         }
+    }
+
+    private func normalized(_ incident: IncidentKind) -> IncidentKind {
+        if incident == .seratoUnavailable { return .backendUnavailable }
+        return incident
     }
 
     private func markLastIncidentRecovered() {
@@ -135,41 +146,56 @@ public actor AutopilotEngine {
     }
 
     private func message(for incident: IncidentKind) -> String {
-        switch incident {
-        case .slowLoad: "Chargement lent : prolongation et nouvelle tentative"
-        case .loadTimeout: "Timeout de chargement : boucle de sécurité et titre alternatif"
-        case .wrongTrack: "Mauvais titre détecté : revalidation de la sélection"
-        case .transitionMismatch: "Transition incohérente : annulation et retour au deck actif"
-        case .internetLoss: "Internet indisponible : bascule vers le secours local"
-        case .audioSilence: "Silence critique : déclenchement du lecteur de secours"
-        case .audioSourceLost: "Source audio perdue : bascule vers le secours local"
-        case .audioClipping: "Saturation détectée : réduction contrôlée des niveaux"
-        case .midiUnavailable: "Port MIDI indisponible : récupération contrôlée"
-        case .seratoUnavailable: "Serato indisponible : lecture locale de secours"
-        case .powerDisconnected: "Alimentation débranchée : alerte et vérification batterie"
-        case .checkpointMismatch: "Checkpoint incompatible : reprise manuelle obligatoire"
-        case .emergencyPlayerFailure: "Lecteur de secours indisponible : arrêt sécurisé"
+        switch normalized(incident) {
+        case .slowLoad:
+            "Chargement lent : prolongation et nouvelle tentative"
+        case .loadTimeout:
+            "Délai de chargement dépassé : variante de secours et nouvelle vérification"
+        case .wrongTrack:
+            "Mauvais morceau détecté : revalidation de la sélection"
+        case .transitionMismatch:
+            "Transition incohérente : annulation et retour au deck actif"
+        case .internetLoss:
+            "Internet indisponible : le Live local continue avec les ressources préparées"
+        case .audioSilence:
+            "Silence critique : déclenchement de la musique de secours"
+        case .audioSourceLost:
+            "Source audio perdue : bascule vers la musique de secours"
+        case .audioClipping:
+            "Saturation détectée : réduction contrôlée des niveaux"
+        case .midiUnavailable:
+            "Connexion MIDI perdue : contrôle automatique suspendu"
+        case .backendUnavailable:
+            "Logiciel DJ indisponible : musique de secours et reprise manuelle"
+        case .powerDisconnected:
+            "Alimentation débranchée : alerte et vérification de la batterie"
+        case .checkpointMismatch:
+            "Dernier état incompatible : reprise manuelle obligatoire"
+        case .emergencyPlayerFailure:
+            "Musique de secours indisponible : arrêt sécurisé"
+        case .seratoUnavailable:
+            "Logiciel DJ indisponible : musique de secours et reprise manuelle"
         }
     }
 
     private func statusMessage(for state: AutopilotState) -> String {
         switch state {
         case .idle: "Prêt à charger un set"
-        case .preflight: "Vérifications avant lecture"
-        case .loadingInitialTrack: "Chargement du premier titre"
+        case .preflight: "Vérification du système"
+        case .loadingInitialTrack: "Chargement du premier morceau"
         case .playing: "Lecture en cours"
-        case .preloadingNextTrack: "Préchargement du titre suivant"
-        case .validatingNextTrack: "Validation du titre entrant"
+        case .preloadingNextTrack: "Préchargement du morceau suivant"
+        case .validatingNextTrack: "Confirmation du morceau entrant"
         case .waitingForTransition: "Attente du point de transition"
         case .transitioning: "Transition automatique"
-        case .validatingTransition: "Validation de la transition"
-        case .cleaningOutgoingDeck: "Nettoyage du deck sortant"
+        case .validatingTransition: "Vérification de la transition"
+        case .cleaningOutgoingDeck: "Préparation du deck suivant"
         case .recovering: "Récupération automatique"
-        case .emergencyPlayback: "Musique locale de secours"
-        case .paused: "Autopilot en pause"
+        case .emergencyPlayback: "Musique de secours"
+        case .paused: "Autopilote en pause"
         case .manualControl: "Contrôle manuel"
         case .completed: "Set terminé"
-        case .failed: "Échec du set"
+        case .failed: "Live arrêté en sécurité"
         }
     }
 }

@@ -38,18 +38,47 @@ public struct LiveRuntimeControlPolicy: Sendable {
     public func pauseDecision(phase: LiveRuntimePhase) -> LiveRuntimeCommandDecision {
         switch phase {
         case .playing, .waitingForTransition:
-            return .accept("Pause acceptée au prochain point sûr, sans couper le son en cours.")
+            return .accept("La pause sera appliquée au prochain point sûr, sans couper le morceau en cours.")
         case .paused:
-            return .accept("L’Autopilot est déjà en pause.")
+            return .accept("L’Autopilote est déjà en pause.")
         case .transitioning:
-            return .reject("Pause refusée pendant une courbe MIDI active. Termine la transition ou reprends le contrôle manuel.")
+            return .reject("La pause n’est pas disponible pendant une transition. Attends sa fin ou reprends la main.")
         case .manualControl:
-            return .reject("Le Mac est déjà en contrôle manuel.")
+            return .reject("Tu as déjà repris la main sur le Mac.")
         case .idle, .preflight, .loading, .preloading, .completed, .failed:
-            return .reject("La Pause n’est pas disponible dans l’état actuel du moteur.")
+            return .reject("La pause n’est pas disponible à cette étape du Live.")
         }
     }
 
+    public func resumeDecision(
+        pausedFrom phase: LiveRuntimePhase?,
+        backendMatchesCheckpoint: Bool,
+        deckMatchesCheckpoint: Bool,
+        midiReady: Bool,
+        audioWatchdogReady: Bool
+    ) -> LiveRuntimeCommandDecision {
+        guard let phase else {
+            return .reject("Aucun point de reprise sûr n’est disponible.")
+        }
+        guard phase != .transitioning else {
+            return .reject("La reprise automatique est bloquée car une transition avait été interrompue. Reprends la main et vérifie les decks.")
+        }
+        guard backendMatchesCheckpoint else {
+            return .reject("Le morceau visible dans le logiciel DJ ne correspond plus au dernier état confirmé.")
+        }
+        guard deckMatchesCheckpoint else {
+            return .reject("Le deck actif ne correspond plus au dernier état confirmé.")
+        }
+        guard midiReady else {
+            return .reject("Les commandes du logiciel DJ ne sont plus prêtes. Relance le test de connexion.")
+        }
+        guard audioWatchdogReady else {
+            return .reject("La surveillance audio n’est plus active. Réactive-la avant de reprendre.")
+        }
+        return .accept("La reprise est autorisée depuis le dernier point sûr.")
+    }
+
+    @available(*, deprecated, renamed: "resumeDecision(pausedFrom:backendMatchesCheckpoint:deckMatchesCheckpoint:midiReady:audioWatchdogReady:)")
     public func resumeDecision(
         pausedFrom phase: LiveRuntimePhase?,
         seratoMatchesCheckpoint: Bool,
@@ -57,25 +86,13 @@ public struct LiveRuntimeControlPolicy: Sendable {
         midiReady: Bool,
         audioWatchdogReady: Bool
     ) -> LiveRuntimeCommandDecision {
-        guard let phase else {
-            return .reject("Aucun checkpoint de pause n’est disponible.")
-        }
-        guard phase != .transitioning else {
-            return .reject("Reprise refusée : une courbe MIDI avait été interrompue.")
-        }
-        guard seratoMatchesCheckpoint else {
-            return .reject("Reprise refusée : le morceau visible dans Serato ne correspond pas au checkpoint.")
-        }
-        guard deckMatchesCheckpoint else {
-            return .reject("Reprise refusée : le deck interne ne correspond plus au checkpoint.")
-        }
-        guard midiReady else {
-            return .reject("Reprise refusée : le mapping MIDI n’est pas prêt.")
-        }
-        guard audioWatchdogReady else {
-            return .reject("Reprise refusée : la surveillance audio n’est pas active.")
-        }
-        return .accept("Reprise autorisée depuis le dernier point de synchronisation sûr.")
+        resumeDecision(
+            pausedFrom: phase,
+            backendMatchesCheckpoint: seratoMatchesCheckpoint,
+            deckMatchesCheckpoint: deckMatchesCheckpoint,
+            midiReady: midiReady,
+            audioWatchdogReady: audioWatchdogReady
+        )
     }
 
     public func skipDecision(
@@ -83,12 +100,12 @@ public struct LiveRuntimeControlPolicy: Sendable {
         incomingTrackVerified: Bool
     ) -> LiveRuntimeCommandDecision {
         guard phase == .waitingForTransition else {
-            return .reject("Transition suivante non modifiable dans l’état actuel.")
+            return .reject("La prochaine transition ne peut pas être modifiée à cette étape.")
         }
         guard incomingTrackVerified else {
-            return .reject("Skip refusé : le titre entrant n’est pas confirmé dans Serato.")
+            return .reject("Le morceau suivant n’a pas encore été confirmé dans le logiciel DJ.")
         }
-        return .accept("La transition planifiée sera remplacée par un Safe Fade contrôlé, sans changer de titre.")
+        return .accept("La transition prévue sera remplacée par un fondu de secours, sans changer de morceau.")
     }
 
     public func safeReplacement(for plan: TransitionPlan) -> TransitionPlan {
@@ -101,7 +118,7 @@ public struct LiveRuntimeControlPolicy: Sendable {
                 bars: safe.bars,
                 targetBPM: plan.targetBPM,
                 confidence: max(plan.confidence, safe.confidence),
-                reasons: plan.reasons + ["Transition remplacée à distance par un Safe Fade contrôlé"],
+                reasons: plan.reasons + ["Transition remplacée par un fondu de secours contrôlé"],
                 lanes: safe.lanes
             )
         }

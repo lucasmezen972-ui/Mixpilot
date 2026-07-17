@@ -1,58 +1,10 @@
 import Foundation
 
-public enum SeratoAction: String, Codable, CaseIterable, Identifiable, Sendable {
-    case playA
-    case playB
-    case pauseA
-    case pauseB
-    case cueA
-    case cueB
-    case syncA
-    case syncB
-    case loadA
-    case loadB
-    case browserUp
-    case browserDown
-    case browserFocus
-    case volumeA
-    case volumeB
-    case crossfader
-    case lowEQA
-    case lowEQB
-    case midEQA
-    case midEQB
-    case highEQA
-    case highEQB
-    case filterA
-    case filterB
-    case pitchA
-    case pitchB
-    case echoA
-    case echoB
-    case echoAmountA
-    case echoAmountB
-    case loopA
-    case loopB
-    case exitLoopA
-    case exitLoopB
-
-    public var id: String { rawValue }
-
-    public static func play(deck: DeckID) -> Self { deck == .a ? .playA : .playB }
-    public static func pause(deck: DeckID) -> Self { deck == .a ? .pauseA : .pauseB }
-    public static func cue(deck: DeckID) -> Self { deck == .a ? .cueA : .cueB }
-    public static func sync(deck: DeckID) -> Self { deck == .a ? .syncA : .syncB }
-    public static func load(deck: DeckID) -> Self { deck == .a ? .loadA : .loadB }
-    public static func volume(deck: DeckID) -> Self { deck == .a ? .volumeA : .volumeB }
-    public static func lowEQ(deck: DeckID) -> Self { deck == .a ? .lowEQA : .lowEQB }
-    public static func filter(deck: DeckID) -> Self { deck == .a ? .filterA : .filterB }
-    public static func echo(deck: DeckID) -> Self { deck == .a ? .echoA : .echoB }
-    public static func echoAmount(deck: DeckID) -> Self { deck == .a ? .echoAmountA : .echoAmountB }
-
-    /// Commands required by the current unattended runtime. Crossfader and Echo
-    /// are intentionally absent because every transition now has a volume-fader
-    /// fallback and unverified Serato XML targets must not be guessed.
-    public static let automaticPresetCriticalActions: Set<SeratoAction> = [
+public extension DJControlAction {
+    /// Commands required by the unattended runtime. Crossfader and effects are
+    /// intentionally absent because every transition must keep a verified
+    /// volume/EQ fallback when a backend cannot guarantee those controls.
+    static let automaticPresetCriticalActions: Set<DJControlAction> = [
         .playA, .playB, .pauseA, .pauseB,
         .syncA, .syncB,
         .loadA, .loadB,
@@ -62,6 +14,9 @@ public enum SeratoAction: String, Codable, CaseIterable, Identifiable, Sendable 
         .filterA, .filterB,
     ]
 }
+
+@available(*, deprecated, renamed: "DJControlAction")
+public typealias SeratoAction = DJControlAction
 
 public enum MIDIMessageKind: String, Codable, Sendable {
     case note
@@ -104,10 +59,14 @@ public struct MIDIMessageMapping: Codable, Hashable, Sendable {
 }
 
 public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
-    public static let currentSchemaVersion = 1
-    public static let confirmationDefaultsKey = "MixPilotMappingConfirmationsV1"
-    public static let automaticPresetActionsDefaultsKey = "MixPilotAutomaticSeratoPresetActionsV1"
-    public static let automaticPresetVersionDefaultsKey = "MixPilotAutomaticSeratoPresetVersionV1"
+    public static let currentSchemaVersion = 2
+    public static let confirmationDefaultsKey = "MixPilotMappingConfirmationsV2"
+    public static let automaticPresetActionsDefaultsKey = "MixPilotAutomaticPresetActionsV2"
+    public static let automaticPresetVersionDefaultsKey = "MixPilotAutomaticPresetVersionV2"
+
+    public static let legacyConfirmationDefaultsKey = "MixPilotMappingConfirmationsV1"
+    public static let legacyAutomaticPresetActionsDefaultsKey = "MixPilotAutomaticSeratoPresetActionsV1"
+    public static let legacyAutomaticPresetVersionDefaultsKey = "MixPilotAutomaticSeratoPresetVersionV1"
 
     public let id: UUID
     public var schemaVersion: Int
@@ -132,7 +91,7 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
         self.updatedAt = updatedAt
     }
 
-    public subscript(action: SeratoAction) -> MIDIMessageMapping? {
+    public subscript(action: DJControlAction) -> MIDIMessageMapping? {
         get { mappings[action.rawValue] }
         set {
             mappings[action.rawValue] = newValue
@@ -141,9 +100,9 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var configuredRatio: Double {
-        guard !SeratoAction.allCases.isEmpty else { return 1 }
-        let configured = SeratoAction.allCases.filter { self[$0] != nil }.count
-        return Double(configured) / Double(SeratoAction.allCases.count)
+        guard !DJControlAction.allCases.isEmpty else { return 1 }
+        let configured = DJControlAction.allCases.filter { self[$0] != nil }.count
+        return Double(configured) / Double(DJControlAction.allCases.count)
     }
 
     public var confirmationRatio: Double {
@@ -154,16 +113,15 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
         Self.automaticPresetCoverageRatio(defaults: .standard)
     }
 
-    /// A mapping is considered configured either when all actions were confirmed
-    /// manually, or when every critical unattended-Live action is present in the
-    /// versioned preset installed by MixPilot. Preset installation remains an
-    /// AUTOMATED_SUCCESS, not proof of a real Serato reaction.
+    /// Installation proves that a versioned profile contains the required
+    /// messages. It never proves that the selected DJ software or controller
+    /// reacted correctly; real confirmation remains stored separately.
     public var completionRatio: Double {
         min(configuredRatio, max(confirmationRatio, automaticPresetCoverageRatio))
     }
 
     public static func recordAutomaticPresetInstallation(
-        supportedActions: [SeratoAction],
+        supportedActions: [DJControlAction],
         version: String,
         defaults: UserDefaults = .standard
     ) {
@@ -174,27 +132,35 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     public static func clearAutomaticPresetInstallation(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: automaticPresetActionsDefaultsKey)
         defaults.removeObject(forKey: automaticPresetVersionDefaultsKey)
+        defaults.removeObject(forKey: legacyAutomaticPresetActionsDefaultsKey)
+        defaults.removeObject(forKey: legacyAutomaticPresetVersionDefaultsKey)
     }
 
     public static func automaticPresetCoverageRatio(defaults: UserDefaults) -> Double {
-        let required = SeratoAction.automaticPresetCriticalActions
+        let required = DJControlAction.automaticPresetCriticalActions
         guard !required.isEmpty else { return 1 }
-        let installed = Set(defaults.stringArray(forKey: automaticPresetActionsDefaultsKey) ?? [])
+        let installed = Set(
+            defaults.stringArray(forKey: automaticPresetActionsDefaultsKey)
+                ?? defaults.stringArray(forKey: legacyAutomaticPresetActionsDefaultsKey)
+                ?? []
+        )
         let covered = required.filter { installed.contains($0.rawValue) }.count
         return Double(covered) / Double(required.count)
     }
 
     public static func manualConfirmationRatio(defaults: UserDefaults) -> Double {
-        guard !SeratoAction.allCases.isEmpty else { return 1 }
-        let confirmations = defaults.dictionary(forKey: confirmationDefaultsKey) as? [String: Bool] ?? [:]
-        let confirmed = SeratoAction.allCases.filter { confirmations[$0.rawValue] == true }.count
-        return Double(confirmed) / Double(SeratoAction.allCases.count)
+        guard !DJControlAction.allCases.isEmpty else { return 1 }
+        let confirmations = defaults.dictionary(forKey: confirmationDefaultsKey) as? [String: Bool]
+            ?? defaults.dictionary(forKey: legacyConfirmationDefaultsKey) as? [String: Bool]
+            ?? [:]
+        let confirmed = DJControlAction.allCases.filter { confirmations[$0.rawValue] == true }.count
+        return Double(confirmed) / Double(DJControlAction.allCases.count)
     }
 
     public static var developmentDefault: MIDIMappingProfile {
         var profile = MIDIMappingProfile(name: "MixPilot Development Default")
 
-        let notes: [(SeratoAction, UInt8)] = [
+        let notes: [(DJControlAction, UInt8)] = [
             (.playA, 60), (.playB, 61), (.pauseA, 62), (.pauseB, 63),
             (.cueA, 64), (.cueB, 65), (.syncA, 66), (.syncB, 67),
             (.loadA, 68), (.loadB, 69), (.browserUp, 70), (.browserDown, 71),
@@ -205,7 +171,7 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
             profile[action] = MIDIMessageMapping(kind: .note, number: note, isMomentary: true)
         }
 
-        let controls: [(SeratoAction, UInt8, UInt8, UInt8)] = [
+        let controls: [(DJControlAction, UInt8, UInt8, UInt8)] = [
             (.crossfader, 10, 0, 127),
             (.volumeA, 11, 0, 127), (.volumeB, 12, 0, 127),
             (.lowEQA, 20, 0, 64), (.lowEQB, 21, 0, 64),
@@ -227,10 +193,13 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public protocol SeratoCommandSending: Sendable {
-    func trigger(_ action: SeratoAction) async throws
-    func set(_ action: SeratoAction, value: Double) async throws
+public protocol DJCommandSending: Sendable {
+    func trigger(_ action: DJControlAction) async throws
+    func set(_ action: DJControlAction, value: Double) async throws
 }
+
+@available(*, deprecated, renamed: "DJCommandSending")
+public typealias SeratoCommandSending = DJCommandSending
 
 private extension Comparable {
     func clamped(to limits: ClosedRange<Self>) -> Self {

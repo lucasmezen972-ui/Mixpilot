@@ -1,15 +1,18 @@
 #if os(macOS)
 import Foundation
+import MixPilotCore
 import MixPilotMIDI
 import MixPilotSystem
 
 private struct HardwareProbeReport: Codable {
     var generatedAt: Date
-    var seratoRunning: Bool
-    var seratoProcessIdentifier: Int32?
+    var backend: DJBackendIdentifier
+    var backendDisplayName: String
+    var softwareVersion: String?
+    var softwareRunning: Bool
+    var processIdentifier: Int32?
     var accessibilityGranted: Bool
-    var audioPermission: String
-    var seratoWindowTitle: String?
+    var windowTitle: String?
     var visibleTextCount: Int
     var libraryRowCount: Int
     var virtualMIDIPortCreated: Bool
@@ -18,26 +21,60 @@ private struct HardwareProbeReport: Codable {
     var audioSampleCount: Int
     var connectedToPower: Bool
     var batteryLevel: Double?
+    var warnings: [String]
     var failures: [String]
 
     var succeeded: Bool { failures.isEmpty }
+}
+
+private final class AudioSampleCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func read() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }
 
 @main
 @MainActor
 struct MixPilotHardwareProbeCLI {
     static func main() async {
+        guard let backend = selectedBackend() else {
+            print("Usage: MixPilotHardwareProbeCLI --backend djay|rekordbox|serato [--strict]")
+            exit(2)
+        }
+
         let strict = CommandLine.arguments.contains("--strict")
+        var warnings: [String] = []
         var failures: [String] = []
 
-        let environment = SeratoEnvironmentProbe().probe()
-        if strict && !environment.isRunning { failures.append("Serato DJ Pro n'est pas lancé") }
-        if strict && !environment.accessibilityGranted { failures.append("Accessibilité non autorisée") }
+        let environment = DJApplicationEnvironmentDetector().detect(backend)
+        if strict && !environment.isRunning {
+            failures.append("\(backend.displayName) n’est pas lancé")
+        }
 
-        let bridge = SeratoAccessibilityBridge()
-        let observation = bridge.observe(maxDepth: 6, maximumStrings: 500)
-        let rows = bridge.libraryRows(maxRows: 1_000)
-        if strict && rows.isEmpty { failures.append("Aucune ligne de bibliothèque Serato accessible") }
+        let bridge = DJAccessibilityBridge()
+        let observation = bridge.observe(
+            backend: backend,
+            maxDepth: 6,
+            maximumStrings: 500
+        )
+        let rows = bridge.libraryRows(backend: backend, maxRows: 1_000)
+        if strict && !observation.accessibilityGranted {
+            failures.append("L’autorisation Accessibilité n’est pas accordée")
+        }
+        if rows.isEmpty {
+            warnings.append("Aucune ligne de bibliothèque visible ; utilise une playlist de test ou l’import documenté du backend")
+        }
 
         var midiCreated = false
         var midiPublication: MIDIPublicationDiagnostic?
@@ -46,46 +83,56 @@ struct MixPilotHardwareProbeCLI {
             let diagnostic = controller.publicationDiagnostic()
             midiPublication = diagnostic
             midiCreated = diagnostic.sourcePublished
-            if strict && !diagnostic.isReadyForSerato {
-                failures.append("Publication CoreMIDI incomplète : \(diagnostic.summary)")
+            if strict && backend != .djay && !diagnostic.sourcePublished {
+                failures.append("Le contrôleur MIDI virtuel n’est pas publié")
             }
         } catch {
-            failures.append("Port MIDI virtuel : \(error.localizedDescription)")
+            let message = "Le contrôleur MIDI virtuel n’a pas pu être créé"
+            if strict && backend != .djay {
+                failures.append(message)
+            } else {
+                warnings.append(message)
+            }
         }
 
+        let sampleCounter = AudioSampleCounter()
         let audioMonitor = AudioLevelMonitor()
-        var audioSamples = 0
         var audioStarted = false
         do {
-            try audioMonitor.start { _ in audioSamples += 1 }
+            try audioMonitor.start { _ in sampleCounter.increment() }
             audioStarted = true
             try? await Task.sleep(for: .seconds(1.2))
             audioMonitor.stop()
-            if strict && audioSamples == 0 { failures.append("Aucun échantillon de niveau audio reçu") }
+            if strict && sampleCounter.read() == 0 {
+                failures.append("Aucun niveau audio n’a été observé")
+            }
         } catch {
-            failures.append("Surveillance audio : \(error.localizedDescription)")
+            failures.append("La surveillance audio n’a pas pu démarrer")
         }
 
         let power = PowerStatusProbe().read()
         if strict && !power.connectedToPower {
-            failures.append("Le Mac n'est pas branché au secteur")
+            failures.append("Le Mac n’est pas branché au secteur")
         }
 
         let report = HardwareProbeReport(
             generatedAt: Date(),
-            seratoRunning: environment.isRunning,
-            seratoProcessIdentifier: environment.processIdentifier,
-            accessibilityGranted: environment.accessibilityGranted,
-            audioPermission: environment.audioPermission,
-            seratoWindowTitle: observation.windowTitle,
+            backend: backend,
+            backendDisplayName: backend.displayName,
+            softwareVersion: environment.softwareVersion,
+            softwareRunning: environment.isRunning,
+            processIdentifier: environment.processIdentifier,
+            accessibilityGranted: observation.accessibilityGranted,
+            windowTitle: observation.windowTitle,
             visibleTextCount: observation.visibleText.count,
             libraryRowCount: rows.count,
             virtualMIDIPortCreated: midiCreated,
             midiPublication: midiPublication,
             audioMonitorStarted: audioStarted,
-            audioSampleCount: audioSamples,
+            audioSampleCount: sampleCounter.read(),
             connectedToPower: power.connectedToPower,
             batteryLevel: power.batteryLevel,
+            warnings: warnings,
             failures: failures
         )
 
@@ -95,11 +142,20 @@ struct MixPilotHardwareProbeCLI {
             encoder.dateEncodingStrategy = .iso8601
             print(String(decoding: try encoder.encode(report), as: UTF8.self))
         } catch {
-            print("{\"encodingError\":\"\(error.localizedDescription)\"}")
+            print("{\"encodingError\":\"hardware_probe_report_failed\"}")
             exit(2)
         }
 
         if strict && !report.succeeded { exit(1) }
+    }
+
+    private static func selectedBackend() -> DJBackendIdentifier? {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--backend"),
+              arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return DJBackendIdentifier(rawValue: arguments[index + 1].lowercased())
     }
 }
 #else

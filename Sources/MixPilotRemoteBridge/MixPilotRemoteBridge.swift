@@ -1,6 +1,7 @@
 #if os(macOS)
 import Combine
 import Foundation
+import MixPilotRemoteProtocol
 import Network
 
 private final class MixPilotRemoteClientSession: @unchecked Sendable {
@@ -10,6 +11,7 @@ private final class MixPilotRemoteClientSession: @unchecked Sendable {
     var deviceName: String?
     var authenticated = false
     var subscribed = false
+    var protocolVersion = MixPilotRemoteProtocolVersion.minimumSupported
 
     private let queue: DispatchQueue
     private var closed = false
@@ -242,10 +244,17 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             return
         }
 
-        guard message.version == 1 else {
-            send(.simple("error", message: "Version du protocole non compatible."), to: session)
+        guard MixPilotRemoteProtocolVersion.supports(message.version) else {
+            send(
+                .simple(
+                    "error",
+                    message: "Version du protocole non compatible. Versions acceptées : \(MixPilotRemoteProtocolVersion.minimumSupported) à \(MixPilotRemoteProtocolVersion.current)."
+                ),
+                to: session
+            )
             return
         }
+        session.protocolVersion = message.version
 
         switch message.type {
         case "hello":
@@ -381,7 +390,15 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
 
     private func send(_ message: MixPilotRemoteServerMessage, to session: MixPilotRemoteClientSession) {
         do {
-            let data = try encoder.encode(message)
+            let compatibleMessage = MixPilotRemoteServerMessage(
+                version: session.protocolVersion,
+                type: message.type,
+                message: message.message,
+                sessionToken: message.sessionToken,
+                snapshot: message.snapshot,
+                acknowledgement: message.acknowledgement
+            )
+            let data = try encoder.encode(compatibleMessage)
             session.send(data)
         } catch {
             status = "Erreur d’encodage distante : \(error.localizedDescription)"

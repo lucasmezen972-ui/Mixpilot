@@ -6,19 +6,24 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    SWIFT_VERSION: 5.0
+    SWIFT_VERSION: 6.0
     IPHONEOS_DEPLOYMENT_TARGET: 17.0
     TARGETED_DEVICE_FAMILY: "1"
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.3.0
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+packages:
+  MixPilotRemoteProtocol:
+    path: ../../Shared/RemoteProtocolV2
 targets:
   MixPilotRemote:
     type: application
     platform: iOS
     sources:
       - path: Sources
+    dependencies:
+      - package: MixPilotRemoteProtocol
     info:
       path: Sources/Info.plist
     settings:
@@ -28,11 +33,31 @@ targets:
         PRODUCT_MODULE_NAME: MixPilotRemote
         DEFINES_MODULE: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+  MixPilotRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: XcodeTests
+    dependencies:
+      - target: MixPilotRemote
+      - package: MixPilotRemoteProtocol
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
+        PRODUCT_NAME: MixPilot Remote Tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   MixPilotRemote:
     build:
       targets:
         MixPilotRemote: all
+        MixPilotRemoteTests: [test]
+    test:
+      gatherCoverageData: true
+      targets:
+        - name: MixPilotRemoteTests
     run:
       config: Debug
     archive:

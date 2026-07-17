@@ -1,46 +1,125 @@
 # MixPilot Remote pour iPhone
 
-MixPilot Remote est une application iOS 17 isolée du moteur macOS. Elle surveille MixPilot sur le réseau local et envoie uniquement des intentions de haut niveau. Le Mac reste la source de vérité et le seul composant autorisé à contrôler Serato ou à envoyer du MIDI.
+MixPilot Remote supervise le Live MixPilot sur le réseau local avec **djay Pro**, **rekordbox** ou **Serato DJ Pro**.
 
-## Fonctions présentes
+L’application iPhone ne pilote jamais directement le logiciel DJ. Le Mac reste l’unique source de vérité et le seul composant autorisé à :
 
-- découverte Bonjour `_mixpilot._tcp` ;
-- connexion WebSocket locale Remote Protocol v1 ;
-- appairage par code à six chiffres ;
-- jeton stocké dans le Trousseau iOS ;
-- affichage du morceau actuel, du prochain titre, de la transition et des alertes ;
-- snapshots séquencés ;
-- rejet des snapshots anciens et dupliqués, y compris après reconnexion ;
-- état de déconnexion visible ;
-- confirmation des commandes critiques ;
-- mode démo clairement identifié comme simulation.
+- envoyer des commandes MIDI ;
+- lire les capacités du backend actif ;
+- vérifier l’état du Live ;
+- accepter ou refuser une commande distante ;
+- déclencher les protections locales ;
+- rendre le contrôle manuel.
 
-## Commandes RC2
+## Ce que l’iPhone affiche
 
-- **Reprendre le contrôle manuel** : implémentée et idempotente ;
-- **Pause** : demande une pause coopérative au prochain point sûr ;
-- **Reprendre** : le Mac revalide Serato, le checkpoint, le MIDI et le watchdog ;
-- **Skip Transition** : ne saute pas de titre ; la transition suivante vers le même morceau devient un Safe Fade contrôlé ;
-- **Safe Fade direct** : reste verrouillé tant que le routage audio réel n’est pas validé.
+- backend actif et version du logiciel ;
+- mode utilisé ;
+- morceau actuel et morceau suivant ;
+- deck actif ;
+- progression ;
+- transition prévue ;
+- état audio ;
+- alertes ;
+- fonctions temporairement dégradées.
 
-Une commande refusée par le Mac affiche le refus exact ; l’app ne simule jamais un succès.
+Les données musicales sont envoyées uniquement sur le réseau local vers l’appareil appairé. Elles ne sont pas transmises aux services en ligne par ce protocole.
 
-## Isolation
+## Commandes visibles
 
-Le projet XcodeGen se trouve uniquement dans :
+L’interface utilise des formulations produit :
+
+- **Mettre en pause** ;
+- **Reprendre** ;
+- **Changer la prochaine transition** ;
+- **Transition de secours** ;
+- **Reprendre la main**.
+
+Le protocole interne conserve des intentions de haut niveau. Il ne contient aucun message MIDI brut.
+
+Une commande peut être refusée lorsque :
+
+- le backend actif ne fournit pas la capacité ;
+- le Live n’est pas dans un état sûr ;
+- la commande est trop ancienne ;
+- son identifiant a déjà été traité ;
+- le Mac ne peut pas confirmer l’effet attendu ;
+- une protection locale est active.
+
+L’iPhone affiche le refus du Mac sans simuler de réussite.
+
+## Perte de connexion
+
+Une perte de Wi-Fi, la fermeture de l’application ou l’extinction de l’iPhone :
+
+- ne met pas le Live en pause ;
+- ne change pas la transition ;
+- ne déclenche pas le secours ;
+- n’envoie aucune commande implicite ;
+- ne modifie pas le backend actif.
+
+Le Mac continue selon son état local ou rend la main selon ses propres protections.
+
+## Protocole partagé
+
+Le contrat versionné se trouve dans :
 
 ```text
-Mobile/MixPilotRemote
+Shared/RemoteProtocolV2
 ```
 
-Le moteur Swift macOS ne dépend pas du projet iOS. Les modèles Remote testables utilisent les mêmes fichiers Swift que l’application, via le package SwiftPM local.
+Il est compilé par :
 
-## Générer et compiler
+- le bridge macOS ;
+- l’application iPhone ;
+- les tests de contrat.
+
+Remote v2 ajoute notamment :
+
+- backend actif ;
+- version du logiciel ;
+- mode du backend ;
+- deck actif ;
+- état audio ;
+- liste des capacités dégradées.
+
+Le décodeur reste compatible avec les snapshots Remote v1 pendant la migration. Un ancien snapshot ne peut toutefois pas inventer un backend absent de son format.
+
+## Réseau et appairage
+
+- découverte Bonjour `_mixpilot._tcp` ;
+- connexion WebSocket locale ;
+- code à six chiffres limité dans le temps ;
+- jeton d’appairage stocké dans le Trousseau iOS ;
+- appareil principal autorisé à demander des commandes ;
+- appareils secondaires en lecture seule ;
+- snapshots ordonnés ;
+- snapshots anciens ou dupliqués refusés ;
+- commandes dédupliquées par UUID.
+
+Le code d’appairage et les jetons ne doivent jamais apparaître dans les diagnostics ou les services en ligne.
+
+## Mode démo
+
+Le mode démo permet d’explorer l’interface sans Mac.
+
+Il est toujours présenté comme une simulation :
+
+- aucun logiciel DJ n’est contacté ;
+- aucune commande n’est envoyée ;
+- aucune validation matérielle n’est créée.
+
+## Générer le projet
 
 ```bash
 brew install xcodegen
 cd Mobile/MixPilotRemote
 xcodegen generate
+```
+
+## Compiler pour le simulateur
+
+```bash
 xcodebuild \
   -project MixPilotRemote.xcodeproj \
   -scheme MixPilotRemote \
@@ -50,32 +129,53 @@ xcodebuild \
   build
 ```
 
-Pour installer sur un iPhone physique, sélectionner une équipe de signature dans Xcode.
+Pour un iPhone physique, sélectionner une équipe de signature dans Xcode.
 
-## Tests de contrat
+## Tests
+
+### Contrat partagé et logique de séquence
 
 ```bash
 cd Mobile/MixPilotRemote
 swift test --parallel
 ```
 
-Ces tests décodent les fixtures partagées de `Shared/RemoteProtocolV1/Fixtures` et vérifient également l’ordre strict des snapshots.
+Ces tests portables vérifient notamment :
 
-## Sécurité
+- encodage et décodage Remote v2 ;
+- compatibilité de décodage avec un snapshot v1 ;
+- ordre strict des snapshots ;
+- refus des doublons ;
+- reprise d’un nouveau flux après redémarrage du bridge Mac ;
+- conservation du backend et des capacités dégradées ;
+- absence de commande MIDI brute.
 
-- réseau local uniquement ;
-- aucun MIDI brut ;
-- code d’appairage limité dans le temps ;
-- jeton 256 bits dans le Trousseau ;
-- appareil principal et appareils secondaires en lecture seule ;
-- UUID de commande dédupliqués ;
-- commandes anciennes refusées ;
-- aucune modification du Live Mac lors d’une perte Wi-Fi ou de la fermeture de l’app ;
-- aucun jeton, code réel ou mot de passe dans les logs.
+### Application iPhone
 
-## Validation
+Après génération XcodeGen, exécuter la cible `MixPilotRemoteTests` sur un simulateur iPhone disponible :
 
-- XcodeGen et build iOS Simulator : `AUTOMATED_SUCCESS` ;
-- contrats Remote v1 et ordre des snapshots : `AUTOMATED_SUCCESS` ;
-- découverte, appairage et perte Wi-Fi sur appareils physiques : `REQUIRES_DEVICE_VALIDATION` ;
-- concordance avec Serato réel : `REQUIRES_SERATO_VALIDATION`.
+```bash
+xcodebuild \
+  -project MixPilotRemote.xcodeproj \
+  -scheme MixPilotRemote \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+  CODE_SIGNING_ALLOWED=NO \
+  test
+```
+
+La CI choisit automatiquement un simulateur iPhone disponible. Les tests de l’application vérifient notamment que les commandes du mode démo restent locales et conservent le backend, le deck actif et l’état audio.
+
+## Validation réelle nécessaire
+
+Les tests automatisés ne valident pas :
+
+- Bonjour entre deux appareils physiques ;
+- changement de réseau ;
+- mise en veille de l’iPhone ;
+- appairage sur plusieurs appareils ;
+- perte puis reprise du WebSocket ;
+- concordance avec le backend DJ réel ;
+- comportement pendant un Live de longue durée.
+
+Ces scénarios restent `REQUIRES_DEVICE_VALIDATION` jusqu’à leur exécution sur le Mac et l’iPhone cibles.

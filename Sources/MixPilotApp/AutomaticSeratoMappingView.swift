@@ -8,153 +8,255 @@ struct AutomaticSeratoMappingView: View {
     @StateObject private var session = AutomaticSeratoMappingSession()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Mapping Serato automatique")
-                            .font(.largeTitle.bold())
-                        Text("MixPilot ferme Serato, sauvegarde les anciens fichiers, installe son preset puis relance Serato. Aucun bouton à mapper ni à valider un par un.")
-                            .foregroundStyle(.secondary)
+        ZStack {
+            MixPilotPremiumBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    MixPilotSectionHero(
+                        eyebrow: "Installation guidée",
+                        title: "Mapping Serato automatique",
+                        subtitle: "Sauvegarde l’existant, installe le preset MixPilot, vérifie les fichiers et prépare la relance de Serato dans un parcours réversible.",
+                        symbol: "wand.and.stars",
+                        accent: stateColor
+                    ) {
+                        MixPilotStatusBadge(
+                            title: trustLabel,
+                            symbol: stateSymbol,
+                            accent: stateColor
+                        )
                     }
-                    Spacer()
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 42))
-                }
 
-                GroupBox("Installation en un clic") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: stateSymbol)
-                                .font(.title)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(session.status).font(.headline)
-                                Text(session.detail).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if session.isWorking { ProgressView() }
-                        }
+                    MixPilotGlassCard(accent: stateColor, elevation: .elevated) {
+                        VStack(alignment: .leading, spacing: 17) {
+                            HStack(alignment: .center, spacing: 15) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .fill(stateColor.opacity(0.13))
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .strokeBorder(stateColor.opacity(0.24), lineWidth: 1)
+                                    Image(systemName: stateSymbol)
+                                        .font(.system(size: 29, weight: .semibold))
+                                        .foregroundStyle(stateColor)
+                                }
+                                .frame(width: 66, height: 66)
 
-                        HStack {
-                            Button(session.isWorking ? "Installation en cours…" : "INSTALLER AUTOMATIQUEMENT") {
-                                session.install(profile: model.mappingProfile) {
-                                    model.resetDefaultMapping()
-                                    model.refreshEnvironment()
-                                    model.evaluatePreflight()
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(session.status)
+                                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                                        .tracking(-0.2)
+                                    Text(session.detail)
+                                        .font(.callout)
+                                        .foregroundStyle(MixPilotPalette.textSecondary)
+                                        .lineSpacing(2)
+                                }
+                                Spacer()
+                                if session.isWorking {
+                                    ProgressView()
+                                        .controlSize(.large)
+                                        .tint(stateColor)
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .disabled(session.isWorking)
 
-                            Button("Vérifier") {
-                                session.refresh(profile: model.mappingProfile)
-                                model.evaluatePreflight()
-                            }
-                            .disabled(session.isWorking)
+                            HStack(spacing: 10) {
+                                Button(session.isWorking ? "INSTALLATION EN COURS…" : "INSTALLER AUTOMATIQUEMENT") {
+                                    session.install(profile: model.mappingProfile) {
+                                        model.resetDefaultMapping()
+                                        model.refreshEnvironment()
+                                        model.evaluatePreflight()
+                                    }
+                                }
+                                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .purple))
+                                .disabled(session.isWorking)
 
-                            Button("Ouvrir le dossier Serato") {
-                                NSWorkspace.shared.activateFileViewerSelecting([
-                                    URL(fileURLWithPath: session.installationDirectory)
-                                ])
-                            }
-                            .disabled(session.isWorking)
-
-                            Spacer()
-
-                            Button("Restaurer l’ancien mapping", role: .destructive) {
-                                session.rollback(profile: model.mappingProfile) {
-                                    model.resetDefaultMapping()
-                                    model.refreshEnvironment()
+                                Button("VÉRIFIER") {
+                                    session.refresh(profile: model.mappingProfile)
                                     model.evaluatePreflight()
                                 }
+                                .buttonStyle(MixPilotSecondaryButtonStyle())
+                                .disabled(session.isWorking)
+
+                                Button("OUVRIR LE DOSSIER") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([
+                                        URL(fileURLWithPath: session.installationDirectory)
+                                    ])
+                                }
+                                .buttonStyle(MixPilotSecondaryButtonStyle())
+                                .disabled(session.isWorking)
+
+                                Spacer()
+
+                                Button("RESTAURER L’ANCIEN MAPPING") {
+                                    session.rollback(profile: model.mappingProfile) {
+                                        model.resetDefaultMapping()
+                                        model.refreshEnvironment()
+                                        model.evaluatePreflight()
+                                    }
+                                }
+                                .buttonStyle(MixPilotDangerButtonStyle())
+                                .disabled(session.isWorking)
                             }
-                            .disabled(session.isWorking)
                         }
                     }
-                    .padding(8)
-                }
 
-                GroupBox("Ce que MixPilot fait réellement") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        validationLine("Crée `~/Music/_Serato_/MIDI/Xml` si nécessaire", symbol: "folder.badge.plus")
-                        validationLine("Sauvegarde `AUTO_SAVE.xml` et tout ancien preset MixPilot", symbol: "externaldrive.badge.timemachine")
-                        validationLine("Installe `MixPilot Autopilot.xml` et `AUTO_SAVE.xml`", symbol: "doc.badge.gearshape")
-                        validationLine("Vérifie que les deux fichiers sont identiques et que le XML est valide", symbol: "checkmark.shield")
-                        validationLine("Relance Serato automatiquement", symbol: "arrow.clockwise")
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 330), spacing: 16)], spacing: 16) {
+                        MixPilotGlassCard(accent: .cyan) {
+                            VStack(alignment: .leading, spacing: 13) {
+                                MixPilotPanelTitle(
+                                    title: "Ce que MixPilot fait",
+                                    symbol: "gearshape.2.fill",
+                                    subtitle: "Chaque étape est contrôlée et réversible.",
+                                    accent: .cyan
+                                )
+                                MixPilotSectionDivider(accent: .cyan)
+                                installationStep("Crée le dossier MIDI XML si nécessaire", "folder.badge.plus")
+                                installationStep("Sauvegarde AUTO_SAVE.xml et les anciens presets", "externaldrive.badge.timemachine")
+                                installationStep("Installe le preset MixPilot et son chargement automatique", "doc.badge.gearshape")
+                                installationStep("Compare les fichiers et valide la structure XML", "checkmark.shield.fill")
+                                installationStep("Prépare la relance de Serato", "arrow.clockwise")
+                            }
+                        }
+
+                        MixPilotGlassCard(accent: .orange) {
+                            VStack(alignment: .leading, spacing: 13) {
+                                MixPilotPanelTitle(
+                                    title: "Niveau de confiance",
+                                    symbol: "checkmark.shield.fill",
+                                    subtitle: "Automatique ne signifie pas validé sur chaque Mac.",
+                                    accent: .orange
+                                )
+                                MixPilotSectionDivider(accent: .orange)
+                                confidenceRow("Installation des fichiers", "AUTOMATED_SUCCESS", .green)
+                                confidenceRow("Structure XML", "REAL_MAPPING_SOURCES", .green)
+                                confidenceRow("Réaction Serato", "DEVICE_VALIDATION", .orange)
+                                confidenceRow("Crossfader / Echo exact", "PLATFORM_LIMIT", .red)
+                                MixPilotNotice(
+                                    title: "Stratégie conservatrice",
+                                    message: "Le moteur utilise aussi les volumes des decks afin de ne pas dépendre uniquement du crossfader.",
+                                    kind: .warning
+                                )
+                            }
+                        }
                     }
-                    .padding(8)
-                }
 
-                GroupBox("Statut de confiance") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        statusRow("Installation des fichiers", value: "AUTOMATED_SUCCESS")
-                        statusRow("Structure XML Serato", value: "SOURCED_FROM_REAL_MAPPINGS")
-                        statusRow("Réaction réelle dans Serato", value: "REQUIRES_SERATO_VALIDATION")
-                        statusRow("Crossfader et sélection exacte de l’Echo", value: "BLOCKED_BY_PLATFORM")
-                        Text("Le moteur ne dépend plus du crossfader : chaque transition dispose aussi d’un fondu par les volumes des deux decks.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if let result = session.lastResult {
+                        MixPilotGlassCard(accent: .green, elevation: .elevated) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                MixPilotPanelTitle(
+                                    title: "Dernière installation",
+                                    symbol: "checkmark.seal.fill",
+                                    subtitle: "Fichiers écrits, relus et vérifiés",
+                                    accent: .green
+                                )
+                                MixPilotSectionDivider(accent: .green)
+                                resultRow("Preset", result.presetPath)
+                                resultRow("Chargement automatique", result.autoSavePath)
+                                resultRow("Commandes installées", "\(result.supportedActionCount)")
+                                resultRow("Fonctions non devinées", result.unsupportedActions.map(\.rawValue).joined(separator: ", "))
+                                if let backupPath = result.backupPath {
+                                    resultRow("Sauvegarde", backupPath)
+                                }
+                            }
+                            .textSelection(.enabled)
+                        }
                     }
-                    .padding(8)
-                }
 
-                if let result = session.lastResult {
-                    GroupBox("Dernière installation") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            LabeledContent("Preset", value: result.presetPath)
-                            LabeledContent("Chargement automatique", value: result.autoSavePath)
-                            LabeledContent("Commandes installées", value: "\(result.supportedActionCount)")
-                            LabeledContent(
-                                "Fonctions non devinées",
-                                value: result.unsupportedActions.map(\.rawValue).joined(separator: ", ")
+                    MixPilotGlassCard(accent: .blue) {
+                        HStack(spacing: 14) {
+                            MixPilotPanelTitle(
+                                title: "Mapping manuel de secours",
+                                symbol: "slider.horizontal.3",
+                                subtitle: "Disponible dans l’espace Mapping MIDI pour confirmer commande par commande.",
+                                accent: .blue
                             )
-                            if let backupPath = result.backupPath {
-                                LabeledContent("Sauvegarde", value: backupPath)
+                            Spacer()
+                            Button("OUVRIR L’ASSISTANT MANUEL") {
+                                model.selectedSection = .mapping
                             }
+                            .buttonStyle(MixPilotSecondaryButtonStyle())
                         }
-                        .textSelection(.enabled)
-                        .padding(8)
                     }
                 }
-
-                DisclosureGroup("Mapping manuel de secours") {
-                    Text("L’ancien assistant reste disponible dans la rubrique Mapping MIDI, mais il n’est plus nécessaire pour installer le preset automatique.")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                    Button("Ouvrir l’assistant manuel") {
-                        model.selectedSection = .mapping
-                    }
-                }
+                .padding(28)
+                .frame(maxWidth: 1_060, alignment: .topLeading)
             }
-            .padding(30)
-            .frame(maxWidth: 980, alignment: .leading)
+            .scrollIndicators(.hidden)
         }
-        .frame(minWidth: 900, minHeight: 650)
-        .onAppear {
-            session.refresh(profile: model.mappingProfile)
-        }
+        .mixPilotWindowSurface(minWidth: 960, minHeight: 720)
+        .onAppear { session.refresh(profile: model.mappingProfile) }
     }
 
     private var stateSymbol: String {
         switch session.installationState {
         case .installed: "checkmark.circle.fill"
-        case .notInstalled: "arrow.down.circle"
-        case .updateAvailable: "arrow.triangle.2.circlepath.circle"
+        case .notInstalled: "arrow.down.circle.fill"
+        case .updateAvailable: "arrow.triangle.2.circlepath.circle.fill"
         case .damaged: "exclamationmark.triangle.fill"
         }
     }
 
-    private func validationLine(_ text: String, symbol: String) -> some View {
-        Label(text, systemImage: symbol)
+    private var stateColor: Color {
+        switch session.installationState {
+        case .installed: .green
+        case .notInstalled: .purple
+        case .updateAvailable: .cyan
+        case .damaged: .red
+        }
     }
 
-    private func statusRow(_ name: String, value: String) -> some View {
-        HStack {
-            Text(name)
-            Spacer()
-            Text(value).font(.caption.bold()).monospaced()
+    private var trustLabel: String {
+        switch session.installationState {
+        case .installed: "Preset installé"
+        case .notInstalled: "À installer"
+        case .updateAvailable: "Mise à jour disponible"
+        case .damaged: "À réparer"
         }
+    }
+
+    private func installationStep(_ text: String, _ symbol: String) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.cyan.opacity(0.10))
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.cyan)
+            }
+            .frame(width: 28, height: 28)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(MixPilotPalette.textSecondary)
+            Spacer()
+        }
+    }
+
+    private func confidenceRow(_ name: String, _ value: String, _ accent: Color) -> some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(accent)
+                .frame(width: 7, height: 7)
+                .shadow(color: accent.opacity(0.45), radius: 4)
+            Text(name)
+                .font(.callout)
+            Spacer()
+            Text(value)
+                .font(.caption2.bold().monospaced())
+                .foregroundStyle(accent)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func resultRow(_ name: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(name)
+                .font(.callout)
+                .foregroundStyle(MixPilotPalette.textTertiary)
+                .frame(width: 180, alignment: .leading)
+            Text(value)
+                .font(.caption.monospaced())
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
     }
 }
 #endif

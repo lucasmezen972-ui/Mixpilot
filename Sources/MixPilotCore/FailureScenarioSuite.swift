@@ -76,18 +76,18 @@ public struct FailureScenarioSuite: Sendable {
     public static var releaseCandidateScenarios: [FailureScenario] {
         [
             FailureScenario(name: "Chargement lent", incident: .slowLoad, injectionStep: 4, expectedOutcome: .recovered),
-            FailureScenario(name: "Timeout de chargement", incident: .loadTimeout, injectionStep: 6, expectedOutcome: .recovered),
-            FailureScenario(name: "Mauvais titre", incident: .wrongTrack, injectionStep: 8, expectedOutcome: .recovered),
+            FailureScenario(name: "Délai de chargement dépassé", incident: .loadTimeout, injectionStep: 6, expectedOutcome: .recovered),
+            FailureScenario(name: "Mauvais morceau", incident: .wrongTrack, injectionStep: 8, expectedOutcome: .recovered),
             FailureScenario(name: "Transition incohérente", incident: .transitionMismatch, injectionStep: 10, expectedOutcome: .recovered),
             FailureScenario(name: "Perte Internet", incident: .internetLoss, injectionStep: 12, expectedOutcome: .recovered),
             FailureScenario(name: "Silence audio", incident: .audioSilence, injectionStep: 14, expectedOutcome: .recovered),
             FailureScenario(name: "Source audio perdue", incident: .audioSourceLost, injectionStep: 16, expectedOutcome: .recovered),
             FailureScenario(name: "Saturation audio", incident: .audioClipping, injectionStep: 18, expectedOutcome: .recovered),
-            FailureScenario(name: "Port MIDI perdu", incident: .midiUnavailable, injectionStep: 20, expectedOutcome: .recovered),
-            FailureScenario(name: "Serato fermé", incident: .seratoUnavailable, injectionStep: 22, expectedOutcome: .recovered),
+            FailureScenario(name: "Connexion MIDI perdue", incident: .midiUnavailable, injectionStep: 20, expectedOutcome: .recovered),
+            FailureScenario(name: "Backend DJ fermé", incident: .backendUnavailable, injectionStep: 22, expectedOutcome: .recovered),
             FailureScenario(name: "Secteur débranché", incident: .powerDisconnected, injectionStep: 24, expectedOutcome: .recovered),
-            FailureScenario(name: "Checkpoint incohérent", incident: .checkpointMismatch, injectionStep: 26, expectedOutcome: .manualControl),
-            FailureScenario(name: "Secours local en panne", incident: .emergencyPlayerFailure, injectionStep: 28, expectedOutcome: .failedSafely),
+            FailureScenario(name: "Dernier état incohérent", incident: .checkpointMismatch, injectionStep: 26, expectedOutcome: .manualControl),
+            FailureScenario(name: "Musique de secours en panne", incident: .emergencyPlayerFailure, injectionStep: 28, expectedOutcome: .failedSafely),
         ]
     }
 
@@ -128,7 +128,9 @@ public struct FailureScenarioSuite: Sendable {
                 snapshot = await engine.advance()
                 step += 1
 
-                if snapshot.state == .manualControl || snapshot.state == .failed || snapshot.state == .completed {
+                if snapshot.state == .manualControl ||
+                    snapshot.state == .failed ||
+                    snapshot.state == .completed {
                     break
                 }
 
