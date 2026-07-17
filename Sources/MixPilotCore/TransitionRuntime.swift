@@ -118,6 +118,13 @@ public struct TransitionFrameGenerator: Sendable {
     }
 }
 
+public protocol DJTransitionCommandSending: DJCommandSending {
+    func trigger(
+        _ action: DJControlAction,
+        requireVerification: Bool
+    ) async throws
+}
+
 public actor TransitionExecutor {
     private let sender: any DJCommandSending
     private let frameGenerator: TransitionFrameGenerator
@@ -144,8 +151,8 @@ public actor TransitionExecutor {
         )
         let duration = frames.last?.elapsed ?? 0
 
-        try await sender.trigger(.sync(deck: incomingDeck))
-        try await sender.trigger(.play(deck: incomingDeck))
+        try await trigger(.sync(deck: incomingDeck), requireVerification: false)
+        try await trigger(.play(deck: incomingDeck), requireVerification: true)
 
         var previousElapsed: TimeInterval = 0
         for frame in frames {
@@ -162,7 +169,7 @@ public actor TransitionExecutor {
             previousElapsed = frame.elapsed
         }
 
-        try await sender.trigger(.pause(deck: outgoingDeck))
+        try await trigger(.pause(deck: outgoingDeck), requireVerification: true)
         try await sender.set(.volume(deck: incomingDeck), value: 1)
         try await sender.set(.lowEQ(deck: incomingDeck), value: 1)
 
@@ -173,5 +180,19 @@ public actor TransitionExecutor {
             incomingDeck: incomingDeck,
             completed: true
         )
+    }
+
+    private func trigger(
+        _ action: DJControlAction,
+        requireVerification: Bool
+    ) async throws {
+        if let controlledSender = sender as? any DJTransitionCommandSending {
+            try await controlledSender.trigger(
+                action,
+                requireVerification: requireVerification
+            )
+        } else {
+            try await sender.trigger(action)
+        }
     }
 }
