@@ -55,7 +55,6 @@ final class AppModel: ObservableObject {
     @Published var hasCompletedOnboarding: Bool
     @Published var selectedSection: SidebarSection = .dashboard
 
-    /// Transitional compatibility for specialized legacy views.
     var seratoStatus: String { backendStatus }
 
     var midiController: CoreMIDIController?
@@ -65,6 +64,7 @@ final class AppModel: ObservableObject {
     var runtimeCoordinator: LiveAutopilotCoordinator?
     var liveTask: Task<Void, Never>?
     var liveReconciliationTask: Task<Void, Never>?
+    var lastAudioLevelUIUpdateAt: TimeInterval = 0
 
     let accessibilityBridge = DJAccessibilityBridge()
     let commandValidationStore = UserDefaultsDJCommandValidationStore()
@@ -118,6 +118,7 @@ final class AppModel: ObservableObject {
         selectedSection = .onboarding
     }
 }
+
 
 enum SidebarSection: String, CaseIterable, Identifiable {
     case onboarding = "Configuration"
