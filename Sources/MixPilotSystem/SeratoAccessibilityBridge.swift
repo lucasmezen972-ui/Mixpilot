@@ -356,10 +356,7 @@ public typealias SeratoAccessibilityBridge = DJAccessibilityBridge
 public extension DJAccessibilityBridge {
     @available(*, deprecated, message: "Pass a DJBackendIdentifier explicitly")
     func activate(_ software: DJSoftware? = nil) -> Bool {
-        guard let backend = software?.backendIdentifier ??
-            DJSoftwareSelectionStore.selected?.backendIdentifier else {
-            return false
-        }
+        guard let backend = software?.backendIdentifier else { return false }
         return (try? activate(backend)) != nil
     }
 
@@ -369,8 +366,7 @@ public extension DJAccessibilityBridge {
         maxDepth: Int = 5,
         maximumStrings: Int = 250
     ) -> DJWindowObservation {
-        guard let backend = software?.backendIdentifier ??
-            DJSoftwareSelectionStore.selected?.backendIdentifier else {
+        guard let backend = software?.backendIdentifier else {
             return DJWindowObservation(
                 isRunning: false,
                 processIdentifier: nil,
@@ -391,10 +387,7 @@ public extension DJAccessibilityBridge {
         software: DJSoftware? = nil,
         maxRows: Int = 500
     ) -> [DJLibraryRow] {
-        guard let backend = software?.backendIdentifier ??
-            DJSoftwareSelectionStore.selected?.backendIdentifier else {
-            return []
-        }
+        guard let backend = software?.backendIdentifier else { return [] }
         return libraryRows(backend: backend, maxRows: maxRows)
     }
 
