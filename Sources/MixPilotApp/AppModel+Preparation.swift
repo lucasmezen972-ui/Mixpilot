@@ -18,7 +18,7 @@ extension AppModel {
             maxRows: 1_000
         )
         libraryRowCount = rows.count
-        let result = SeratoPlaylistImporter().importRows(rows)
+        let result = VisiblePlaylistImporter().importRows(rows)
         playlistWarnings = result.warnings
 
         guard !result.tracks.isEmpty else {
