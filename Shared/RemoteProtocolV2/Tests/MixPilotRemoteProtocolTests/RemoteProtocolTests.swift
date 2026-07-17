@@ -70,6 +70,16 @@ func legacySnapshotStillDecodes() throws {
     #expect(decoded.audioStatus == nil)
 }
 
+@Test("The bridge accepts the documented Remote protocol range")
+func supportedProtocolVersionRangeIsExplicit() {
+    #expect(MixPilotRemoteProtocolVersion.supports(1))
+    #expect(MixPilotRemoteProtocolVersion.supports(2))
+    #expect(!MixPilotRemoteProtocolVersion.supports(0))
+    #expect(!MixPilotRemoteProtocolVersion.supports(3))
+    #expect(RemoteClientMessage.hello(deviceID: "device", deviceName: "iPhone").version == 2)
+    #expect(RemoteServerMessage.simple("hello").version == 2)
+}
+
 @Test("Remote commands remain high-level intentions")
 func commandsAreHighLevel() {
     #expect(RemoteCommandKind.allCases.map(\.displayName) == [
