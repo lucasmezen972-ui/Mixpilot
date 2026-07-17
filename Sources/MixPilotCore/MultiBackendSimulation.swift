@@ -241,12 +241,16 @@ public struct MultiBackendSimulationSuite: Sendable {
         _ capability: DJCapability,
         in matrix: inout DJBackendCapabilities
     ) {
+        let previous = matrix[capability]
         matrix[capability] = DJCapabilityStatus(
-            availability: .partiallyAvailable,
+            availability: .unavailable,
             confidence: .observed,
             validation: .requiresDeviceValidation,
-            method: .accessibility,
-            reason: "État volontairement non confirmé dans la simulation."
+            method: previous.method,
+            testedSoftwareVersion: previous.testedSoftwareVersion,
+            mappingVersion: previous.mappingVersion,
+            controllerName: previous.controllerName,
+            reason: "Cette capacité est bloquée jusqu’à une nouvelle validation."
         )
     }
 
@@ -328,7 +332,7 @@ public struct MultiBackendSimulationSuite: Sendable {
             return blockedCount == 0
 
         case .softwareVersionChanged:
-            return DJCapability.allCases.allSatisfy {
+            return blockedCount > 0 && DJCapability.allCases.allSatisfy {
                 !capabilities[$0].isConfirmedForLive &&
                     capabilities[$0].validation == .requiresDeviceValidation
             }
