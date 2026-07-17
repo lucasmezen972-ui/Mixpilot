@@ -19,22 +19,19 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
-
       - name: Toolchain
         run: |
           xcodebuild -version
           swift --version
           chmod +x Scripts/*.sh
-
       - name: Package manifest consistency
         run: ./Scripts/check_package_manifest.sh
-
       - name: Source architecture consistency
         run: ./Scripts/check_source_architecture.sh
-
+      - name: Runtime safety consistency
+        run: ./Scripts/check_runtime_safety.sh
       - name: Documentation consistency
         run: ./Scripts/check_documentation_consistency.sh
-
       - name: Unit tests
         id: unit-tests
         shell: bash
@@ -44,17 +41,14 @@ jobs:
           status=$?
           cat unit-test.log
           exit $status
-
       - name: Upload unit-test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-log
           path: unit-test.log
-
       - name: Verify immutable GitHub mapping manifest
         run: ./Scripts/verify_mapping_provenance.sh | tee mapping-provenance-check.json
-
       - name: Optional live Supabase auth and RLS probe
         id: cloud-probe
         continue-on-error: true
@@ -62,7 +56,6 @@ jobs:
         run: |
           set -o pipefail
           ./Scripts/cloud_self_test.sh | tee cloud-self-test.json
-
       - name: Record optional cloud probe status
         if: always()
         shell: bash
@@ -73,22 +66,12 @@ jobs:
           import json
           import os
           from pathlib import Path
-
-          path = Path("cloud-self-test-status.json")
-          path.write_text(
-              json.dumps(
-                  {
-                      "required_for_local_build": False,
-                      "outcome": os.environ.get("CLOUD_PROBE_OUTCOME", "unknown"),
-                      "reason": "Online services are optional and must not block local Live, tests, builds, or packaging.",
-                  },
-                  ensure_ascii=False,
-                  sort_keys=True,
-              ) + "\n",
-              encoding="utf-8",
-          )
+          Path("cloud-self-test-status.json").write_text(json.dumps({
+              "required_for_local_build": False,
+              "outcome": os.environ.get("CLOUD_PROBE_OUTCOME", "unknown"),
+              "reason": "Online services are optional and must not block local Live, tests, builds, or packaging.",
+          }, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
           PY
-
       - name: Generate remote mapping candidate
         run: |
           swift run MixPilotMappingPublisherCLI \
@@ -97,36 +80,30 @@ jobs:
             --rollout 0 \
             --output mapping-release-candidate.json
           test -s mapping-release-candidate.json
-
       - name: Simulation 50 tracks with failures
         shell: bash
         run: |
           set -o pipefail
           swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures | tee simulation-50-report.json
-
       - name: Simulation 250 tracks with failures
         shell: bash
         run: |
           set -o pipefail
           swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures | tee simulation-250-report.json
-
       - name: Build macOS products
         run: |
           swift build -c release --product MixPilotAutopilot
           swift build -c release --product MixPilotHardwareProbeCLI
-
       - name: Package development DMG
         env:
           MIXPILOT_VERSION: 0.3.${{ github.run_number }}
         run: |
           ./Scripts/build_release.sh
           ./Scripts/package_dmg.sh
-
       - name: Verify DMG checksum
         run: |
           cd build
           shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
-
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -141,7 +118,6 @@ jobs:
             cloud-self-test-status.json
             unit-test.log
           if-no-files-found: warn
-
       - name: Upload installable DMG
         uses: actions/upload-artifact@v4
         with:
