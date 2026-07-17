@@ -41,6 +41,7 @@ targets:
       - path: XcodeTests
     dependencies:
       - target: MixPilotRemote
+      - package: MixPilotRemoteProtocol
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
