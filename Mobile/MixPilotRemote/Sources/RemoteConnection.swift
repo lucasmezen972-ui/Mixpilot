@@ -1,4 +1,5 @@
 import Foundation
+import MixPilotRemoteProtocol
 import UIKit
 
 @MainActor
@@ -61,7 +62,10 @@ final class RemoteConnection: ObservableObject {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        request.setValue("mixpilot-remote-v1", forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        request.setValue(
+            "mixpilot-remote-v\(MixPilotRemoteProtocolVersion.current)",
+            forHTTPHeaderField: "Sec-WebSocket-Protocol"
+        )
 
         let socket = URLSession.shared.webSocketTask(with: request)
         self.socket = socket
@@ -191,8 +195,8 @@ final class RemoteConnection: ObservableObject {
     }
 
     private func handle(_ message: RemoteServerMessage) {
-        guard message.version == 1 else {
-            lastError = "Version du protocole non compatible."
+        guard MixPilotRemoteProtocolVersion.supports(message.version) else {
+            lastError = "Version du protocole non compatible. Mets à jour MixPilot sur le Mac et l’iPhone."
             return
         }
 
