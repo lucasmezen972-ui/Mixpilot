@@ -11,36 +11,34 @@ func legacySoftwareMapsToBackendIdentifier() {
 }
 
 @Test("A missing legacy preference does not invent Serato")
-func missingLegacyPreferenceReturnsNil() {
-    let defaults = UserDefaults.standard
-    let previous = defaults.string(forKey: DJSoftwareSelectionStore.defaultsKey)
-    defer {
-        if let previous {
-            defaults.set(previous, forKey: DJSoftwareSelectionStore.defaultsKey)
-        } else {
-            defaults.removeObject(forKey: DJSoftwareSelectionStore.defaultsKey)
-        }
-    }
+func missingLegacyPreferenceReturnsNil() async {
+    let suiteName = "MixPilotTests.MissingLegacy.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    defaults.removeObject(forKey: DJSoftwareSelectionStore.defaultsKey)
-    #expect(DJSoftwareSelectionStore.selected == nil)
-    #expect(DJSoftwareSelectionStore.migrateToBackendIdentifier() == nil)
+    let store = UserDefaultsDJBackendSelectionStore(defaults: defaults)
+
+    #expect(await store.loadSelection() == nil)
+    #expect(defaults.string(forKey: UserDefaultsDJBackendSelectionStore.defaultsKey) == nil)
 }
 
 @Test("An explicit legacy preference migrates without changing its backend")
-func explicitLegacyPreferenceMigrates() {
-    let defaults = UserDefaults.standard
-    let previous = defaults.string(forKey: DJSoftwareSelectionStore.defaultsKey)
-    defer {
-        if let previous {
-            defaults.set(previous, forKey: DJSoftwareSelectionStore.defaultsKey)
-        } else {
-            defaults.removeObject(forKey: DJSoftwareSelectionStore.defaultsKey)
-        }
-    }
+func explicitLegacyPreferenceMigrates() async {
+    let suiteName = "MixPilotTests.ExplicitLegacy.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    DJSoftwareSelectionStore.selected = .rekordbox
-    #expect(DJSoftwareSelectionStore.migrateToBackendIdentifier() == .rekordbox)
+    defaults.set(
+        DJSoftware.rekordbox.rawValue,
+        forKey: UserDefaultsDJBackendSelectionStore.legacyDefaultsKey
+    )
+    let store = UserDefaultsDJBackendSelectionStore(defaults: defaults)
+
+    #expect(await store.loadSelection() == .rekordbox)
+    #expect(
+        defaults.string(forKey: UserDefaultsDJBackendSelectionStore.defaultsKey) ==
+            DJBackendIdentifier.rekordbox.rawValue
+    )
 }
 
 @Test("Simulation and pending device validation never confirm a Live capability")
