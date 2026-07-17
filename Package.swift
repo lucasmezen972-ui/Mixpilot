@@ -2,9 +2,14 @@
 import PackageDescription
 
 // Keep the cross-platform test graph independent from macOS-only cloud and
-// hardware dependencies. The Supabase package is added only when the manifest
-// is evaluated on macOS, where MixPilotSystem is available.
-var dependencies: [Package.Dependency] = []
+// hardware dependencies. Swift Crypto provides the Crypto module on Linux;
+// Apple platforms continue to use CryptoKit from the SDK.
+var dependencies: [Package.Dependency] = [
+    .package(
+        url: "https://github.com/apple/swift-crypto.git",
+        from: "3.0.0"
+    ),
+]
 
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
@@ -14,7 +19,12 @@ var products: [Product] = [
 ]
 
 var targets: [Target] = [
-    .target(name: "MixPilotCore"),
+    .target(
+        name: "MixPilotCore",
+        dependencies: [
+            .product(name: "Crypto", package: "swift-crypto"),
+        ]
+    ),
     .target(
         name: "MixPilotRemoteProtocol",
         path: "Shared/RemoteProtocolV2/Sources/MixPilotRemoteProtocol"
