@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 CURRENT_REFERENCES=(
   README.md
   Mobile/MixPilotRemote/README.md
+  DEVELOPMENT_STATUS.md
+  Documentation/ARCHITECTURE.md
+  Documentation/PRODUCT_SPEC.md
   Documentation/PRODUCT_POSITIONING.md
   Documentation/USER_JOURNEY.md
   Documentation/TERMINOLOGY.md
@@ -16,7 +19,12 @@ CURRENT_REFERENCES=(
   Documentation/REKORDBOX_INTEGRATION.md
   Documentation/SERATO_INTEGRATION.md
   Documentation/MULTI_BACKEND_VALIDATION.md
-  DEVELOPMENT_STATUS.md
+  Documentation/FINAL_VALIDATION.md
+  Documentation/RC_STATUS.md
+  Documentation/RELEASE.md
+  Documentation/CLOUD_OBSERVABILITY.md
+  Documentation/REMOTE_COMPATIBILITY.md
+  Documentation/IPHONE_REMOTE_BRIDGE.md
 )
 
 for file in "${CURRENT_REFERENCES[@]}"; do
