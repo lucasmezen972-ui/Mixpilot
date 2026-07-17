@@ -1,9 +1,13 @@
 import Foundation
 
 public struct LiveCheckpoint: Identifiable, Codable, Hashable, Sendable {
+    public static let currentFormatVersion = 2
+
     public let id: UUID
+    public var formatVersion: Int
     public var projectID: UUID
     public var projectName: String
+    public var backend: DJBackendIdentifier?
     public var currentTrackIndex: Int
     public var activeDeck: DeckID
     public var completedTransitionCount: Int
@@ -16,8 +20,10 @@ public struct LiveCheckpoint: Identifiable, Codable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(),
+        formatVersion: Int = Self.currentFormatVersion,
         projectID: UUID,
         projectName: String,
+        backend: DJBackendIdentifier? = nil,
         currentTrackIndex: Int,
         activeDeck: DeckID,
         completedTransitionCount: Int,
@@ -29,8 +35,10 @@ public struct LiveCheckpoint: Identifiable, Codable, Hashable, Sendable {
         updatedAt: Date = Date()
     ) {
         self.id = id
+        self.formatVersion = max(1, formatVersion)
         self.projectID = projectID
         self.projectName = projectName
+        self.backend = backend
         self.currentTrackIndex = max(0, currentTrackIndex)
         self.activeDeck = activeDeck
         self.completedTransitionCount = max(0, completedTransitionCount)
@@ -40,6 +48,56 @@ public struct LiveCheckpoint: Identifiable, Codable, Hashable, Sendable {
         self.lastCommand = lastCommand
         self.emergencyPlaybackActive = emergencyPlaybackActive
         self.updatedAt = updatedAt
+    }
+
+    public var requiresBackendConfirmation: Bool {
+        backend == nil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case formatVersion
+        case projectID
+        case projectName
+        case backend
+        case currentTrackIndex
+        case activeDeck
+        case completedTransitionCount
+        case nextTransitionIndex
+        case state
+        case lastConfirmedTrackID
+        case lastCommand
+        case emergencyPlaybackActive
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
+        projectID = try container.decode(UUID.self, forKey: .projectID)
+        projectName = try container.decode(String.self, forKey: .projectName)
+        backend = try container.decodeIfPresent(DJBackendIdentifier.self, forKey: .backend)
+        currentTrackIndex = max(0, try container.decode(Int.self, forKey: .currentTrackIndex))
+        activeDeck = try container.decode(DeckID.self, forKey: .activeDeck)
+        completedTransitionCount = max(
+            0,
+            try container.decode(Int.self, forKey: .completedTransitionCount)
+        )
+        nextTransitionIndex = try container.decodeIfPresent(Int.self, forKey: .nextTransitionIndex)
+            .map { max(0, $0) }
+        state = try container.decode(AutopilotState.self, forKey: .state)
+        lastConfirmedTrackID = try container.decodeIfPresent(UUID.self, forKey: .lastConfirmedTrackID)
+        lastCommand = try container.decodeIfPresent(String.self, forKey: .lastCommand)
+        emergencyPlaybackActive = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .emergencyPlaybackActive
+        ) ?? false
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+
+        if formatVersion < Self.currentFormatVersion {
+            formatVersion = Self.currentFormatVersion
+        }
     }
 }
 
@@ -76,15 +134,14 @@ public struct CheckpointReconciler: Sendable {
     public func reconcile(
         checkpoint: LiveCheckpoint,
         project: SetProject,
+        activeBackend: DJBackendIdentifier?,
+        backendRunning: Bool,
         observedTrackTitle: String?,
-        seratoRunning: Bool,
         audioActive: Bool
     ) -> CheckpointReconciliationResult {
         guard checkpoint.projectID == project.id else {
-            return CheckpointReconciliationResult(
-                decision: .requireManualConfirmation,
-                proposedTrackIndex: 0,
-                proposedDeck: .a,
+            return manual(
+                checkpoint,
                 explanation: "Le checkpoint appartient à un autre projet."
             )
         }
@@ -92,24 +149,41 @@ public struct CheckpointReconciler: Sendable {
         if checkpoint.state == .completed {
             return CheckpointReconciliationResult(
                 decision: .discardCompletedSession,
-                proposedTrackIndex: min(checkpoint.currentTrackIndex, max(0, project.tracks.count - 1)),
+                proposedTrackIndex: safeIndex(checkpoint, project: project),
                 proposedDeck: checkpoint.activeDeck,
                 explanation: "La session précédente était terminée."
             )
         }
 
-        guard seratoRunning else {
-            return CheckpointReconciliationResult(
-                decision: .switchToEmergency,
-                proposedTrackIndex: checkpoint.currentTrackIndex,
-                proposedDeck: checkpoint.activeDeck,
-                explanation: "Serato n'est plus disponible ; le secours local est prioritaire."
+        guard let checkpointBackend = checkpoint.backend,
+              let projectBackend = project.backend,
+              let activeBackend else {
+            return manual(
+                checkpoint,
+                explanation: "L’ancien état ne précise pas assez clairement le logiciel DJ utilisé. Choisis le backend et vérifie les decks manuellement."
             )
         }
 
-        let safeIndex = min(checkpoint.currentTrackIndex, max(0, project.tracks.count - 1))
-        let expectedTrack = project.tracks.indices.contains(safeIndex)
-            ? project.tracks[safeIndex].track
+        guard checkpointBackend == projectBackend,
+              projectBackend == activeBackend else {
+            return manual(
+                checkpoint,
+                explanation: "Le logiciel DJ actif ne correspond pas au projet et au checkpoint sauvegardés. Aucune reprise automatique n’est autorisée."
+            )
+        }
+
+        guard backendRunning else {
+            return CheckpointReconciliationResult(
+                decision: .switchToEmergency,
+                proposedTrackIndex: safeIndex(checkpoint, project: project),
+                proposedDeck: checkpoint.activeDeck,
+                explanation: "\(activeBackend.displayName) n’est plus disponible ; le secours local est prioritaire."
+            )
+        }
+
+        let index = safeIndex(checkpoint, project: project)
+        let expectedTrack = project.tracks.indices.contains(index)
+            ? project.tracks[index].track
             : nil
         let observedMatches = expectedTrack.map { expected in
             guard let observedTrackTitle else { return false }
@@ -120,25 +194,60 @@ public struct CheckpointReconciler: Sendable {
         if observedMatches && audioActive {
             return CheckpointReconciliationResult(
                 decision: .resumeAutomatically,
-                proposedTrackIndex: safeIndex,
+                proposedTrackIndex: index,
                 proposedDeck: checkpoint.activeDeck,
-                explanation: "Le titre et l'audio correspondent au dernier état confirmé."
+                explanation: "Le backend, le titre et l’audio correspondent au dernier état confirmé."
             )
         }
         if observedMatches {
             return CheckpointReconciliationResult(
                 decision: .requireObservation,
-                proposedTrackIndex: safeIndex,
+                proposedTrackIndex: index,
                 proposedDeck: checkpoint.activeDeck,
-                explanation: "Le bon titre est visible mais l'audio doit être confirmé."
+                explanation: "Le bon titre est visible, mais l’audio doit encore être confirmé."
             )
         }
-        return CheckpointReconciliationResult(
-            decision: .requireManualConfirmation,
-            proposedTrackIndex: safeIndex,
-            proposedDeck: checkpoint.activeDeck,
-            explanation: "L'état réel de Serato ne correspond pas suffisamment au checkpoint."
+        return manual(
+            checkpoint,
+            project: project,
+            explanation: "L’état réel de \(activeBackend.displayName) ne correspond pas suffisamment au checkpoint."
         )
+    }
+
+    @available(*, deprecated, message: "Pass the active DJ backend explicitly")
+    public func reconcile(
+        checkpoint: LiveCheckpoint,
+        project: SetProject,
+        observedTrackTitle: String?,
+        seratoRunning: Bool,
+        audioActive: Bool
+    ) -> CheckpointReconciliationResult {
+        reconcile(
+            checkpoint: checkpoint,
+            project: project,
+            activeBackend: .serato,
+            backendRunning: seratoRunning,
+            observedTrackTitle: observedTrackTitle,
+            audioActive: audioActive
+        )
+    }
+
+    private func manual(
+        _ checkpoint: LiveCheckpoint,
+        project: SetProject? = nil,
+        explanation: String
+    ) -> CheckpointReconciliationResult {
+        CheckpointReconciliationResult(
+            decision: .requireManualConfirmation,
+            proposedTrackIndex: project.map { safeIndex(checkpoint, project: $0) }
+                ?? checkpoint.currentTrackIndex,
+            proposedDeck: checkpoint.activeDeck,
+            explanation: explanation
+        )
+    }
+
+    private func safeIndex(_ checkpoint: LiveCheckpoint, project: SetProject) -> Int {
+        min(checkpoint.currentTrackIndex, max(0, project.tracks.count - 1))
     }
 
     private func normalized(_ value: String) -> String {
