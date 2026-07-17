@@ -213,9 +213,9 @@ public actor BackendCommandQueue: DJCommandSending {
 
     private func executionWasAcknowledged(_ status: DJCommandLifecycleStatus) -> Bool {
         switch status {
-        case .acknowledged, .observed, .verified:
+        case .sent, .acknowledged, .observed, .verified:
             true
-        case .requested, .sent, .failed, .unknown:
+        case .requested, .failed, .unknown:
             false
         }
     }
