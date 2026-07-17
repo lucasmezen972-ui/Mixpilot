@@ -101,6 +101,21 @@ grep -q 'applyingRuntimeAvailability' Sources/MixPilotApp/AppModel+Backend.swift
   exit 1
 }
 
+grep -q 'coordinator.backendIdentifier == selectedBackend' Sources/MixPilotApp/AppModel+Live.swift || {
+  echo 'Architecture check failed: Live must refuse a coordinator created for another backend before sending commands' >&2
+  exit 1
+}
+
+grep -q 'remoteActiveBackendIdentifier' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
+  echo 'Architecture check failed: Remote snapshots must use the backend owned by the active Live coordinator' >&2
+  exit 1
+}
+
+grep -q 'descriptor.capabilities.applyingRuntimeAvailability' Sources/MixPilotApp/AppModel+RemoteBridge.swift || {
+  echo 'Architecture check failed: Remote controls must apply current runtime permissions to backend capabilities' >&2
+  exit 1
+}
+
 if grep -n 'liveTask?.cancel()' Sources/MixPilotApp/AppModel+Live.swift; then
   echo 'Architecture check failed: manual control must use the coordinator safe-point handoff instead of cancelling the Live task first' >&2
   exit 1
@@ -117,6 +132,16 @@ fi
 
 grep -q '#elseif canImport(Crypto)' Sources/MixPilotCore/RemoteMappingUpdates.swift || {
   echo 'Architecture check failed: portable Swift Crypto fallback is missing from MixPilotCore' >&2
+  exit 1
+}
+
+grep -q 'NSLocalNetworkUsageDescription' Scripts/build_release.sh || {
+  echo 'Architecture check failed: the packaged Mac app must declare local-network access for the iPhone Remote' >&2
+  exit 1
+}
+
+grep -q '_mixpilot\._tcp' Scripts/build_release.sh || {
+  echo 'Architecture check failed: the packaged Mac app must declare the MixPilot Bonjour service' >&2
   exit 1
 }
 
