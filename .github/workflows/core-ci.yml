@@ -29,6 +29,9 @@ jobs:
       - name: Source architecture consistency
         run: bash Scripts/check_source_architecture.sh
 
+      - name: Runtime safety consistency
+        run: bash Scripts/check_runtime_safety.sh
+
       - name: Documentation consistency
         run: bash Scripts/check_documentation_consistency.sh
 
