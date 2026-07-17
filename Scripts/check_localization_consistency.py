@@ -16,13 +16,13 @@ from dataclasses import dataclass
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RESOURCE_ROOT = ROOT / "Sources" / "MixPilotHelp" / "Resources"
 LANGUAGES = ("fr", "en", "es")
-TABLES = ("Localizable.strings", "Remote.strings")
+TABLES = ("Localizable.strings", "Remote.strings", "Workspace.strings")
 
 ENTRY_RE = re.compile(r'^\s*"((?:\\.|[^"\\])+)"\s*=\s*"((?:\\.|[^"\\])*)"\s*;\s*$')
 PLACEHOLDER_RE = re.compile(r'%(?:\d+\$)?(?:[-+0 #]*)(?:\d+|\*)?(?:\.\d+|\.\*)?(?:hh|h|ll|l|L|z|j|t)?[@aAcCdDeEfFgGiIoOsSuUxX]')
 REFERENCE_PATTERNS = (
     re.compile(r'RemoteLocalizedCopy\.(?:text|format)\(\s*"([^"]+)"'),
-    re.compile(r'AppLocalizedCopy\.(?:text|format)\(\s*"([^"]+)"'),
+    re.compile(r'AppLocalizedCopy\.(?:text|format|workspace|workspaceFormat)\(\s*"([^"]+)"'),
     re.compile(r'catalog\.localized\(\s*"([^"]+)"'),
     re.compile(r'localized\(\s*"([^"]+)"'),
 )
@@ -138,8 +138,8 @@ def main() -> int:
     reference_count = len(collect_literal_references())
     print(
         "Localization consistency audit passed for "
-        f"{len(LANGUAGES)} languages, {key_count} reference keys and "
-        f"{reference_count} literal source references."
+        f"{len(LANGUAGES)} languages, {len(TABLES)} tables, "
+        f"{key_count} reference keys and {reference_count} literal source references."
     )
     return 0
 
