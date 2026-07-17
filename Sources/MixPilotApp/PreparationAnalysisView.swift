@@ -88,16 +88,12 @@ struct PreparationAnalysisView: View {
         ZStack {
             MixPilotPremiumBackground()
 
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    trackSidebar
-                    Rectangle().fill(.white.opacity(0.09)).frame(width: 1)
-                    detail
-                }
+            HStack(spacing: 0) {
+                trackSidebar
+                detail
             }
         }
-        .preferredColorScheme(.dark)
-        .frame(minWidth: 1_020, minHeight: 720)
+        .mixPilotWindowSurface(minWidth: 1_040, minHeight: 740)
         .onAppear {
             selectedTrackID = selectedTrackID ?? model.preparedProject?.tracks.first?.id
         }
@@ -105,75 +101,109 @@ struct PreparationAnalysisView: View {
 
     private var trackSidebar: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("AUDIO PREP")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .tracking(1.5)
-                    .foregroundStyle(.mint)
-                Text("Morceaux")
-                    .font(.system(size: 23, weight: .bold, design: .rounded))
-                Text("Sélectionne le titre analysé")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.42))
-            }
+            MixPilotSidebarHeader(
+                eyebrow: "Audio Prep",
+                title: "Morceaux",
+                subtitle: "Sélectionne le titre à affiner",
+                accent: .mint,
+                symbol: "waveform"
+            )
 
             if let project = model.preparedProject, !project.tracks.isEmpty {
+                MixPilotStatusBadge(
+                    title: "\(project.tracks.count) titre(s)",
+                    symbol: "music.note.list",
+                    accent: .mint
+                )
+
                 ScrollView {
                     VStack(spacing: 6) {
                         ForEach(project.tracks) { prepared in
-                            Button {
-                                selectedTrackID = prepared.id
-                                capturedStartTime = 0
-                            } label: {
-                                HStack(spacing: 10) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 9).fill(selectedTrackID == prepared.id ? .mint.opacity(0.14) : .white.opacity(0.04))
-                                        Image(systemName: "waveform")
-                                            .foregroundStyle(selectedTrackID == prepared.id ? .mint : .white.opacity(0.35))
-                                    }
-                                    .frame(width: 34, height: 34)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(prepared.track.title).font(.caption.bold()).lineLimit(1)
-                                        Text("\(prepared.track.artist) • \(String(format: "%.1f", prepared.track.bpm)) BPM")
-                                            .font(.caption2)
-                                            .foregroundStyle(.white.opacity(0.4))
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(8)
-                                .background(selectedTrackID == prepared.id ? .white.opacity(0.085) : .clear, in: RoundedRectangle(cornerRadius: 11))
-                            }
-                            .buttonStyle(.plain)
+                            trackButton(prepared)
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
             } else {
-                Text("Aucun projet préparé")
-                    .font(.callout)
-                    .foregroundStyle(.white.opacity(0.45))
+                MixPilotNotice(
+                    title: "Aucun set préparé",
+                    message: "Prépare d’abord un projet dans le Studio pour afficher les morceaux analysables.",
+                    kind: .warning
+                )
             }
 
-            Spacer()
+            Spacer(minLength: 10)
 
-            MixPilotGlassCard(cornerRadius: 14, padding: 12, accent: session.isCapturing ? .red : .mint) {
-                VStack(alignment: .leading, spacing: 7) {
-                    MixPilotStatusBadge(
-                        title: session.isCapturing ? "Capture active" : "Prêt",
-                        symbol: session.isCapturing ? "record.circle.fill" : "checkmark.circle.fill",
-                        accent: session.isCapturing ? .red : .mint
-                    )
+            MixPilotGlassCard(cornerRadius: 14, padding: 12, accent: session.isCapturing ? .red : .mint, elevation: .flat) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        MixPilotStatusBadge(
+                            title: session.isCapturing ? "Capture active" : "Prêt",
+                            symbol: session.isCapturing ? "record.circle.fill" : "checkmark.circle.fill",
+                            accent: session.isCapturing ? .red : .mint
+                        )
+                        Spacer()
+                        if session.isCapturing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.red)
+                        }
+                    }
                     Text(session.status)
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.48))
-                        .lineLimit(4)
+                        .foregroundStyle(MixPilotPalette.textSecondary)
+                        .lineSpacing(2)
+                        .lineLimit(5)
                 }
             }
         }
         .padding(20)
-        .frame(width: 300)
-        .background(.black.opacity(0.15))
+        .padding(.bottom, 82)
+        .frame(width: 310)
+        .mixPilotSidebarSurface()
+    }
+
+    private func trackButton(_ prepared: PreparedTrack) -> some View {
+        let selected = selectedTrackID == prepared.id
+        return Button {
+            selectedTrackID = prepared.id
+            capturedStartTime = 0
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(selected ? .mint.opacity(0.14) : .white.opacity(0.035))
+                    Image(systemName: "waveform")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selected ? .mint : .white.opacity(0.34))
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(prepared.track.title)
+                        .font(.caption.bold())
+                        .lineLimit(1)
+                    Text("\(prepared.track.artist) • \(String(format: "%.1f", prepared.track.bpm)) BPM")
+                        .font(.caption2)
+                        .foregroundStyle(MixPilotPalette.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if selected {
+                    Circle()
+                        .fill(.mint)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: .mint.opacity(0.55), radius: 5)
+                }
+            }
+            .padding(8)
+            .background(selected ? .white.opacity(0.075) : .clear, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(selected ? .mint.opacity(0.20) : .clear, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -184,120 +214,171 @@ struct PreparationAnalysisView: View {
                     MixPilotSectionHero(
                         eyebrow: "Analyse locale",
                         title: "Analyse audio de préparation",
-                        subtitle: "Capture temporaire du retour audio ; seules les caractéristiques numériques sont conservées.",
+                        subtitle: "Capture temporaire du retour audio : seules les caractéristiques numériques et les marqueurs proposés sont conservés.",
                         symbol: "waveform.badge.magnifyingglass",
                         accent: session.isCapturing ? .red : .mint
                     ) {
                         if session.isCapturing {
-                            MixPilotStatusBadge(title: "Capture", symbol: "record.circle.fill", accent: .red)
+                            MixPilotStatusBadge(title: "Capture en cours", symbol: "record.circle.fill", accent: .red)
+                        } else {
+                            MixPilotStatusBadge(title: "Données locales", symbol: "lock.shield.fill", accent: .mint)
                         }
                     }
 
-                    MixPilotGlassCard(accent: .purple) {
-                        HStack(alignment: .top, spacing: 16) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 16).fill(.purple.opacity(0.14))
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 29, weight: .semibold))
-                                    .foregroundStyle(.purple)
-                            }
-                            .frame(width: 62, height: 62)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(selectedTrack.track.title)
-                                    .font(.system(size: 23, weight: .bold, design: .rounded))
-                                Text(selectedTrack.track.artist)
-                                    .foregroundStyle(.white.opacity(0.5))
-                                HStack(spacing: 14) {
-                                    Label(String(format: "%.1f BPM", selectedTrack.track.bpm), systemImage: "metronome")
-                                    Label("\(selectedTrack.analysis.markers.count) marqueurs", systemImage: "bookmark.fill")
-                                    Label("Confiance \(Int(selectedTrack.analysis.overallConfidence * 100)) %", systemImage: "gauge.with.dots.needle.67percent")
-                                }
-                                .font(.caption.bold())
-                                .foregroundStyle(.white.opacity(0.5))
-                            }
-                            Spacer()
-                        }
-                    }
+                    selectedTrackCard(selectedTrack)
 
-                    HStack(alignment: .top, spacing: 16) {
-                        MixPilotGlassCard(accent: .cyan) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                MixPilotPanelTitle(title: "Zone capturée", symbol: "scope", subtitle: "Position absolue dans le morceau.", accent: .cyan)
-                                HStack {
-                                    Text("Position de départ")
-                                    Spacer()
-                                    Text(analysisTimeText(capturedStartTime))
-                                        .font(.headline.monospacedDigit())
-                                        .foregroundStyle(.cyan)
-                                }
-                                Slider(value: $capturedStartTime, in: 0...max(1, selectedTrack.track.duration - 10), step: 1)
-                                    .tint(.cyan)
-                                    .disabled(session.isCapturing)
-                                Text("Place le logiciel DJ à cette position avant la capture. Les marqueurs seront recalés dans le temps absolu du titre.")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.46))
-                            }
-                        }
-
-                        MixPilotGlassCard(accent: session.isCapturing ? .red : .mint) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                MixPilotPanelTitle(title: "Capture temporaire", symbol: session.isCapturing ? "record.circle.fill" : "waveform", subtitle: session.status, accent: session.isCapturing ? .red : .mint)
-                                HStack {
-                                    Text(analysisTimeText(session.capturedDuration))
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .monospacedDigit()
-                                    Spacer()
-                                    Text("MAX 03:00")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.white.opacity(0.38))
-                                }
-                                ProgressView(value: min(1, session.capturedDuration / 180))
-                                    .tint(session.isCapturing ? .red : .mint)
-                                HStack {
-                                    Button("DÉMARRER") { session.start() }
-                                        .buttonStyle(MixPilotPrimaryButtonStyle(accent: .mint))
-                                        .disabled(session.isCapturing)
-                                    Button("ARRÊTER ET ANALYSER") {
-                                        session.stopAndPreview(
-                                            appModel: model,
-                                            trackID: selectedTrack.id,
-                                            capturedStartTime: capturedStartTime
-                                        )
-                                    }
-                                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                                    .disabled(!session.isCapturing)
-                                    Button("ANNULER") { session.cancel() }
-                                        .buttonStyle(MixPilotDangerButtonStyle())
-                                        .disabled(!session.isCapturing)
-                                }
-                            }
-                        }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
+                        captureZoneCard(selectedTrack)
+                        captureControlCard(selectedTrack)
                     }
 
                     if let analysis = session.lastAnalysis {
                         PremiumAnalysisResultView(analysis: analysis, changes: session.lastChanges)
+                    } else {
+                        MixPilotNotice(
+                            title: "Aucune mesure récente",
+                            message: "Place le morceau sur la zone voulue, démarre la capture puis arrête-la pour générer une prévisualisation non destructive.",
+                            kind: .info
+                        )
                     }
 
-                    MixPilotGlassCard(accent: .orange) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "lock.shield.fill").foregroundStyle(.orange)
-                            Text("L’audio brut reste uniquement en mémoire pendant l’analyse puis est supprimé. MixPilot conserve seulement des valeurs numériques et les marqueurs proposés.")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.52))
-                        }
-                    }
+                    MixPilotNotice(
+                        title: "Confidentialité audio",
+                        message: "L’audio brut reste uniquement en mémoire pendant l’analyse puis est supprimé. MixPilot conserve seulement des valeurs numériques et les marqueurs proposés.",
+                        kind: .warning
+                    )
                 }
                 .padding(28)
-                .frame(maxWidth: 1_020, alignment: .topLeading)
+                .padding(.bottom, 100)
+                .frame(maxWidth: 1_040, alignment: .topLeading)
             }
             .scrollIndicators(.hidden)
         } else {
-            ContentUnavailableView(
-                "Sélectionne un morceau",
-                systemImage: "waveform.badge.magnifyingglass",
-                description: Text("La capture sera comparée uniquement au titre choisi.")
-            )
+            VStack {
+                MixPilotEmptyState(
+                    title: model.preparedProject == nil ? "Aucun set préparé" : "Sélectionne un morceau",
+                    message: model.preparedProject == nil
+                        ? "Prépare un projet dans le Studio avant d’ouvrir l’analyse audio locale."
+                        : "La capture sera comparée uniquement au morceau choisi dans la colonne de gauche.",
+                    symbol: "waveform.badge.magnifyingglass",
+                    accent: .mint
+                ) {
+                    if model.preparedProject == nil {
+                        Button("OUVRIR LE STUDIO") {
+                            model.selectedSection = .studio
+                        }
+                        .buttonStyle(MixPilotPrimaryButtonStyle(accent: .mint))
+                    }
+                }
+                .frame(maxWidth: 680)
+                .padding(32)
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func selectedTrackCard(_ selectedTrack: PreparedTrack) -> some View {
+        MixPilotGlassCard(accent: .purple, elevation: .elevated) {
+            HStack(alignment: .center, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(.purple.opacity(0.13))
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .strokeBorder(.purple.opacity(0.22), lineWidth: 1)
+                    Image(systemName: "music.note")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(.purple)
+                }
+                .frame(width: 66, height: 66)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(selectedTrack.track.title)
+                        .font(.system(size: 23, weight: .bold, design: .rounded))
+                        .lineLimit(2)
+                    Text(selectedTrack.track.artist)
+                        .font(.callout)
+                        .foregroundStyle(MixPilotPalette.textSecondary)
+                    HStack(spacing: 12) {
+                        MixPilotStatusBadge(title: String(format: "%.1f BPM", selectedTrack.track.bpm), symbol: "metronome", accent: .purple)
+                        MixPilotStatusBadge(title: "\(selectedTrack.analysis.markers.count) marqueurs", symbol: "bookmark.fill", accent: .cyan)
+                        MixPilotStatusBadge(title: "Confiance \(Int(selectedTrack.analysis.overallConfidence * 100)) %", symbol: "gauge.with.dots.needle.67percent", accent: .green)
+                    }
+                }
+                Spacer(minLength: 12)
+            }
+        }
+    }
+
+    private func captureZoneCard(_ selectedTrack: PreparedTrack) -> some View {
+        MixPilotGlassCard(accent: .cyan) {
+            VStack(alignment: .leading, spacing: 14) {
+                MixPilotPanelTitle(
+                    title: "Zone capturée",
+                    symbol: "scope",
+                    subtitle: "Position absolue dans le morceau",
+                    accent: .cyan
+                )
+                HStack {
+                    Text("Position de départ")
+                        .font(.callout)
+                        .foregroundStyle(MixPilotPalette.textSecondary)
+                    Spacer()
+                    Text(analysisTimeText(capturedStartTime))
+                        .font(.system(size: 21, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.cyan)
+                }
+                Slider(value: $capturedStartTime, in: 0...max(1, selectedTrack.track.duration - 10), step: 1)
+                    .tint(.cyan)
+                    .disabled(session.isCapturing)
+                MixPilotNotice(
+                    title: "Repère temporel",
+                    message: "Place le logiciel DJ à cette position avant la capture. Les marqueurs seront recalés dans le temps absolu du titre.",
+                    kind: .info
+                )
+            }
+        }
+    }
+
+    private func captureControlCard(_ selectedTrack: PreparedTrack) -> some View {
+        MixPilotGlassCard(accent: session.isCapturing ? .red : .mint, elevation: session.isCapturing ? .elevated : .standard) {
+            VStack(alignment: .leading, spacing: 14) {
+                MixPilotPanelTitle(
+                    title: "Capture temporaire",
+                    symbol: session.isCapturing ? "record.circle.fill" : "waveform",
+                    subtitle: session.status,
+                    accent: session.isCapturing ? .red : .mint
+                )
+                HStack {
+                    Text(analysisTimeText(session.capturedDuration))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                    Spacer()
+                    Text("MAX 03:00")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(MixPilotPalette.textTertiary)
+                }
+                ProgressView(value: min(1, session.capturedDuration / 180))
+                    .tint(session.isCapturing ? .red : .mint)
+                HStack(spacing: 9) {
+                    Button("DÉMARRER") { session.start() }
+                        .buttonStyle(MixPilotPrimaryButtonStyle(accent: .mint))
+                        .disabled(session.isCapturing)
+                    Button("ARRÊTER ET ANALYSER") {
+                        session.stopAndPreview(
+                            appModel: model,
+                            trackID: selectedTrack.id,
+                            capturedStartTime: capturedStartTime
+                        )
+                    }
+                    .buttonStyle(MixPilotSecondaryButtonStyle())
+                    .disabled(!session.isCapturing)
+                    Button("ANNULER") { session.cancel() }
+                        .buttonStyle(MixPilotDangerButtonStyle())
+                        .disabled(!session.isCapturing)
+                }
+            }
         }
     }
 
@@ -312,10 +393,15 @@ private struct PremiumAnalysisResultView: View {
     let changes: [String]
 
     var body: some View {
-        MixPilotGlassCard(accent: .green) {
+        MixPilotGlassCard(accent: .green, elevation: .elevated) {
             VStack(alignment: .leading, spacing: 15) {
-                MixPilotPanelTitle(title: "Résultat de l’analyse", symbol: "checkmark.seal.fill", subtitle: "Données numériques uniquement", accent: .green)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+                MixPilotPanelTitle(
+                    title: "Résultat de l’analyse",
+                    symbol: "checkmark.seal.fill",
+                    subtitle: "Données numériques uniquement",
+                    accent: .green
+                )
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
                     metric("Durée", String(format: "%.1f s", analysis.duration), "clock")
                     metric("BPM", analysis.beatGrid.map { String(format: "%.1f", $0.bpm) } ?? "Non détecté", "metronome")
                     metric("Confiance", analysis.beatGrid.map { "\(Int($0.confidence * 100)) %" } ?? "—", "gauge")
@@ -323,11 +409,11 @@ private struct PremiumAnalysisResultView: View {
                     metric("Sections", "\(analysis.energySections.count)", "square.stack.3d.up.fill")
                 }
                 if !changes.isEmpty {
-                    Rectangle().fill(.white.opacity(0.09)).frame(height: 1)
+                    MixPilotSectionDivider(accent: .green)
                     ForEach(changes, id: \.self) { change in
                         Label(change, systemImage: "checkmark.circle.fill")
                             .font(.callout)
-                            .foregroundStyle(.white.opacity(0.62))
+                            .foregroundStyle(MixPilotPalette.textSecondary)
                     }
                 }
             }
@@ -335,16 +421,32 @@ private struct PremiumAnalysisResultView: View {
     }
 
     private func metric(_ title: String, _ value: String, _ symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol).foregroundStyle(.green)
-            Text(value).font(.title3.bold().monospacedDigit()).lineLimit(2)
-            Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.38))
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(.green.opacity(0.11))
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.green)
+            }
+            .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.title3.bold().monospacedDigit())
+                    .lineLimit(2)
+                Text(title.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(MixPilotPalette.textTertiary)
+            }
+            Spacer()
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
+        .padding(11)
+        .background(.white.opacity(0.038), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(.white.opacity(0.065), lineWidth: 1)
+        }
     }
 }
 
