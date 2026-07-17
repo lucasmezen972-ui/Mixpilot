@@ -4,12 +4,15 @@ import MixPilotCore
 
 public enum BackendCommandQueueError: Error, LocalizedError, Sendable {
     case circuitOpen
+    case commandInFlight
     case verificationRequired(DJControlAction, String)
 
     public var errorDescription: String? {
         switch self {
         case .circuitOpen:
             "Le contrôle automatique a été suspendu après plusieurs réponses incertaines. Reprends la main et vérifie le logiciel DJ."
+        case .commandInFlight:
+            "Cette commande est déjà en cours. MixPilot n’envoie pas de doublon."
         case .verificationRequired(_, let detail):
             detail
         }
@@ -42,6 +45,8 @@ public actor BackendCommandQueue: DJCommandSending {
     private let failureThreshold: Int
 
     private var completed: [String: DJCommandReceipt] = [:]
+    private var completedOrder: [String] = []
+    private var inFlightKeys: Set<String> = []
     private var sequence: UInt64 = 0
     private var status = BackendCommandQueueStatus()
 
@@ -89,7 +94,22 @@ public actor BackendCommandQueue: DJCommandSending {
         requireVerification: Bool
     ) async throws -> DJCommandReceipt {
         guard !status.circuitOpen else { throw BackendCommandQueueError.circuitOpen }
-        if let existing = completed[command.idempotencyKey] { return existing }
+
+        if let existing = completed[command.idempotencyKey] {
+            if !requireVerification || isVerified(existing) {
+                return existing
+            }
+            throw BackendCommandQueueError.verificationRequired(
+                command.action,
+                "Cette commande avait été envoyée auparavant sans preuve suffisante. Relance la validation du logiciel DJ avant de continuer."
+            )
+        }
+
+        guard !inFlightKeys.contains(command.idempotencyKey) else {
+            throw BackendCommandQueueError.commandInFlight
+        }
+        inFlightKeys.insert(command.idempotencyKey)
+        defer { inFlightKeys.remove(command.idempotencyKey) }
 
         let backend = self.backend
         do {
@@ -212,12 +232,22 @@ public actor BackendCommandQueue: DJCommandSending {
         }
     }
 
+    private func isVerified(_ receipt: DJCommandReceipt) -> Bool {
+        receipt.status == .verified || receipt.status == .observed
+    }
+
     private func remember(_ receipt: DJCommandReceipt, key: String) {
-        completed[key] = receipt
-        if completed.count > 500 {
-            completed.removeAll(keepingCapacity: true)
-            completed[key] = receipt
+        if completed[key] == nil {
+            completedOrder.append(key)
         }
+        completed[key] = receipt
+
+        let overflow = completedOrder.count - 500
+        guard overflow > 0 else { return }
+        for expiredKey in completedOrder.prefix(overflow) {
+            completed.removeValue(forKey: expiredKey)
+        }
+        completedOrder.removeFirst(overflow)
     }
 
     private func withTimeout<T: Sendable>(
