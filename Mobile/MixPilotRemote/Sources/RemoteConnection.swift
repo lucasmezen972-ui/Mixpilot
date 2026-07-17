@@ -213,6 +213,7 @@ final class RemoteConnection: ObservableObject {
             do {
                 try KeychainStore.shared.save(token, account: endpoint.id)
                 pairingRequired = false
+                lastError = nil
                 status = .authenticated(endpoint.name)
                 let lastSequence = sequencePolicy.lastSequence(for: endpoint.id)
                 Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
@@ -222,6 +223,7 @@ final class RemoteConnection: ObservableObject {
 
         case "authenticated":
             pairingRequired = false
+            lastError = nil
             status = .authenticated(endpoint?.name ?? "Mac")
             let lastSequence = endpoint.flatMap { sequencePolicy.lastSequence(for: $0.id) }
             Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
@@ -237,6 +239,8 @@ final class RemoteConnection: ObservableObject {
             lastAcknowledgement = message.acknowledgement
             if message.acknowledgement?.accepted == false {
                 lastError = message.acknowledgement?.message
+            } else {
+                lastError = nil
             }
 
         case "error":
@@ -258,6 +262,7 @@ final class RemoteConnection: ObservableObject {
             message: "Commande simulée"
         )
         lastAcknowledgement = acknowledgement
+        lastError = nil
 
         switch kind {
         case .pauseAutopilot:
