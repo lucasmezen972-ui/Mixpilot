@@ -30,6 +30,8 @@ reject_pattern() {
 
 require_file Sources/MixPilotCore/StrictVerificationDJBackend.swift
 require_file Tests/MixPilotCoreTests/StrictVerificationDJBackendTests.swift
+require_file Sources/MixPilotCore/DJBackendStateFreshness.swift
+require_file Tests/MixPilotCoreTests/DJBackendStateFreshnessTests.swift
 require_file Tests/MixPilotRuntimeTests/BackendCommandQueueSafetyTests.swift
 require_file Tests/MixPilotRuntimeTests/BackendCommandCadenceTests.swift
 require_file Tests/MixPilotRuntimeTests/TransitionTriggerVerificationTests.swift
@@ -46,6 +48,10 @@ require_file Shared/RemoteProtocolV2/Tests/MixPilotRemoteProtocolTests/RemoteLis
 
 require_pattern 'StrictVerificationDJBackend' Sources/MixPilotApp/AppModel+Mapping.swift \
   'active backends must use the strict verification boundary'
+require_pattern 'isReliableAndFresh' Sources/MixPilotCore/StrictVerificationDJBackend.swift \
+  'the strict backend boundary must reject stale state'
+require_pattern 'age >= 0' Sources/MixPilotCore/DJBackendStateFreshness.swift \
+  'future-dated backend observations must not be accepted'
 require_pattern 'verification\.status == \.verified' Sources/MixPilotRuntime/BackendCommandQueue.swift \
   'critical commands must require verified evidence'
 require_pattern 'verification\.confidence == \.validated' Sources/MixPilotRuntime/BackendCommandQueue.swift \
