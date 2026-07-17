@@ -30,7 +30,9 @@ private struct QueueTestBackend: DJBackend {
     }
 
     func capabilities() async -> DJBackendCapabilities { DJBackendCapabilities() }
-    func validateConfiguration() async -> DJBackendValidationReport { DJBackendValidationReport(backend: identifier, items: []) }
+    func validateConfiguration() async -> DJBackendValidationReport {
+        DJBackendValidationReport(backend: identifier, items: [])
+    }
     func readState() async throws -> DJBackendState { DJBackendState(isReliable: true) }
     func readDeckState(_ deck: DeckID) async throws -> DJDeckState { DJDeckState(deck: deck) }
 
@@ -39,9 +41,16 @@ private struct QueueTestBackend: DJBackend {
         return DJCommandReceipt(commandID: command.id, status: .acknowledged)
     }
 
-    func verify(command: DJBackendCommand, expectedEffect: DJExpectedEffect) async throws -> DJCommandVerification {
+    func verify(
+        command: DJBackendCommand,
+        expectedEffect: DJExpectedEffect
+    ) async throws -> DJCommandVerification {
         let status = await state.verification
-        return DJCommandVerification(status: status, confidence: status == .verified ? .validated : .unverified, detail: "test")
+        return DJCommandVerification(
+            status: status,
+            confidence: status == .verified ? .validated : .unverified,
+            detail: "test"
+        )
     }
 
     func takeManualControl() async {
@@ -55,8 +64,79 @@ func queueDeduplicatesCommands() async throws {
     let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
     let command = DJBackendCommand(action: .playA, idempotencyKey: "same-command")
 
-    _ = try await queue.execute(command, expectedEffect: .playback(true, deck: .a), requireVerification: true)
-    _ = try await queue.execute(command, expectedEffect: .playback(true, deck: .a), requireVerification: true)
+    _ = try await queue.execute(
+        command,
+        expectedEffect: .playback(true, deck: .a),
+        requireVerification: true
+    )
+    _ = try await queue.execute(
+        command,
+        expectedEffect: .playback(true, deck: .a),
+        requireVerification: true
+    )
+
+    #expect(await state.executionCount == 1)
+}
+
+@Test("Concurrent calls never execute the same idempotency key twice")
+func queueRejectsConcurrentDuplicate() async throws {
+    let state = QueueTestState()
+    await state.setDelay(.milliseconds(150))
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+    let command = DJBackendCommand(action: .playA, idempotencyKey: "concurrent-command")
+
+    async let first = queue.execute(
+        command,
+        expectedEffect: .playback(true, deck: .a),
+        requireVerification: true
+    )
+    try await Task.sleep(for: .milliseconds(20))
+
+    do {
+        _ = try await queue.execute(
+            command,
+            expectedEffect: .playback(true, deck: .a),
+            requireVerification: true
+        )
+        Issue.record("A duplicate command must not execute while the first is in flight.")
+    } catch let error as BackendCommandQueueError {
+        guard case .commandInFlight = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    }
+
+    _ = try await first
+    #expect(await state.executionCount == 1)
+}
+
+@Test("A cached unverified receipt cannot satisfy a stricter replay")
+func queueDoesNotUpgradeUnverifiedCachedReceipt() async throws {
+    let state = QueueTestState()
+    await state.setVerification(.unknown)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+    let command = DJBackendCommand(action: .loadA, idempotencyKey: "strict-replay")
+
+    _ = try await queue.execute(
+        command,
+        expectedEffect: .stateChanged,
+        requireVerification: false
+    )
+    await state.setVerification(.verified)
+
+    do {
+        _ = try await queue.execute(
+            command,
+            expectedEffect: .stateChanged,
+            requireVerification: true
+        )
+        Issue.record("An unverified cached receipt must not become verified by replay.")
+    } catch let error as BackendCommandQueueError {
+        guard case .verificationRequired = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    }
 
     #expect(await state.executionCount == 1)
 }
@@ -121,6 +201,10 @@ func manualControlOpensCircuit() async {
 private extension QueueTestState {
     func setVerification(_ value: DJCommandLifecycleStatus) {
         verification = value
+    }
+
+    func setDelay(_ value: Duration) {
+        delay = value
     }
 }
 #endif
