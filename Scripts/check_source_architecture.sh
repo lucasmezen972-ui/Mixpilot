@@ -96,6 +96,20 @@ grep -q 'MixPilotRemoteProtocolVersion.supports(message.version)' \
     exit 1
   }
 
+if grep -RInE \
+  --exclude='RemoteMappingUpdates.swift' \
+  --exclude-dir=.build \
+  --exclude-dir=.git \
+  '^import CryptoKit$' Sources/MixPilotCore; then
+  echo 'Architecture check failed: MixPilotCore must route hashing through the portable CryptoKit/Crypto adapter' >&2
+  exit 1
+fi
+
+grep -q '#elseif canImport(Crypto)' Sources/MixPilotCore/RemoteMappingUpdates.swift || {
+  echo 'Architecture check failed: portable Swift Crypto fallback is missing from MixPilotCore' >&2
+  exit 1
+}
+
 for deleted in \
   Sources/MixPilotApp/ContentView.swift \
   Sources/MixPilotApp/BrandedRootView.swift \
