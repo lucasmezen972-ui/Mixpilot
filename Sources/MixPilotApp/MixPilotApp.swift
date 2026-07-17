@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import MixPilotHelp
 import MixPilotRemoteBridge
 import SwiftUI
 
@@ -168,6 +169,11 @@ struct MixPilotAutopilotApp: App {
             RecoveryCenterView()
         }
         .defaultSize(width: 820, height: 620)
+
+        Window("Centre d’aide", id: "help-center") {
+            MixPilotHelpCenterView()
+        }
+        .defaultSize(width: 1_080, height: 760)
     }
 
     private func publishCloudBackendContext() {
@@ -192,6 +198,9 @@ private struct MixPilotWindowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var cloud: MixPilotCloudCoordinator
 
+    private let helpCatalog = MixPilotHelpCatalog.shared
+    private var helpLanguage: MixPilotHelpLanguage { .preferred() }
+
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Choisir le logiciel DJ") {
@@ -203,6 +212,13 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+        }
+
+        CommandGroup(replacing: .help) {
+            Button(helpCatalog.localized("help.center.title", language: helpLanguage)) {
+                openWindow(id: "help-center")
+            }
+            .keyboardShortcut("?", modifiers: [.command])
         }
 
         CommandMenu("Avancé") {
