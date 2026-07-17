@@ -12,20 +12,14 @@ extension AppModel {
             runtimeStatus = "Choisis ton logiciel DJ avant d’importer la playlist."
             return
         }
-
-        let rows = accessibilityBridge.libraryRows(
-            backend: selectedBackend,
-            maxRows: 1_000
-        )
+        let rows = accessibilityBridge.libraryRows(backend: selectedBackend, maxRows: 1_000)
         libraryRowCount = rows.count
         let result = VisiblePlaylistImporter().importRows(rows)
         playlistWarnings = result.warnings
-
         guard !result.tracks.isEmpty else {
             runtimeStatus = "Aucune playlist exploitable n’est visible. Ouvre la playlist souhaitée, puis relance l’import."
             return
         }
-
         preparedProject = SetPreparationEngine().prepare(
             name: "Playlist \(selectedBackend.displayName) — \(Date().formatted(date: .abbreviated, time: .shortened))",
             tracks: result.tracks,
@@ -38,9 +32,7 @@ extension AppModel {
     }
 
     @available(*, deprecated, message: "Use capturePlaylist()")
-    func captureSeratoPlaylist() {
-        capturePlaylist()
-    }
+    func captureSeratoPlaylist() { capturePlaylist() }
 
     func createDemoProject() {
         let tracks = SetSimulator().makeTracks(count: 30)
@@ -79,12 +71,10 @@ extension AppModel {
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.mp3, .mpeg4Audio, .wav, .aiff, .audio]
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-
         do {
             let summary = try emergencyPlayer.prepare(urls: panel.urls)
             emergencyDuration = summary.totalDuration
-            let minutes = Int(summary.totalDuration / 60)
-            emergencyStatus = "\(summary.fileCount) fichiers • \(minutes) min"
+            emergencyStatus = "\(summary.fileCount) fichiers • \(Int(summary.totalDuration / 60)) min"
             if !summary.invalidFiles.isEmpty {
                 emergencyStatus += " • \(summary.invalidFiles.count) fichier(s) ignoré(s)"
             }
@@ -107,13 +97,19 @@ extension AppModel {
 
     func startAudioMonitoring() {
         guard !audioMonitor.isRunning else { return }
+        lastAudioLevelUIUpdateAt = 0
+        Task { await audioWatchdog.reset() }
         do {
             try audioMonitor.start { [weak self, audioWatchdog] sample in
                 Task { @MainActor [weak self] in
-                    let event = await audioWatchdog.ingest(sample)
-                    self?.audioLevelDB = sample.rmsDB
-                    self?.applyAudioEvent(event)
-                    self?.evaluatePreflight()
+                    guard let self else { return }
+                    if sample.timestamp - self.lastAudioLevelUIUpdateAt >= 0.1 {
+                        self.audioLevelDB = sample.rmsDB
+                        self.lastAudioLevelUIUpdateAt = sample.timestamp
+                    }
+                    if let event = await audioWatchdog.ingest(sample) {
+                        self.applyAudioEvent(event)
+                    }
                 }
             }
             audioStatus = "Surveillance active"
@@ -125,6 +121,7 @@ extension AppModel {
 
     func stopAudioMonitoring() {
         audioMonitor.stop()
+        Task { await audioWatchdog.reset() }
         audioStatus = "Surveillance arrêtée"
         evaluatePreflight()
     }
@@ -152,9 +149,7 @@ extension AppModel {
             audioStatus = String(format: "Silence détecté %.1f s", duration)
         case .criticalSilence(let duration):
             audioStatus = String(format: "Silence critique %.1f s", duration)
-            if isLiveRunning,
-               emergencyPlayer.currentURL != nil,
-               !emergencyPlayer.isPlaying {
+            if isLiveRunning, emergencyPlayer.currentURL != nil, !emergencyPlayer.isPlaying {
                 emergencyPlayer.play()
                 emergencyStatus = "Musique de secours déclenchée automatiquement"
             }
