@@ -58,6 +58,18 @@ core_products = {
 if "Crypto" not in core_products:
     raise SystemExit("MixPilotCore must depend on Swift Crypto for Linux-compatible SHA-256 support.")
 
+
+def remote_url(dependency: dict) -> str:
+    source_controls = dependency.get("sourceControl") or []
+    if not source_controls:
+        return ""
+    location = source_controls[0].get("location") or {}
+    remotes = location.get("remote") or []
+    if not remotes:
+        return ""
+    return remotes[0].get("urlString", "")
+
+
 mac_targets = {
     "MixPilotMIDI",
     "MixPilotSystem",
@@ -86,10 +98,7 @@ else:
             "The cross-platform graph unexpectedly contains macOS-only targets: "
             f"{sorted(unexpected)}"
         )
-    dependency_urls = {
-        dependency.get("sourceControl", [{}])[0].get("location", {}).get("remote", {}).get("urlString", "")
-        for dependency in package.get("dependencies", [])
-    }
+    dependency_urls = {remote_url(dependency) for dependency in package.get("dependencies", [])}
     if any("supabase-swift" in url for url in dependency_urls):
         raise SystemExit("The Linux package graph must not resolve the macOS-only Supabase dependency.")
     if not any("swift-crypto" in url for url in dependency_urls):
