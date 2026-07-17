@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RemoteListenerRestartPolicy: Sendable, Hashable {
+public struct RemoteTransportRetryPolicy: Sendable, Hashable {
     public let maximumAttempts: Int
     public let initialDelay: TimeInterval
     public let maximumDelay: TimeInterval
@@ -45,3 +45,6 @@ public struct RemoteListenerRestartPolicy: Sendable, Hashable {
         readySince = nil
     }
 }
+
+@available(*, deprecated, renamed: "RemoteTransportRetryPolicy")
+public typealias RemoteListenerRestartPolicy = RemoteTransportRetryPolicy
