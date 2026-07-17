@@ -51,7 +51,6 @@ public actor BackendCommandQueue: DJCommandSending {
     private var completedOrder: [String] = []
     private var inFlightKeys: Set<String> = []
     private var uncertainKeys: Set<String> = []
-    private var uncertainOrder: [String] = []
     private var sequence: UInt64 = 0
     private var status = BackendCommandQueueStatus()
 
@@ -257,26 +256,16 @@ public actor BackendCommandQueue: DJCommandSending {
         guard overflow > 0 else { return }
         for expiredKey in completedOrder.prefix(overflow) {
             completed.removeValue(forKey: expiredKey)
-            clearUncertain(expiredKey)
         }
         completedOrder.removeFirst(overflow)
     }
 
     private func markUncertain(_ key: String) {
-        if uncertainKeys.insert(key).inserted {
-            uncertainOrder.append(key)
-        }
-        let overflow = uncertainOrder.count - 500
-        guard overflow > 0 else { return }
-        for expiredKey in uncertainOrder.prefix(overflow) {
-            uncertainKeys.remove(expiredKey)
-        }
-        uncertainOrder.removeFirst(overflow)
+        uncertainKeys.insert(key)
     }
 
     private func clearUncertain(_ key: String) {
         uncertainKeys.remove(key)
-        uncertainOrder.removeAll { $0 == key }
     }
 
     private func withTimeout<T: Sendable>(
