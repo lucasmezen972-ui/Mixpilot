@@ -246,6 +246,27 @@ private struct MixPilotWindowCommands: Commands {
             }
             .keyboardShortcut("?", modifiers: [.command])
         }
+
+        CommandMenu("Avancé") {
+            Button("Répéter une transition") {
+                openWindow(id: "rehearsal")
+            }
+            Button("Inspecter les transitions") {
+                openWindow(id: "transition-inspector")
+            }
+            Button("Analyser l’audio localement") {
+                openWindow(id: "preparation-analysis")
+            }
+            Button("Ouvrir le centre de récupération") {
+                openWindow(id: "recovery-center")
+            }
+
+            Divider()
+
+            Button("Vérifier les services en ligne") {
+                cloud.checkNow()
+            }
+        }
     }
 }
 #endif
