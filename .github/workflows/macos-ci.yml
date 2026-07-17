@@ -60,8 +60,39 @@ jobs:
       - name: Verify immutable GitHub mapping manifest
         run: ./Scripts/verify_mapping_provenance.sh | tee mapping-provenance-check.json
 
-      - name: Live Supabase auth and RLS self-test
-        run: ./Scripts/cloud_self_test.sh | tee cloud-self-test.json
+      - name: Optional live Supabase auth and RLS probe
+        id: cloud-probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/cloud_self_test.sh | tee cloud-self-test.json
+
+      - name: Record optional cloud probe status
+        if: always()
+        shell: bash
+        env:
+          CLOUD_PROBE_OUTCOME: ${{ steps.cloud-probe.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("cloud-self-test-status.json")
+          path.write_text(
+              json.dumps(
+                  {
+                      "required_for_local_build": False,
+                      "outcome": os.environ.get("CLOUD_PROBE_OUTCOME", "unknown"),
+                      "reason": "Online services are optional and must not block local Live, tests, builds, or packaging.",
+                  },
+                  ensure_ascii=False,
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Generate remote mapping candidate
         run: |
@@ -112,6 +143,7 @@ jobs:
             mapping-release-candidate.json
             mapping-provenance-check.json
             cloud-self-test.json
+            cloud-self-test-status.json
             unit-test.log
           if-no-files-found: warn
 
