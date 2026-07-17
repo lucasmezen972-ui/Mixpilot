@@ -5,6 +5,7 @@ on:
     paths:
       - "Mobile/MixPilotRemote/**"
       - "Shared/RemoteProtocolV2/**"
+      - "Scripts/check_source_architecture.sh"
       - ".github/workflows/iphone-remote-ci.yml"
   push:
     branches:
@@ -15,6 +16,7 @@ on:
     paths:
       - "Mobile/MixPilotRemote/**"
       - "Shared/RemoteProtocolV2/**"
+      - "Scripts/check_source_architecture.sh"
       - ".github/workflows/iphone-remote-ci.yml"
   workflow_dispatch:
 
@@ -32,6 +34,17 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+
+      - name: Source architecture consistency
+        run: bash Scripts/check_source_architecture.sh
+
+      - name: Verify shared Remote models
+        run: |
+          grep -q 'import MixPilotRemoteProtocol' Mobile/MixPilotRemote/Sources/RemoteModels.swift
+          if grep -RInE '^(public[[:space:]]+)?(struct|enum)[[:space:]]+(RemoteSnapshot|RemoteCommand|RemoteServerMessage|RemoteClientMessage)' Mobile/MixPilotRemote/Sources; then
+            echo 'The iPhone app must use the shared Remote v2 models instead of redefining them.' >&2
+            exit 1
+          fi
 
       - name: Install XcodeGen
         run: brew install xcodegen
