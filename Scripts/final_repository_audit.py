@@ -42,7 +42,12 @@ CRITICAL_UI_FILES = (
 )
 ALLOWED_UI_LITERALS = {"MIXPILOT", "MixPilot"}
 
-PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")
+PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----\s+"
+    r"[A-Za-z0-9+/=\r\n]{80,}"
+    r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+    re.MULTILINE,
+)
 TOKEN_PATTERNS = (
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{30,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
@@ -145,7 +150,7 @@ def audit_text(files: list[pathlib.Path], findings: list[Finding]) -> None:
         rel = path.relative_to(ROOT)
 
         if PRIVATE_KEY_RE.search(text):
-            findings.append(Finding("secret", str(rel), "private key material detected"))
+            findings.append(Finding("secret", str(rel), "complete private key material detected"))
 
         for pattern in TOKEN_PATTERNS:
             for match in pattern.finditer(text):
