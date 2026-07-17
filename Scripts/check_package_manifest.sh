@@ -23,14 +23,17 @@ products = {product["name"] for product in package.get("products", [])}
 
 required_shared_targets = {
     "MixPilotCore",
+    "MixPilotHelp",
     "MixPilotRemoteProtocol",
     "MixPilotSimulatorCLI",
     "MixPilotMappingPublisherCLI",
     "MixPilotCoreTests",
+    "MixPilotHelpTests",
     "MixPilotRemoteProtocolTests",
 }
 required_shared_products = {
     "MixPilotCore",
+    "MixPilotHelp",
     "MixPilotRemoteProtocol",
     "MixPilotSimulatorCLI",
     "MixPilotMappingPublisherCLI",
@@ -58,6 +61,17 @@ core_products = {
 }
 if "Crypto" not in core_products:
     raise SystemExit("MixPilotCore must depend on Swift Crypto for Linux-compatible SHA-256 support.")
+
+help_target = next(
+    (target for target in package.get("targets", []) if target.get("name") == "MixPilotHelp"),
+    None,
+)
+if help_target is None or not help_target.get("resources"):
+    raise SystemExit("MixPilotHelp must process its offline localization resources.")
+
+platform_names = {platform.get("platformName") for platform in package.get("platforms", [])}
+if not {"macos", "ios"}.issubset(platform_names):
+    raise SystemExit("The shared help product must be available to both macOS and iOS.")
 
 
 def remote_url(dependency: dict) -> str:
