@@ -12,6 +12,7 @@ swift package dump-package > "$manifest_json"
 python3 - "$manifest_json" "$(uname -s)" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 path, host = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as handle:
@@ -81,7 +82,21 @@ mac_targets = {
     "MixPilotSystemTests",
     "MixPilotRuntimeTests",
 }
-mac_products = {"MixPilotAutopilot", "MixPilotHardwareProbeCLI"}
+mac_products = {
+    "MixPilotMIDI",
+    "MixPilotSystem",
+    "MixPilotRuntime",
+    "MixPilotRemoteBridge",
+    "MixPilotAutopilot",
+    "MixPilotHardwareProbeCLI",
+}
+
+runtime_test_sources = {
+    "BackendCommandQueueTests.swift",
+    "BackendCommandUncertainOutcomeTests.swift",
+    "LiveBackendValidationTests.swift",
+    "ManualControlHandoffTests.swift",
+}
 
 if host == "Darwin":
     missing_mac_targets = mac_targets - targets
@@ -91,6 +106,19 @@ if host == "Darwin":
             "Package manifest is missing macOS entries: "
             f"targets={sorted(missing_mac_targets)}, products={sorted(missing_mac_products)}"
         )
+
+    runtime_test_dir = Path("Tests/MixPilotRuntimeTests")
+    present_runtime_tests = {path.name for path in runtime_test_dir.glob("*.swift")}
+    missing_runtime_tests = runtime_test_sources - present_runtime_tests
+    if missing_runtime_tests:
+        raise SystemExit(
+            "MixPilotRuntimeTests is missing expected multi-backend/runtime sources: "
+            f"{sorted(missing_runtime_tests)}"
+        )
+
+    core_mock = Path("Tests/MixPilotCoreTests/MockDJBackends.swift")
+    if not core_mock.is_file():
+        raise SystemExit("The multi-backend core mock file is missing: Tests/MixPilotCoreTests/MockDJBackends.swift")
 else:
     unexpected = mac_targets & targets
     if unexpected:
