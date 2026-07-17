@@ -6,14 +6,22 @@ import Testing
 
 private actor QueueTestState {
     var executionCount = 0
+    var verificationCount = 0
+    var receiptStatus: DJCommandLifecycleStatus = .acknowledged
     var verification: DJCommandLifecycleStatus = .verified
     var confidence: DJCapabilityConfidence = .validated
     var delay: Duration = .zero
     var manualControlCount = 0
 
-    func execute() async throws {
+    func execute() async throws -> DJCommandLifecycleStatus {
         executionCount += 1
         if delay > .zero { try await Task.sleep(for: delay) }
+        return receiptStatus
+    }
+
+    func verificationResult() -> (DJCommandLifecycleStatus, DJCapabilityConfidence) {
+        verificationCount += 1
+        return (verification, confidence)
     }
 
     func manualControl() {
@@ -38,16 +46,15 @@ private struct QueueTestBackend: DJBackend {
     func readDeckState(_ deck: DeckID) async throws -> DJDeckState { DJDeckState(deck: deck) }
 
     func execute(_ command: DJBackendCommand) async throws -> DJCommandReceipt {
-        try await state.execute()
-        return DJCommandReceipt(commandID: command.id, status: .acknowledged)
+        let status = try await state.execute()
+        return DJCommandReceipt(commandID: command.id, status: status)
     }
 
     func verify(
         command: DJBackendCommand,
         expectedEffect: DJExpectedEffect
     ) async throws -> DJCommandVerification {
-        let status = await state.verification
-        let confidence = await state.confidence
+        let (status, confidence) = await state.verificationResult()
         return DJCommandVerification(
             status: status,
             confidence: confidence,
@@ -141,6 +148,79 @@ func queueDoesNotUpgradeUnverifiedCachedReceipt() async throws {
     }
 
     #expect(await state.executionCount == 1)
+}
+
+@Test("A failed execution receipt stops before verification")
+func failedReceiptStopsBeforeVerification() async {
+    let state = QueueTestState()
+    await state.setReceiptStatus(.failed)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+
+    do {
+        _ = try await queue.execute(
+            DJBackendCommand(action: .playA, idempotencyKey: "failed-receipt"),
+            expectedEffect: .playback(true, deck: .a),
+            requireVerification: true
+        )
+        Issue.record("A failed receipt must not continue to verification.")
+    } catch let error as BackendCommandQueueError {
+        guard case .executionNotAcknowledged(_, .failed, _) = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
+    let executionCount = await state.executionCount
+    let verificationCount = await state.verificationCount
+    #expect(executionCount == 1)
+    #expect(verificationCount == 0)
+}
+
+@Test("A sent receipt remains uncertain and is not replayed")
+func sentReceiptRemainsUncertain() async {
+    let state = QueueTestState()
+    await state.setReceiptStatus(.sent)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+    let command = DJBackendCommand(action: .browserDown, idempotencyKey: "sent-receipt")
+
+    do {
+        _ = try await queue.execute(
+            command,
+            expectedEffect: .stateChanged,
+            requireVerification: false
+        )
+        Issue.record("A sent receipt must not count as an acknowledged success.")
+    } catch let error as BackendCommandQueueError {
+        guard case .executionNotAcknowledged(_, .sent, _) = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
+    do {
+        _ = try await queue.execute(
+            command,
+            expectedEffect: .stateChanged,
+            requireVerification: false
+        )
+        Issue.record("An uncertain command must not be resent automatically.")
+    } catch let error as BackendCommandQueueError {
+        guard case .uncertainOutcome = error else {
+            Issue.record("Unexpected replay error: \(error)")
+            return
+        }
+    } catch {
+        Issue.record("Unexpected replay error: \(error)")
+    }
+
+    let executionCount = await state.executionCount
+    let verificationCount = await state.verificationCount
+    #expect(executionCount == 1)
+    #expect(verificationCount == 0)
 }
 
 @Test("An observed effect cannot verify a critical command")
@@ -266,6 +346,10 @@ func manualControlOpensCircuit() async {
 }
 
 private extension QueueTestState {
+    func setReceiptStatus(_ value: DJCommandLifecycleStatus) {
+        receiptStatus = value
+    }
+
     func setVerification(_ value: DJCommandLifecycleStatus) {
         verification = value
     }
