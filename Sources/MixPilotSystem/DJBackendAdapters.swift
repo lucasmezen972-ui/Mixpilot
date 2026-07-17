@@ -67,22 +67,210 @@ public struct DJApplicationEnvironmentDetector: Sendable {
     }
 }
 
-private actor StandardDJBackendAdapter {
+private protocol DJBackendPolicy: Sendable {
+    var identifier: DJBackendIdentifier { get }
+    var displayName: String { get }
+
+    func configureLibraryCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    )
+    func configureMappingCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    )
+    func configureStateCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    )
+}
+
+private struct SeratoBackendPolicy: DJBackendPolicy {
+    let identifier: DJBackendIdentifier = .serato
+    let displayName = "Serato DJ Pro"
+
+    func configureLibraryCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.libraryReading] = observedPartialStatus(
+            "MixPilot lit actuellement les lignes visibles de la bibliothèque Serato.",
+            environment: environment
+        )
+        result[.visiblePlaylistReading] = observedPartialStatus(
+            "La disposition des colonnes doit être confirmée sur le Mac cible.",
+            environment: environment
+        )
+    }
+
+    func configureMappingCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.mappingImport] = validatedMappingStatus(environment)
+        result[.mappingAutoInstall] = validatedMappingStatus(environment)
+        result[.mappingRollback] = validatedMappingStatus(environment)
+    }
+
+    func configureStateCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        configureObservedDeckState(&result, environment: environment)
+        result[.automix] = capabilityStatus(
+            .unavailable,
+            .documented,
+            .blockedByPlatform,
+            .unavailable,
+            environment: environment,
+            reason: "Serato utilise le moteur de transitions MixPilot plutôt qu’un mode Automix natif."
+        )
+        configureSharedTransitionCapabilities(&result, environment: environment)
+    }
+}
+
+private struct RekordboxBackendPolicy: DJBackendPolicy {
+    let identifier: DJBackendIdentifier = .rekordbox
+    let displayName = "rekordbox"
+
+    func configureLibraryCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.libraryReading] = capabilityStatus(
+            .available,
+            .validated,
+            .automatedSuccess,
+            .documentedLibraryImport,
+            environment: environment,
+            reason: "Les imports XML et JSON sont vérifiés automatiquement avant utilisation."
+        )
+        result[.visiblePlaylistReading] = observedPartialStatus(
+            "La lecture visible reste dépendante de la disposition de rekordbox.",
+            environment: environment
+        )
+    }
+
+    func configureMappingCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.mappingImport] = validatedMappingStatus(environment)
+        result[.mappingAutoInstall] = capabilityStatus(
+            .partiallyAvailable,
+            .validated,
+            .requiresBackendValidation,
+            .guidedManualStep,
+            environment: environment,
+            reason: "MixPilot prépare et vérifie le CSV. L’import reste confirmé dans la fenêtre MIDI officielle de rekordbox."
+        )
+        result[.mappingRollback] = validatedMappingStatus(environment)
+    }
+
+    func configureStateCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        configureObservedDeckState(&result, environment: environment)
+        result[.automix] = capabilityStatus(
+            .unavailable,
+            .documented,
+            .blockedByPlatform,
+            .unavailable,
+            environment: environment,
+            reason: "rekordbox utilise le moteur de transitions MixPilot plutôt qu’un mode Automix natif."
+        )
+        configureSharedTransitionCapabilities(&result, environment: environment)
+    }
+}
+
+private struct DjayBackendPolicy: DJBackendPolicy {
+    let identifier: DJBackendIdentifier = .djay
+    let displayName = "djay Pro"
+
+    func configureLibraryCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.libraryReading] = observedPartialStatus(
+            "La lecture repose sur la file Automix et les contrôles visibles exposés par djay.",
+            environment: environment
+        )
+        result[.visiblePlaylistReading] = observedPartialStatus(
+            "La file Automix doit être validée avec la version installée.",
+            environment: environment
+        )
+        result[.automix] = capabilityStatus(
+            .partiallyAvailable,
+            .observed,
+            .requiresBackendValidation,
+            .nativeAutomix,
+            environment: environment,
+            reason: "Automix est disponible dans djay, mais son pilotage doit encore être validé sur cette version.",
+            action: DJUserAction(
+                title: "Tester Automix",
+                instructions: "Ouvre une file de test dans djay et termine le parcours de validation."
+            )
+        )
+    }
+
+    func configureMappingCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        result[.mappingImport] = capabilityStatus(
+            .partiallyAvailable,
+            .unverified,
+            .requiresBackendValidation,
+            .guidedManualStep,
+            environment: environment,
+            reason: "Le profil MIDI djay doit encore être importé et validé sur le Mac cible."
+        )
+        result[.mappingAutoInstall] = capabilityStatus(
+            .unavailable,
+            .unverified,
+            .blockedByPlatform,
+            .unavailable,
+            environment: environment,
+            reason: "L’installation automatique n’est pas revendiquée pour djay."
+        )
+        result[.mappingRollback] = capabilityStatus(
+            .partiallyAvailable,
+            .unverified,
+            .requiresBackendValidation,
+            .guidedManualStep,
+            environment: environment,
+            reason: "La restauration du profil djay doit encore être validée."
+        )
+    }
+
+    func configureStateCapabilities(
+        _ result: inout DJBackendCapabilities,
+        environment: DJBackendEnvironment
+    ) {
+        configureObservedDeckState(&result, environment: environment)
+        configureSharedTransitionCapabilities(&result, environment: environment)
+    }
+}
+
+private actor ConfiguredDJBackendAdapter<Policy: DJBackendPolicy> {
     nonisolated let identifier: DJBackendIdentifier
     nonisolated let displayName: String
 
+    private let policy: Policy
     private let midi: MappedMIDIController
     private let validationStore: any DJCommandValidationStoring
     private let environmentDetector: DJApplicationEnvironmentDetector
 
     init(
-        identifier: DJBackendIdentifier,
+        policy: Policy,
         midi: MappedMIDIController,
         validationStore: any DJCommandValidationStoring,
         environmentDetector: DJApplicationEnvironmentDetector
     ) {
-        self.identifier = identifier
-        self.displayName = identifier.displayName
+        self.policy = policy
+        self.identifier = policy.identifier
+        self.displayName = policy.displayName
         self.midi = midi
         self.validationStore = validationStore
         self.environmentDetector = environmentDetector
@@ -105,11 +293,14 @@ private actor StandardDJBackendAdapter {
         let validatedActions = Set(currentRecords.filter(\.permitsLiveControl).map { $0.key.action })
 
         var result = DJBackendCapabilities()
-        result[.processDetection] = status(
-            .available, .documented, .automatedSuccess, .visibleInterfaceObservation,
+        result[.processDetection] = capabilityStatus(
+            .available,
+            .documented,
+            .automatedSuccess,
+            .visibleInterfaceObservation,
             environment: environment
         )
-        result[.versionDetection] = status(
+        result[.versionDetection] = capabilityStatus(
             environment.softwareVersion == nil ? .partiallyAvailable : .available,
             environment.softwareVersion == nil ? .unverified : .documented,
             environment.softwareVersion == nil ? .requiresBackendValidation : .automatedSuccess,
@@ -118,9 +309,9 @@ private actor StandardDJBackendAdapter {
             reason: environment.softwareVersion == nil ? "La version du logiciel n’a pas encore été détectée." : nil
         )
 
-        configureLibraryCapabilities(&result, environment: environment)
-        configureMappingCapabilities(&result, environment: environment)
-        configureStateCapabilities(&result, environment: environment)
+        policy.configureLibraryCapabilities(&result, environment: environment)
+        policy.configureMappingCapabilities(&result, environment: environment)
+        policy.configureStateCapabilities(&result, environment: environment)
 
         for capability in commandCapabilities {
             let actions = DJControlAction.allCases.filter { $0.requiredCapability == capability }
@@ -148,17 +339,26 @@ private actor StandardDJBackendAdapter {
             )
         }
 
-        result[.masterAudioMonitoring] = status(
-            .available, .validated, .automatedSuccess, .localAudioMonitoring,
+        result[.masterAudioMonitoring] = capabilityStatus(
+            .available,
+            .validated,
+            .automatedSuccess,
+            .localAudioMonitoring,
             environment: environment,
             reason: "La surveillance audio appartient à MixPilot et reste indépendante du backend."
         )
-        result[.remoteControl] = status(
-            .available, .documented, .automatedSuccess, .guidedManualStep,
+        result[.remoteControl] = capabilityStatus(
+            .available,
+            .documented,
+            .automatedSuccess,
+            .guidedManualStep,
             environment: environment
         )
-        result[.recovery] = status(
-            .available, .documented, .automatedSuccess, .guidedManualStep,
+        result[.recovery] = capabilityStatus(
+            .available,
+            .documented,
+            .automatedSuccess,
+            .guidedManualStep,
             environment: environment
         )
         return result
@@ -253,7 +453,10 @@ private actor StandardDJBackendAdapter {
         )
     }
 
-    func verify(command: DJBackendCommand, expectedEffect: DJExpectedEffect) async throws -> DJCommandVerification {
+    func verify(
+        command: DJBackendCommand,
+        expectedEffect: DJExpectedEffect
+    ) async throws -> DJCommandVerification {
         let observation = await observation()
         guard observation.isRunning else { throw DJBackendError.disconnected(identifier) }
 
@@ -292,150 +495,6 @@ private actor StandardDJBackendAdapter {
         }
     }
 
-    private func configureLibraryCapabilities(
-        _ result: inout DJBackendCapabilities,
-        environment: DJBackendEnvironment
-    ) {
-        switch identifier {
-        case .serato:
-            result[.libraryReading] = observedPartial(
-                "MixPilot lit actuellement les lignes visibles de la bibliothèque Serato.", environment
-            )
-            result[.visiblePlaylistReading] = observedPartial(
-                "La disposition des colonnes doit être confirmée sur le Mac cible.", environment
-            )
-        case .djay:
-            result[.libraryReading] = observedPartial(
-                "La lecture repose sur la file Automix et les contrôles visibles exposés par djay.", environment
-            )
-            result[.visiblePlaylistReading] = observedPartial(
-                "La file Automix doit être validée avec la version installée.", environment
-            )
-            result[.automix] = status(
-                .partiallyAvailable, .observed, .requiresBackendValidation, .nativeAutomix,
-                environment: environment,
-                reason: "Automix est disponible dans djay, mais son pilotage doit encore être validé sur cette version.",
-                action: DJUserAction(
-                    title: "Tester Automix",
-                    instructions: "Ouvre une file de test dans djay et termine le parcours de validation."
-                )
-            )
-        case .rekordbox:
-            result[.libraryReading] = status(
-                .available, .validated, .automatedSuccess, .documentedLibraryImport,
-                environment: environment,
-                reason: "Les imports XML et JSON sont vérifiés automatiquement avant utilisation."
-            )
-            result[.visiblePlaylistReading] = observedPartial(
-                "La lecture visible reste dépendante de la disposition de rekordbox.", environment
-            )
-        }
-    }
-
-    private func configureMappingCapabilities(
-        _ result: inout DJBackendCapabilities,
-        environment: DJBackendEnvironment
-    ) {
-        switch identifier {
-        case .serato:
-            result[.mappingImport] = validatedMapping(environment)
-            result[.mappingAutoInstall] = validatedMapping(environment)
-            result[.mappingRollback] = validatedMapping(environment)
-        case .rekordbox:
-            result[.mappingImport] = validatedMapping(environment)
-            result[.mappingAutoInstall] = status(
-                .partiallyAvailable, .validated, .requiresBackendValidation, .guidedManualStep,
-                environment: environment,
-                reason: "MixPilot prépare et vérifie le CSV. L’import reste confirmé dans la fenêtre MIDI officielle de rekordbox."
-            )
-            result[.mappingRollback] = validatedMapping(environment)
-        case .djay:
-            result[.mappingImport] = status(
-                .partiallyAvailable, .unverified, .requiresBackendValidation, .guidedManualStep,
-                environment: environment,
-                reason: "Le profil MIDI djay doit encore être importé et validé sur le Mac cible."
-            )
-            result[.mappingAutoInstall] = status(
-                .unavailable, .unverified, .blockedByPlatform, .unavailable,
-                environment: environment,
-                reason: "L’installation automatique n’est pas revendiquée pour djay."
-            )
-            result[.mappingRollback] = status(
-                .partiallyAvailable, .unverified, .requiresBackendValidation, .guidedManualStep,
-                environment: environment,
-                reason: "La restauration du profil djay doit encore être validée."
-            )
-        }
-    }
-
-    private func configureStateCapabilities(
-        _ result: inout DJBackendCapabilities,
-        environment: DJBackendEnvironment
-    ) {
-        for capability in [DJCapability.deckStateReading, .trackStateReading] {
-            result[capability] = observedPartial(
-                "L’interface visible peut être observée, mais l’état complet des decks n’est pas encore garanti.",
-                environment
-            )
-        }
-        result[.waveformReading] = status(
-            .unavailable, .unverified, .blockedByPlatform, .unavailable,
-            environment: environment,
-            reason: "MixPilot ne lit pas les formes d’onde internes du logiciel DJ."
-        )
-        if identifier != .djay {
-            result[.automix] = status(
-                .unavailable, .documented, .blockedByPlatform, .unavailable,
-                environment: environment,
-                reason: "Ce backend utilise le moteur de transitions MixPilot."
-            )
-        }
-        result[.transitionTrigger] = status(
-            .available, .observed, .requiresDeviceValidation, .coreMIDI,
-            environment: environment,
-            reason: "Le déclenchement dépend des commandes critiques réellement confirmées."
-        )
-    }
-
-    private func status(
-        _ availability: DJCapabilityAvailability,
-        _ confidence: DJCapabilityConfidence,
-        _ validation: DJValidationStatus,
-        _ method: DJIntegrationMethod,
-        environment: DJBackendEnvironment,
-        reason: String? = nil,
-        action: DJUserAction? = nil
-    ) -> DJCapabilityStatus {
-        DJCapabilityStatus(
-            availability: availability,
-            confidence: confidence,
-            validation: validation,
-            method: method,
-            testedSoftwareVersion: environment.softwareVersion,
-            reason: reason,
-            userAction: action
-        )
-    }
-
-    private func observedPartial(
-        _ reason: String,
-        _ environment: DJBackendEnvironment
-    ) -> DJCapabilityStatus {
-        status(
-            .partiallyAvailable, .observed, .requiresDeviceValidation, .accessibility,
-            environment: environment,
-            reason: reason
-        )
-    }
-
-    private func validatedMapping(_ environment: DJBackendEnvironment) -> DJCapabilityStatus {
-        status(
-            .available, .validated, .automatedSuccess, .importedMapping,
-            environment: environment,
-            reason: "Le fichier de mapping est géré et vérifié localement ; les réactions des commandes restent validées séparément."
-        )
-    }
-
     private func validationKey(
         _ action: DJControlAction,
         environment: DJBackendEnvironment,
@@ -472,18 +531,97 @@ private actor StandardDJBackendAdapter {
     }
 }
 
+private func capabilityStatus(
+    _ availability: DJCapabilityAvailability,
+    _ confidence: DJCapabilityConfidence,
+    _ validation: DJValidationStatus,
+    _ method: DJIntegrationMethod,
+    environment: DJBackendEnvironment,
+    reason: String? = nil,
+    action: DJUserAction? = nil
+) -> DJCapabilityStatus {
+    DJCapabilityStatus(
+        availability: availability,
+        confidence: confidence,
+        validation: validation,
+        method: method,
+        testedSoftwareVersion: environment.softwareVersion,
+        reason: reason,
+        userAction: action
+    )
+}
+
+private func observedPartialStatus(
+    _ reason: String,
+    environment: DJBackendEnvironment
+) -> DJCapabilityStatus {
+    capabilityStatus(
+        .partiallyAvailable,
+        .observed,
+        .requiresDeviceValidation,
+        .accessibility,
+        environment: environment,
+        reason: reason
+    )
+}
+
+private func validatedMappingStatus(_ environment: DJBackendEnvironment) -> DJCapabilityStatus {
+    capabilityStatus(
+        .available,
+        .validated,
+        .automatedSuccess,
+        .importedMapping,
+        environment: environment,
+        reason: "Le fichier de mapping est géré et vérifié localement ; les réactions des commandes restent validées séparément."
+    )
+}
+
+private func configureObservedDeckState(
+    _ result: inout DJBackendCapabilities,
+    environment: DJBackendEnvironment
+) {
+    for capability in [DJCapability.deckStateReading, .trackStateReading] {
+        result[capability] = observedPartialStatus(
+            "L’interface visible peut être observée, mais l’état complet des decks n’est pas encore garanti.",
+            environment: environment
+        )
+    }
+}
+
+private func configureSharedTransitionCapabilities(
+    _ result: inout DJBackendCapabilities,
+    environment: DJBackendEnvironment
+) {
+    result[.waveformReading] = capabilityStatus(
+        .unavailable,
+        .unverified,
+        .blockedByPlatform,
+        .unavailable,
+        environment: environment,
+        reason: "MixPilot ne lit pas les formes d’onde internes du logiciel DJ."
+    )
+    result[.transitionTrigger] = capabilityStatus(
+        .available,
+        .observed,
+        .requiresDeviceValidation,
+        .coreMIDI,
+        environment: environment,
+        reason: "Le déclenchement dépend des commandes critiques réellement confirmées."
+    )
+}
+
 public struct SeratoBackend: DJBackend {
     public let identifier: DJBackendIdentifier = .serato
     public let displayName = "Serato DJ Pro"
-    private let adapter: StandardDJBackendAdapter
+    private let adapter: ConfiguredDJBackendAdapter<SeratoBackendPolicy>
 
     public init(
         midi: MappedMIDIController,
         validationStore: any DJCommandValidationStoring = UserDefaultsDJCommandValidationStore(),
         environmentDetector: DJApplicationEnvironmentDetector = DJApplicationEnvironmentDetector()
     ) {
-        adapter = StandardDJBackendAdapter(
-            identifier: .serato,
+        adapter = ConfiguredDJBackendAdapter(
+            policy: SeratoBackendPolicy(),
             midi: midi,
             validationStore: validationStore,
             environmentDetector: environmentDetector
@@ -505,15 +643,15 @@ public struct SeratoBackend: DJBackend {
 public struct RekordboxBackend: DJBackend {
     public let identifier: DJBackendIdentifier = .rekordbox
     public let displayName = "rekordbox"
-    private let adapter: StandardDJBackendAdapter
+    private let adapter: ConfiguredDJBackendAdapter<RekordboxBackendPolicy>
 
     public init(
         midi: MappedMIDIController,
         validationStore: any DJCommandValidationStoring = UserDefaultsDJCommandValidationStore(),
         environmentDetector: DJApplicationEnvironmentDetector = DJApplicationEnvironmentDetector()
     ) {
-        adapter = StandardDJBackendAdapter(
-            identifier: .rekordbox,
+        adapter = ConfiguredDJBackendAdapter(
+            policy: RekordboxBackendPolicy(),
             midi: midi,
             validationStore: validationStore,
             environmentDetector: environmentDetector
@@ -535,15 +673,15 @@ public struct RekordboxBackend: DJBackend {
 public struct DjayBackend: DJBackend {
     public let identifier: DJBackendIdentifier = .djay
     public let displayName = "djay Pro"
-    private let adapter: StandardDJBackendAdapter
+    private let adapter: ConfiguredDJBackendAdapter<DjayBackendPolicy>
 
     public init(
         midi: MappedMIDIController,
         validationStore: any DJCommandValidationStoring = UserDefaultsDJCommandValidationStore(),
         environmentDetector: DJApplicationEnvironmentDetector = DJApplicationEnvironmentDetector()
     ) {
-        adapter = StandardDJBackendAdapter(
-            identifier: .djay,
+        adapter = ConfiguredDJBackendAdapter(
+            policy: DjayBackendPolicy(),
             midi: midi,
             validationStore: validationStore,
             environmentDetector: environmentDetector
