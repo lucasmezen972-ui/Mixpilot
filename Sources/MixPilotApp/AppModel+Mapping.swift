@@ -109,7 +109,7 @@ extension AppModel {
             backend: selectedBackend,
             softwareVersion: environment?.softwareVersion,
             controllerName: "MixPilot Virtual Controller",
-            mappingVersion: "profile-\(mappingProfile.schemaVersion)",
+            mappingVersion: mappingProfile.validationIdentifier,
             action: action
         )
         let record = DJCommandValidationRecord(
