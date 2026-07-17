@@ -14,6 +14,7 @@ private final class MixPilotRemoteClientSession: @unchecked Sendable {
     var protocolVersion = MixPilotRemoteProtocolVersion.minimumSupported
 
     private let queue: DispatchQueue
+    private let stateLock = NSLock()
     private var closed = false
 
     init(connection: NWConnection) {
@@ -42,7 +43,7 @@ private final class MixPilotRemoteClientSession: @unchecked Sendable {
     }
 
     func send(_ data: Data, completion: (@Sendable (NWError?) -> Void)? = nil) {
-        guard !closed else { return }
+        guard !isClosed else { return }
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
         let context = NWConnection.ContentContext(
             identifier: "mixpilot-remote-message",
@@ -57,17 +58,28 @@ private final class MixPilotRemoteClientSession: @unchecked Sendable {
     }
 
     func close() {
-        guard !closed else { return }
+        stateLock.lock()
+        let shouldClose = !closed
         closed = true
+        stateLock.unlock()
+
+        guard shouldClose else { return }
         connection.cancel()
+    }
+
+    private var isClosed: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return closed
     }
 
     private func receiveNext(
         onMessage: @escaping @Sendable (Data) -> Void,
         onClose: @escaping @Sendable () -> Void
     ) {
+        guard !isClosed else { return }
         connection.receiveMessage { [weak self] content, _, _, error in
-            guard let self else { return }
+            guard let self, !self.isClosed else { return }
             if let content, !content.isEmpty {
                 onMessage(content)
             }
@@ -91,6 +103,9 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     private var listener: NWListener?
     private var sessions: [UUID: MixPilotRemoteClientSession] = [:]
     private var snapshotTask: Task<Void, Never>?
+    private var restartTask: Task<Void, Never>?
+    private var restartPolicy = RemoteListenerRestartPolicy()
+    private var wantsRemote = false
     private var sequence = 0
     private let networkQueue = DispatchQueue(label: "com.mixpilot.remote.listener")
     private let pairingAuthority: MixPilotRemotePairingAuthority
@@ -118,16 +133,49 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     deinit {
         listener?.cancel()
         snapshotTask?.cancel()
+        restartTask?.cancel()
         sessions.values.forEach { $0.close() }
     }
 
     public func start(provider: any MixPilotRemoteStateProvider) {
-        guard !isRunning else {
-            self.provider = provider
+        self.provider = provider
+
+        if wantsRemote {
+            if listener == nil, restartTask == nil, !isRunning {
+                restartPolicy.reset()
+                startListener()
+            }
             return
         }
-        self.provider = provider
+
+        wantsRemote = true
         pairingCode = pairingAuthority.rotatePairingCode()
+        restartPolicy.reset()
+        startSnapshotLoop()
+        startListener()
+    }
+
+    public func stop() {
+        wantsRemote = false
+        restartTask?.cancel()
+        restartTask = nil
+        restartPolicy.reset()
+        snapshotTask?.cancel()
+        snapshotTask = nil
+        listener?.cancel()
+        listener = nil
+        closeAllSessions()
+        isRunning = false
+        status = "Télécommande désactivée"
+        provider = nil
+    }
+
+    public func rotatePairingCode() {
+        pairingCode = pairingAuthority.rotatePairingCode()
+    }
+
+    private func startListener() {
+        guard wantsRemote, provider != nil, listener == nil else { return }
 
         do {
             let parameters = NWParameters.tcp
@@ -144,63 +192,83 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor [weak self] in self?.accept(connection) }
             }
-            listener.stateUpdateHandler = { [weak self] state in
-                Task { @MainActor [weak self] in self?.applyListenerState(state) }
+            listener.stateUpdateHandler = { [weak self, weak listener] state in
+                Task { @MainActor [weak self, weak listener] in
+                    self?.applyListenerState(state, listener: listener)
+                }
             }
             self.listener = listener
             listener.start(queue: networkQueue)
             isRunning = true
             status = "Démarrage de la télécommande…"
-            startSnapshotLoop()
         } catch {
-            providerFailure(error)
+            isRunning = false
+            scheduleRestart(reason: error.localizedDescription)
         }
     }
 
-    public func stop() {
-        snapshotTask?.cancel()
-        snapshotTask = nil
-        listener?.cancel()
-        listener = nil
-        sessions.values.forEach { $0.close() }
-        sessions.removeAll()
-        connectedClientCount = 0
-        isRunning = false
-        status = "Télécommande désactivée"
-        provider = nil
-    }
+    private func applyListenerState(_ state: NWListener.State, listener eventListener: NWListener?) {
+        guard eventListener === listener || eventListener == nil else { return }
 
-    public func rotatePairingCode() {
-        pairingCode = pairingAuthority.rotatePairingCode()
-    }
-
-    private func providerFailure(_ error: Error) {
-        listener = nil
-        isRunning = false
-        provider = nil
-        status = "Échec télécommande : \(error.localizedDescription)"
-    }
-
-    private func applyListenerState(_ state: NWListener.State) {
         switch state {
         case .ready:
+            restartTask?.cancel()
+            restartTask = nil
+            restartPolicy.markReady()
+            isRunning = true
             if let port = listener?.port {
                 status = "Télécommande active • port \(port.rawValue)"
             } else {
                 status = "Télécommande active"
             }
+
         case .failed(let error):
-            status = "Échec réseau : \(error.localizedDescription)"
-            stop()
+            let failedListener = listener
+            listener = nil
+            isRunning = false
+            closeAllSessions()
+            failedListener?.cancel()
+            scheduleRestart(reason: error.localizedDescription)
+
         case .cancelled:
-            if isRunning { status = "Télécommande arrêtée" }
+            if !wantsRemote {
+                status = "Télécommande désactivée"
+            }
+
         default:
             break
         }
     }
 
+    private func scheduleRestart(reason: String) {
+        guard wantsRemote, provider != nil, restartTask == nil else { return }
+        guard let delay = restartPolicy.nextDelay() else {
+            status = "Télécommande indisponible après plusieurs tentatives • le Live local reste actif"
+            return
+        }
+
+        let seconds = max(1, Int(delay.rounded()))
+        status = "Télécommande indisponible • nouvelle tentative dans \(seconds) s • le Live continue"
+        restartTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled, self.wantsRemote else { return }
+            self.restartTask = nil
+            self.startListener()
+        }
+    }
+
+    private func closeAllSessions() {
+        sessions.values.forEach { $0.close() }
+        sessions.removeAll()
+        connectedClientCount = 0
+    }
+
     private func accept(_ connection: NWConnection) {
-        guard isRunning else {
+        guard wantsRemote, isRunning else {
             connection.cancel()
             return
         }
@@ -231,6 +299,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     private func remove(_ session: MixPilotRemoteClientSession) {
+        session.close()
         sessions.removeValue(forKey: session.id)
         connectedClientCount = sessions.count
     }
@@ -399,7 +468,13 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
                 acknowledgement: message.acknowledgement
             )
             let data = try encoder.encode(compatibleMessage)
-            session.send(data)
+            session.send(data) { [weak self, weak session] error in
+                guard error != nil else { return }
+                Task { @MainActor in
+                    guard let self, let session else { return }
+                    self.remove(session)
+                }
+            }
         } catch {
             status = "Erreur d’encodage distante : \(error.localizedDescription)"
         }
