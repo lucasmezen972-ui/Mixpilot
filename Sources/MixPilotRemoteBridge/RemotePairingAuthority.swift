@@ -62,15 +62,22 @@ struct MixPilotRemoteKeychainStore: MixPilotRemoteTokenStoring, @unchecked Senda
 enum MixPilotRemotePairingError: Error, LocalizedError {
     case invalidCode
     case expiredCode
+    case tooManyAttempts(retryAfter: TimeInterval)
     case keychain(OSStatus)
     case randomGeneration
 
     var errorDescription: String? {
         switch self {
-        case .invalidCode: "Code d’appairage incorrect."
-        case .expiredCode: "Le code d’appairage a expiré."
-        case .keychain(let status): "Erreur Trousseau macOS (\(status))."
-        case .randomGeneration: "Impossible de générer un secret sécurisé."
+        case .invalidCode:
+            "Code d’appairage incorrect."
+        case .expiredCode:
+            "Le code d’appairage a expiré."
+        case .tooManyAttempts(let retryAfter):
+            "Trop de tentatives. Réessaie dans environ \(max(1, Int(retryAfter.rounded(.up)))) secondes."
+        case .keychain(let status):
+            "Erreur Trousseau macOS (\(status))."
+        case .randomGeneration:
+            "Impossible de générer un secret sécurisé. L’appairage reste désactivé."
         }
     }
 }
@@ -85,8 +92,12 @@ final class MixPilotRemotePairingAuthority {
     private let tokenStore: any MixPilotRemoteTokenStoring
     private(set) var pairingCode = "------"
     private(set) var pairingExpiresAt = Date.distantPast
+    private(set) var failedPairingAttempts = 0
+    private(set) var pairingLockedUntil = Date.distantPast
     private var seenCommands: [UUID: Date] = [:]
     private let primaryDeviceAccount = "__mixpilot_primary_device__"
+    private let maximumPairingAttempts = 5
+    private let pairingLockoutDuration: TimeInterval = 300
 
     init(tokenStore: any MixPilotRemoteTokenStoring = MixPilotRemoteKeychainStore()) {
         self.tokenStore = tokenStore
@@ -94,14 +105,36 @@ final class MixPilotRemotePairingAuthority {
 
     @discardableResult
     func rotatePairingCode(now: Date = Date()) -> String {
-        pairingCode = Self.securePIN()
-        pairingExpiresAt = now.addingTimeInterval(120)
+        do {
+            pairingCode = try Self.securePIN()
+            pairingExpiresAt = now.addingTimeInterval(120)
+            failedPairingAttempts = 0
+            pairingLockedUntil = .distantPast
+        } catch {
+            pairingCode = "------"
+            pairingExpiresAt = .distantPast
+        }
         return pairingCode
     }
 
     func pair(deviceID: String, pin: String, now: Date = Date()) throws -> String {
+        guard now >= pairingLockedUntil else {
+            throw MixPilotRemotePairingError.tooManyAttempts(
+                retryAfter: pairingLockedUntil.timeIntervalSince(now)
+            )
+        }
         guard now <= pairingExpiresAt else { throw MixPilotRemotePairingError.expiredCode }
-        guard Self.constantTimeEqual(pin, pairingCode) else { throw MixPilotRemotePairingError.invalidCode }
+        guard Self.constantTimeEqual(pin, pairingCode) else {
+            failedPairingAttempts += 1
+            if failedPairingAttempts >= maximumPairingAttempts {
+                pairingLockedUntil = now.addingTimeInterval(pairingLockoutDuration)
+                pairingExpiresAt = .distantPast
+                pairingCode = "------"
+                throw MixPilotRemotePairingError.tooManyAttempts(retryAfter: pairingLockoutDuration)
+            }
+            throw MixPilotRemotePairingError.invalidCode
+        }
+
         let token = try Self.secureToken()
         try tokenStore.save(token, deviceID: deviceID)
         if tokenStore.read(deviceID: primaryDeviceAccount) == nil {
@@ -150,13 +183,13 @@ final class MixPilotRemotePairingAuthority {
         }
     }
 
-    private static func securePIN() -> String {
+    private static func securePIN() throws -> String {
         var value: UInt32 = 0
         let status = withUnsafeMutableBytes(of: &value) { buffer in
             SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
         }
         guard status == errSecSuccess else {
-            return String(format: "%06d", Int.random(in: 0...999_999))
+            throw MixPilotRemotePairingError.randomGeneration
         }
         return String(format: "%06d", Int(value % 1_000_000))
     }
