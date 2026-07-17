@@ -1,0 +1,43 @@
+"commands.menu.mixpilot" = "MixPilot";
+"commands.prepare" = "Preparar";
+"commands.verify" = "Comprobar";
+"commands.live" = "Live";
+"commands.advanced" = "Avanzado";
+"commands.remote.disable" = "Desactivar MixPilot Remote";
+"commands.remote.enable_development" = "Activar MixPilot Remote (desarrollo)";
+"commands.remote.unavailable" = "MixPilot Remote no disponible (seguridad)";
+"commands.remote.new_pairing_code" = "Mostrar un nuevo código de emparejamiento…";
+"commands.check_updates" = "Buscar actualizaciones";
+"commands.export_diagnostics" = "Exportar diagnóstico anonimizado…";
+"commands.take_control_now" = "Recuperar el control inmediatamente";
+
+"commands.window.choose_software" = "Elegir software DJ";
+"commands.window.quick_set" = "Preparar un set rápidamente";
+"commands.window.rekordbox_tools" = "Herramientas de rekordbox";
+"commands.window.rekordbox_inspection" = "Inspección de rekordbox";
+"commands.window.rekordbox_validation" = "Validación real de rekordbox";
+"commands.window.rekordbox_mapping" = "Mapeo de rekordbox";
+"commands.window.serato_mapping" = "Configuración de Serato";
+"commands.window.rehearsal" = "Ensayo de transiciones";
+"commands.window.transition_inspector" = "Inspector de transiciones";
+"commands.window.audio_analysis" = "Análisis de audio de preparación";
+"commands.window.recovery" = "Centro de recuperación";
+"commands.window.help" = "Centro de ayuda";
+
+"commands.alert.pairing_unavailable.title" = "Emparejamiento no disponible";
+"commands.alert.pairing_unavailable.detail" = "MixPilot no ha podido generar un código criptográficamente seguro. Remote permanece desactivado.";
+"commands.alert.ok" = "OK";
+"commands.alert.pairing_development.title" = "Emparejar MixPilot Remote — desarrollo";
+"commands.alert.pairing_development.detail_format" = "Este transporte local aún no está cifrado. Úsalo solo en una red de desarrollo aislada. En el iPhone, selecciona este Mac e introduce el código %@. Caduca en dos minutos.";
+"commands.alert.understood" = "Entendido";
+"commands.alert.remote_disabled.title" = "Remote desactivado temporalmente";
+"commands.alert.remote_disabled.detail" = "El transporte actual entre iPhone y Mac aún no está cifrado. MixPilot lo bloquea en las builds normales. Para una prueba de desarrollo en una red aislada, inicia la aplicación con MIXPILOT_ALLOW_INSECURE_REMOTE=1.";
+
+"commands.choose_software" = "Elegir software DJ";
+"commands.quick_set" = "Preparar un set rápidamente";
+"commands.advanced_menu" = "Avanzado";
+"commands.rehearse_transition" = "Ensayar una transición";
+"commands.inspect_transitions" = "Inspeccionar transiciones";
+"commands.analyze_audio" = "Analizar audio localmente";
+"commands.open_recovery" = "Abrir el centro de recuperación";
+"commands.check_online_services" = "Comprobar servicios en línea";
