@@ -14,7 +14,7 @@ public enum MappedMIDIControllerError: Error, LocalizedError {
 }
 
 public actor MappedMIDIController: DJCommandSending {
-    private static let notePulseDuration: Duration = .milliseconds(12)
+    private static let momentaryPulseDuration: Duration = .milliseconds(12)
 
     private let controller: CoreMIDIController
     private var profile: MIDIMappingProfile
@@ -48,7 +48,7 @@ public actor MappedMIDIController: DJCommandSending {
                 velocity: mapping.maximumRawValue
             )
             do {
-                try await Task.sleep(for: Self.notePulseDuration)
+                try await Task.sleep(for: Self.momentaryPulseDuration)
             } catch {
                 try? controller.sendNoteOff(
                     channel: mapping.channel,
@@ -61,6 +61,28 @@ public actor MappedMIDIController: DJCommandSending {
                 channel: mapping.channel,
                 note: mapping.number,
                 velocity: mapping.offRawValue
+            )
+
+        case .controlChange where mapping.isMomentary:
+            try controller.sendControlChangeRaw(
+                channel: mapping.channel,
+                controller: mapping.number,
+                value: mapping.maximumRawValue
+            )
+            do {
+                try await Task.sleep(for: Self.momentaryPulseDuration)
+            } catch {
+                try? controller.sendControlChangeRaw(
+                    channel: mapping.channel,
+                    controller: mapping.number,
+                    value: mapping.offRawValue
+                )
+                throw error
+            }
+            try controller.sendControlChangeRaw(
+                channel: mapping.channel,
+                controller: mapping.number,
+                value: mapping.offRawValue
             )
 
         case .controlChange:
@@ -82,7 +104,7 @@ public actor MappedMIDIController: DJCommandSending {
         let critical = DJControlAction.automaticPresetCriticalActions.sorted { $0.rawValue < $1.rawValue }
         var result: [DJControlAction: Bool] = [:]
         for action in critical {
-            result[action] = profile[action] != nil
+            result[action] = profile.hasRuntimeCompatibleMapping(for: action)
         }
         return result
     }
