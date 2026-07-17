@@ -2,7 +2,20 @@
 import Foundation
 import MixPilotCore
 
+public enum MappedMIDIControllerError: Error, LocalizedError {
+    case continuousActionRequiresControlChange(DJControlAction)
+
+    public var errorDescription: String? {
+        switch self {
+        case .continuousActionRequiresControlChange(let action):
+            "La commande \(action.rawValue) doit utiliser un Control Change MIDI pour accepter une valeur continue."
+        }
+    }
+}
+
 public actor MappedMIDIController: DJCommandSending {
+    private static let notePulseDuration: Duration = .milliseconds(12)
+
     private let controller: CoreMIDIController
     private var profile: MIDIMappingProfile
 
@@ -26,12 +39,41 @@ public actor MappedMIDIController: DJCommandSending {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
         }
-        try controller.trigger(mapping)
+
+        switch mapping.kind {
+        case .note:
+            try controller.sendNoteOn(
+                channel: mapping.channel,
+                note: mapping.number,
+                velocity: mapping.maximumRawValue
+            )
+            do {
+                try await Task.sleep(for: Self.notePulseDuration)
+            } catch {
+                try? controller.sendNoteOff(
+                    channel: mapping.channel,
+                    note: mapping.number,
+                    velocity: mapping.offRawValue
+                )
+                throw error
+            }
+            try controller.sendNoteOff(
+                channel: mapping.channel,
+                note: mapping.number,
+                velocity: mapping.offRawValue
+            )
+
+        case .controlChange:
+            try controller.trigger(mapping)
+        }
     }
 
     public func set(_ action: DJControlAction, value: Double) async throws {
         guard let mapping = profile[action] else {
             throw MIDIControllerError.missingMapping(action)
+        }
+        guard mapping.kind == .controlChange else {
+            throw MappedMIDIControllerError.continuousActionRequiresControlChange(action)
         }
         try controller.set(mapping, normalizedValue: value)
     }
