@@ -14,7 +14,7 @@ extension AppModel {
         }
 
         let rows = accessibilityBridge.libraryRows(
-            software: legacySoftware(selectedBackend),
+            backend: selectedBackend,
             maxRows: 1_000
         )
         libraryRowCount = rows.count
