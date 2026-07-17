@@ -112,8 +112,8 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         self.blockedTransitionCount = max(0, blockedTransitionCount)
     }
 
-    /// Keeps old projects and tests readable while their call sites migrate to
-    /// capability snapshots. It does not restore the old implicit Serato choice.
+    /// Compatibility for older call sites. Omitting `djSoftware` intentionally
+    /// leaves the backend unselected instead of inventing Serato.
     @available(*, deprecated, message: "Use the backend capability initializer")
     public init(
         seratoRunning: Bool,
@@ -131,26 +131,25 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         trackCount: Int,
         transitionCount: Int,
         lowConfidenceTransitionCount: Int,
-        djSoftware: DJSoftware = DJSoftwareSelectionStore.current
+        djSoftware: DJSoftware? = nil
     ) {
-        let identifier: DJBackendIdentifier = switch djSoftware {
-        case .djay: .djay
-        case .rekordbox: .rekordbox
-        case .serato: .serato
-        }
-        let capabilities = Self.legacyCapabilities(
-            identifier: identifier,
-            midiAvailable: midiAvailable,
-            mappingCompletion: mappingCompletion
-        )
+        let identifier = djSoftware?.backendIdentifier
         self.init(
             backendIdentifier: identifier,
-            backendEnvironment: DJBackendEnvironment(
-                identifier: identifier,
-                isInstalled: true,
-                isRunning: seratoRunning
-            ),
-            backendCapabilities: capabilities,
+            backendEnvironment: identifier.map {
+                DJBackendEnvironment(
+                    identifier: $0,
+                    isInstalled: true,
+                    isRunning: seratoRunning
+                )
+            },
+            backendCapabilities: identifier.map {
+                Self.legacyCapabilities(
+                    identifier: $0,
+                    midiAvailable: midiAvailable,
+                    mappingCompletion: mappingCompletion
+                )
+            } ?? DJBackendCapabilities(),
             accessibilityGranted: accessibilityGranted,
             midiAvailable: midiAvailable,
             mappingCompletion: mappingCompletion,
@@ -176,42 +175,48 @@ public struct PreflightInput: Codable, Hashable, Sendable {
         mappingCompletion: Double
     ) -> DJBackendCapabilities {
         var result = DJBackendCapabilities()
-        let ready = DJCapabilityStatus(
+        let observedSystem = DJCapabilityStatus(
             availability: .available,
-            confidence: .validated,
+            confidence: .documented,
             validation: .automatedSuccess,
             method: .guidedManualStep
         )
-        result[.processDetection] = ready
-        result[.versionDetection] = ready
-        result[.masterAudioMonitoring] = ready
-        result[.remoteControl] = ready
-        result[.recovery] = ready
+        result[.processDetection] = observedSystem
+        result[.versionDetection] = observedSystem
+        result[.masterAudioMonitoring] = observedSystem
+        result[.remoteControl] = observedSystem
+        result[.recovery] = observedSystem
 
         if identifier == .djay {
-            result[.automix] = DJCapabilityStatus(
+            let pending = DJCapabilityStatus(
                 availability: .available,
-                confidence: .validated,
-                validation: .automatedSuccess,
-                method: .nativeAutomix
+                confidence: .observed,
+                validation: .requiresDeviceValidation,
+                method: .nativeAutomix,
+                reason: "Cette ancienne configuration doit être revalidée avec djay."
             )
-            result[.trackStateReading] = ready
-            result[.transitionTrigger] = ready
+            result[.automix] = pending
+            result[.trackStateReading] = pending
+            result[.transitionTrigger] = pending
         } else {
-            let directStatus = DJCapabilityStatus(
+            let pending = DJCapabilityStatus(
                 availability: midiAvailable ? .available : .unavailable,
-                confidence: mappingCompletion >= 0.95 ? .validated : .unverified,
-                validation: midiAvailable && mappingCompletion >= 0.95 ? .automatedSuccess : .failed,
-                method: midiAvailable ? .coreMIDI : .unavailable
+                confidence: mappingCompletion >= 0.95 ? .observed : .unverified,
+                validation: midiAvailable && mappingCompletion >= 0.95
+                    ? .requiresDeviceValidation
+                    : .failed,
+                method: midiAvailable ? .coreMIDI : .unavailable,
+                reason: "Cette validation historique doit être confirmée commande par commande sur le Mac actuel."
             )
             for capability in [DJCapability.trackLoading, .playPause, .channelVolume, .sync] {
-                result[capability] = directStatus
+                result[capability] = pending
             }
             result[.mappingImport] = DJCapabilityStatus(
                 availability: mappingCompletion >= 0.95 ? .available : .unavailable,
                 confidence: mappingCompletion >= 0.95 ? .validated : .unverified,
                 validation: mappingCompletion >= 0.95 ? .automatedSuccess : .failed,
-                method: mappingCompletion >= 0.95 ? .importedMapping : .unavailable
+                method: mappingCompletion >= 0.95 ? .importedMapping : .unavailable,
+                reason: "Le fichier de mapping est présent ; les réactions réelles restent à confirmer."
             )
         }
         return result
@@ -228,11 +233,13 @@ public struct PreflightReport: Codable, Hashable, Sendable {
     }
 
     public var canStartLive: Bool {
-        !items.contains { $0.status == .failed && $0.severity == .critical }
+        !items.contains {
+            $0.severity == .critical && $0.status != .passed
+        }
     }
 
     public var failedItems: [PreflightItem] {
-        items.filter { $0.status == .failed }
+        items.filter { $0.status == .failed || ($0.severity == .critical && $0.status == .notTested) }
     }
 
     public var warningItems: [PreflightItem] {
@@ -250,59 +257,53 @@ public struct PreflightEvaluator: Sendable {
         guard let backend = input.backendIdentifier else {
             appendLocalSafety(to: &items, input: input)
             appendProject(to: &items, input: input)
-            return PreflightReport(items: items)
+            return PreflightReport(items: deduplicated(items))
         }
 
-        let usesValidatedAutomix = isVerifiedForLive(input.backendCapabilities[.automix]) &&
-            isVerifiedForLive(input.backendCapabilities[.trackStateReading])
+        let usesValidatedAutomix = input.backendCapabilities.confirmsForLive(.automix) &&
+            input.backendCapabilities.confirmsForLive(.trackStateReading) &&
+            input.backendCapabilities.confirmsForLive(.transitionTrigger)
         let directCapabilities: [DJCapability] = [.trackLoading, .playPause, .channelVolume]
         let usesDirectControl = !usesValidatedAutomix
 
         items.append(environmentItem(input.backendEnvironment, backend: backend))
         appendBackendValidation(to: &items, input: input)
 
-        let accessibilityRequired = usesAccessibility(input.backendCapabilities) &&
-            (usesValidatedAutomix || input.backendCapabilities.supports(.trackStateReading))
+        let stateReadingReady = input.backendCapabilities.confirmsForLive(.deckStateReading) ||
+            input.backendCapabilities.confirmsForLive(.trackStateReading)
+        let accessibilityRequired = usesAccessibility(input.backendCapabilities) && !stateReadingReady
         items.append(requirementItem(
             id: "accessibility",
             title: "Lecture de l’état du logiciel",
             available: input.accessibilityGranted,
             required: accessibilityRequired,
-            success: "MixPilot peut observer l’état utile de \(backend.displayName).",
-            optional: "Cette configuration peut fonctionner sans lire toute l’interface. Les confirmations seront plus limitées.",
-            failure: "Autorise MixPilot dans Réglages Système → Confidentialité et sécurité → Accessibilité. Sans cette lecture, les commandes critiques ne peuvent pas être confirmées."
+            success: "MixPilot peut observer l’interface de \(backend.displayName).",
+            optional: "Cette configuration n’utilise pas l’Accessibilité comme preuve principale.",
+            failure: "Autorise MixPilot dans Réglages Système → Confidentialité et sécurité → Accessibilité, puis relance les tests d’état."
         ))
 
-        let midiRequired = usesDirectControl && directCapabilities.contains {
-            input.backendCapabilities[$0].method == .coreMIDI ||
-                input.backendCapabilities[$0].availability != .unavailable
-        }
+        let midiRequired = usesDirectControl
         items.append(requirementItem(
             id: "midi",
             title: "Connexion au logiciel DJ",
             available: input.midiAvailable,
             required: midiRequired,
             success: "Le contrôleur virtuel MixPilot est disponible.",
-            optional: "Le mode supervisé sélectionné ne dépend pas du contrôleur MIDI.",
+            optional: "Le mode Automix supervisé confirmé ne dépend pas du contrôleur MIDI direct.",
             failure: "Le contrôleur virtuel n’est pas disponible. Relance MixPilot, puis vérifie les réglages MIDI de \(backend.displayName)."
         ))
 
         let mappingStatus = input.backendCapabilities[.mappingImport]
-        let mappingRequired = usesDirectControl && mappingStatus.availability != .unavailable
-        let mappingReady = input.mappingCompletion >= 0.95 &&
-            mappingStatus.availability != .unavailable &&
-            mappingStatus.validation != .failed &&
-            mappingStatus.validation != .blockedByPlatform
+        let mappingRequired = usesDirectControl
+        let mappingReady = input.mappingCompletion >= 0.95 && mappingStatus.isConfirmedForLive
         items.append(requirementItem(
             id: "mapping",
             title: "Commandes configurées",
             available: mappingReady,
             required: mappingRequired,
-            success: "Les commandes nécessaires sont présentes. Leur réaction réelle reste suivie séparément.",
-            optional: usesValidatedAutomix
-                ? "Le mode Automix supervisé peut fonctionner sans mapping direct complet."
-                : "Aucun mapping direct n’est utilisé dans cette configuration.",
-            failure: "Seulement \(Int(input.mappingCompletion * 100)) % du mapping est prêt. Termine la configuration et teste les commandes critiques."
+            success: "Le mapping est présent et vérifié ; chaque commande Live reste confirmée séparément.",
+            optional: "Le mode Automix supervisé confirmé n’exige pas un mapping direct complet.",
+            failure: "Le mapping n’est pas prêt ou n’a pas été vérifié. Termine la configuration et confirme les commandes critiques."
         ))
 
         if usesValidatedAutomix {
@@ -311,6 +312,13 @@ public struct PreflightEvaluator: Sendable {
                 title: "Automix supervisé",
                 capability: .automix,
                 status: input.backendCapabilities[.automix],
+                critical: true
+            ))
+            items.append(capabilityItem(
+                id: "capability-state-reading",
+                title: "État du morceau Automix",
+                capability: .trackStateReading,
+                status: input.backendCapabilities[.trackStateReading],
                 critical: true
             ))
         } else {
@@ -323,6 +331,7 @@ public struct PreflightEvaluator: Sendable {
                     critical: true
                 ))
             }
+            items.append(stateReadingItem(input.backendCapabilities))
             items.append(capabilityItem(
                 id: "capability-sync",
                 title: "Synchronisation",
@@ -359,7 +368,6 @@ public struct PreflightEvaluator: Sendable {
             status: .passed,
             severity: .information
         ))
-        // Legacy identifier kept until older views and tests are migrated.
         items.append(PreflightItem(
             id: "dj-software",
             title: backend.displayName,
@@ -403,7 +411,8 @@ public struct PreflightEvaluator: Sendable {
         return PreflightItem(
             id: "backend-environment",
             title: "\(backend.displayName) connecté",
-            detail: environment.softwareVersion.map { "Version \($0) détectée." } ?? "Le logiciel est lancé ; sa version reste à confirmer.",
+            detail: environment.softwareVersion.map { "Version \($0) détectée." }
+                ?? "Le logiciel est lancé ; sa version reste à confirmer.",
             status: environment.softwareVersion == nil ? .warning : .passed,
             severity: environment.softwareVersion == nil ? .warning : .information
         )
@@ -564,6 +573,20 @@ public struct PreflightEvaluator: Sendable {
         }
     }
 
+    private func stateReadingItem(_ capabilities: DJBackendCapabilities) -> PreflightItem {
+        let ready = capabilities.confirmsForLive(.deckStateReading) ||
+            capabilities.confirmsForLive(.trackStateReading)
+        return PreflightItem(
+            id: "capability-state-reading",
+            title: "Lecture fiable de l’état des decks",
+            detail: ready
+                ? "MixPilot peut confirmer le deck et le morceau avant les commandes critiques."
+                : "La lecture fiable du deck ou du morceau n’est pas confirmée. L’Autopilote complet reste bloqué pour éviter des commandes aveugles.",
+            status: ready ? .passed : .failed,
+            severity: .critical
+        )
+    }
+
     private func capabilityItem(
         id: String,
         title: String,
@@ -571,8 +594,7 @@ public struct PreflightEvaluator: Sendable {
         status: DJCapabilityStatus,
         critical: Bool
     ) -> PreflightItem {
-        let verified = isVerifiedForLive(status)
-        if verified {
+        if status.isConfirmedForLive {
             return PreflightItem(
                 id: id,
                 title: title,
@@ -623,24 +645,14 @@ public struct PreflightEvaluator: Sendable {
         )
     }
 
-    private func isVerifiedForLive(_ status: DJCapabilityStatus) -> Bool {
-        guard status.availability == .available else { return false }
-        switch status.validation {
-        case .automatedSuccess:
-            return status.confidence == .validated || status.confidence == .documented
-        case .simulatedSuccess, .requiresBackendValidation, .requiresDeviceValidation,
-             .blockedByPlatform, .failed, .unknown:
-            return false
-        }
-    }
-
     private func usesAccessibility(_ capabilities: DJBackendCapabilities) -> Bool {
         [DJCapability.visiblePlaylistReading, .deckStateReading, .trackStateReading, .automix]
             .contains { capabilities[$0].method == .accessibility }
     }
 
     private func isCriticalCapability(_ capability: DJCapability) -> Bool {
-        [.trackLoading, .playPause, .channelVolume, .automix, .trackStateReading]
+        [.trackLoading, .playPause, .channelVolume, .automix,
+         .trackStateReading, .deckStateReading]
             .contains(capability)
     }
 
@@ -669,19 +681,19 @@ public struct PreflightEvaluator: Sendable {
     private func humanValidationDetail(_ item: DJBackendValidationItem) -> String {
         switch item.status {
         case .automatedSuccess:
-            return item.detail
+            item.detail
         case .simulatedSuccess:
-            return "\(item.detail) Ce résultat vient d’une simulation et doit encore être confirmé sur le Mac cible."
+            "\(item.detail) Ce résultat vient d’une simulation et doit encore être confirmé sur le Mac cible."
         case .requiresBackendValidation:
-            return "\(item.detail) Teste cette fonction une fois avec le logiciel DJ ouvert."
+            "\(item.detail) Teste cette fonction une fois avec le logiciel DJ ouvert."
         case .requiresDeviceValidation:
-            return "\(item.detail) Confirme la réaction réelle du logiciel et du contrôleur avant le Live."
+            "\(item.detail) Confirme la réaction réelle du logiciel et du contrôleur avant le Live."
         case .blockedByPlatform:
-            return "\(item.detail) MixPilot utilisera une autre méthode lorsqu’une variante sûre existe."
+            "\(item.detail) MixPilot utilisera une autre méthode lorsqu’une variante sûre existe."
         case .failed:
-            return item.detail
+            item.detail
         case .unknown:
-            return "\(item.detail) Relance la vérification pour obtenir un état fiable."
+            "\(item.detail) Relance la vérification pour obtenir un état fiable."
         }
     }
 
