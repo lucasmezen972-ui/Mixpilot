@@ -42,7 +42,7 @@ extension AppModel {
                     runtimeCoordinator = nil
                 }
 
-                midiStatus = "Contrôleur actif • \(Int(profile.completionRatio * 100)) % configuré"
+                midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
                 await refreshEnvironmentNow()
             }
         } catch {
