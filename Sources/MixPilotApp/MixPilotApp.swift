@@ -15,6 +15,9 @@ struct MixPilotAutopilotApp: App {
             MixPilotMainShellView(model: model, surface: $mainSurface, cloud: cloud)
                 .frame(minWidth: 1_180, minHeight: 790)
                 .onAppear {
+                    cloud.configureBackendContextProvider {
+                        await model.onlineBackendContext
+                    }
                     cloud.start(liveMode: model.isLiveRunning)
                 }
                 .onChange(of: model.isLiveRunning) { _, isLiveRunning in
@@ -25,31 +28,32 @@ struct MixPilotAutopilotApp: App {
         .defaultSize(width: 1_380, height: 920)
         .commands {
             MixPilotWindowCommands(cloud: cloud)
+
             CommandMenu("MixPilot") {
-                Button("Afficher l’accueil premium") {
-                    mainSurface = .home
-                }
-                .keyboardShortcut("0", modifiers: [.command])
-
-                Divider()
-
-                Button("Ouvrir le Studio") {
+                Button("Préparer") {
                     model.selectedSection = .studio
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Ouvrir le Préflight") {
+                Button("Vérifier") {
+                    model.evaluatePreflight()
                     model.selectedSection = .preflight
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
-                Button("Ouvrir le Live") {
+                Button("Live") {
                     model.selectedSection = .live
                     mainSurface = .workspace
                 }
                 .keyboardShortcut("3", modifiers: [.command])
+
+                Button("Avancé") {
+                    model.selectedSection = .feasibility
+                    mainSurface = .workspace
+                }
+                .keyboardShortcut("4", modifiers: [.command])
 
                 Divider()
 
@@ -70,9 +74,6 @@ struct MixPilotAutopilotApp: App {
                 }
                 .disabled(!remoteBridge.isRunning)
 
-                Button("État : \(remoteBridge.status)") {}
-                    .disabled(true)
-
                 Divider()
 
                 Button("Vérifier les mises à jour") {
@@ -80,19 +81,14 @@ struct MixPilotAutopilotApp: App {
                 }
                 .keyboardShortcut("u", modifiers: [.command, .option])
 
-                Button(cloud.connectionState.label) {}
-                    .disabled(true)
-
-                Divider()
-
-                Button("Exporter un diagnostic…") {
+                Button("Exporter un diagnostic anonymisé…") {
                     model.exportDiagnostics()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Reprendre immédiatement le contrôle", role: .destructive) {
+                Button("Reprendre immédiatement la main", role: .destructive) {
                     model.takeManualControl()
                 }
                 .keyboardShortcut(.escape, modifiers: [.command])
@@ -102,19 +98,19 @@ struct MixPilotAutopilotApp: App {
         Window("Choisir le logiciel DJ", id: "dj-software") {
             DJSoftwareSettingsView(model: model)
         }
-        .defaultSize(width: 680, height: 430)
+        .defaultSize(width: 1_100, height: 760)
 
         Window("Préparer un set rapidement", id: "quick-set") {
             QuickSetView(model: model)
         }
         .defaultSize(width: 650, height: 380)
 
-        Window("Rekordbox Hub", id: "rekordbox-hub") {
+        Window("Outils rekordbox", id: "rekordbox-hub") {
             RekordboxHubView(appModel: model)
         }
         .defaultSize(width: 1_320, height: 880)
 
-        Window("Contrôle rekordbox", id: "rekordbox-compatibility") {
+        Window("Inspection rekordbox", id: "rekordbox-compatibility") {
             RekordboxCompatibilityLabView(appModel: model)
         }
         .defaultSize(width: 1_080, height: 780)
@@ -124,12 +120,12 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 1_240, height: 860)
 
-        Window("Mapping rekordbox automatique", id: "automatic-rekordbox-mapping") {
+        Window("Mapping rekordbox", id: "automatic-rekordbox-mapping") {
             AutomaticRekordboxMappingView(model: model)
         }
         .defaultSize(width: 1_020, height: 760)
 
-        Window("Mapping Serato automatique", id: "automatic-serato-mapping") {
+        Window("Configuration Serato", id: "automatic-serato-mapping") {
             AutomaticSeratoMappingView(model: model)
         }
         .defaultSize(width: 1_020, height: 760)
@@ -171,7 +167,7 @@ private struct MixPilotWindowCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Choisir Serato, djay ou rekordbox") {
+            Button("Choisir le logiciel DJ") {
                 openWindow(id: "dj-software")
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
@@ -180,59 +176,43 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+        }
 
-            Button("Ouvrir Rekordbox Hub dans une nouvelle fenêtre") {
-                openWindow(id: "rekordbox-hub")
-            }
-            .keyboardShortcut("h", modifiers: [.command, .shift])
-
-            Button("Contrôler et inspecter rekordbox") {
-                openWindow(id: "rekordbox-compatibility")
-            }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
-
-            Button("Valider rekordbox commande par commande") {
-                openWindow(id: "rekordbox-device-validation")
-            }
-            .keyboardShortcut("v", modifiers: [.command, .shift])
-
-            Button("Générer le mapping rekordbox") {
-                openWindow(id: "automatic-rekordbox-mapping")
-            }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-
-            Divider()
-
-            Button("Installer le mapping Serato automatiquement") {
-                openWindow(id: "automatic-serato-mapping")
-            }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-
-            Divider()
-
-            Button("Ouvrir la répétition des transitions") {
+        CommandMenu("Avancé") {
+            Button("Répéter une transition") {
                 openWindow(id: "rehearsal")
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
-
-            Button("Ouvrir l’inspecteur de transitions") {
+            Button("Inspecter les transitions") {
                 openWindow(id: "transition-inspector")
             }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
-
-            Button("Ouvrir l’analyse audio de préparation") {
+            Button("Analyser l’audio localement") {
                 openWindow(id: "preparation-analysis")
             }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
-
             Button("Ouvrir le centre de récupération") {
                 openWindow(id: "recovery-center")
             }
-            .keyboardShortcut("u", modifiers: [.command, .shift])
 
             Divider()
 
-            Button("Vérifier les mises à jour maintenant") {
+            Button("Outils rekordbox") {
+                openWindow(id: "rekordbox-hub")
+            }
+            Button("Inspecter rekordbox") {
+                openWindow(id: "rekordbox-compatibility")
+            }
+            Button("Valider rekordbox commande par commande") {
+                openWindow(id: "rekordbox-device-validation")
+            }
+            Button("Générer le mapping rekordbox") {
+                openWindow(id: "automatic-rekordbox-mapping")
+            }
+            Button("Configurer Serato") {
+                openWindow(id: "automatic-serato-mapping")
+            }
+
+            Divider()
+
+            Button("Vérifier les services en ligne") {
                 cloud.checkNow()
             }
         }
