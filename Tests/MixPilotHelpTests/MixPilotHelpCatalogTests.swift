@@ -69,3 +69,60 @@ func preferredLanguageUsesLocale() {
     #expect(MixPilotHelpLanguage.preferred(from: Locale(identifier: "es_MX")) == .spanish)
     #expect(MixPilotHelpLanguage.preferred(from: Locale(identifier: "de_DE")) == .french)
 }
+
+@Test("Core macOS shell keys resolve in every language")
+func coreMacOSShellKeysResolve() {
+    let catalog = MixPilotHelpCatalog.shared
+    let keys = [
+        "app.nav.prepare",
+        "app.nav.verify",
+        "app.nav.live",
+        "app.nav.advanced",
+        "app.services.title",
+        "app.compatibility_pause.title",
+        "app.backend.hero.title",
+        "app.backend.equal.detail",
+        "app.backend.configure",
+        "app.backend.summary.pending_detail",
+    ]
+
+    for language in MixPilotHelpLanguage.allCases {
+        for key in keys {
+            let value = catalog.localized(key, language: language)
+            #expect(!value.isEmpty)
+            #expect(value != key)
+        }
+    }
+}
+
+@Test("Core macOS shell placeholders render without leaking format tokens")
+func coreMacOSShellPlaceholdersRender() {
+    let catalog = MixPilotHelpCatalog.shared
+
+    for language in MixPilotHelpLanguage.allCases {
+        let version = catalog.localizedFormat(
+            "app.backend.version_format",
+            language: language,
+            "7.0.1"
+        )
+        let compatibility = catalog.localizedFormat(
+            "app.backend.compatibility_summary_format",
+            language: language,
+            4,
+            12
+        )
+        let pending = catalog.localizedFormat(
+            "app.backend.summary.pending_title_format",
+            language: language,
+            3
+        )
+
+        #expect(version.contains("7.0.1"))
+        #expect(compatibility.contains("4"))
+        #expect(compatibility.contains("12"))
+        #expect(pending.contains("3"))
+        #expect(!version.contains("%@"))
+        #expect(!compatibility.contains("%d"))
+        #expect(!pending.contains("%d"))
+    }
+}
