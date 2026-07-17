@@ -133,19 +133,38 @@ Pour un iPhone physique, sélectionner une équipe de signature dans Xcode.
 
 ## Tests
 
+### Contrat partagé et logique de séquence
+
 ```bash
 cd Mobile/MixPilotRemote
 swift test --parallel
 ```
 
-Les tests vérifient notamment :
+Ces tests portables vérifient notamment :
 
 - encodage et décodage Remote v2 ;
 - compatibilité de décodage avec un snapshot v1 ;
 - ordre strict des snapshots ;
 - refus des doublons ;
+- reprise d’un nouveau flux après redémarrage du bridge Mac ;
 - conservation du backend et des capacités dégradées ;
 - absence de commande MIDI brute.
+
+### Application iPhone
+
+Après génération XcodeGen, exécuter la cible `MixPilotRemoteTests` sur un simulateur iPhone disponible :
+
+```bash
+xcodebuild \
+  -project MixPilotRemote.xcodeproj \
+  -scheme MixPilotRemote \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+  CODE_SIGNING_ALLOWED=NO \
+  test
+```
+
+La CI choisit automatiquement un simulateur iPhone disponible. Les tests de l’application vérifient notamment que les commandes du mode démo restent locales et conservent le backend, le deck actif et l’état audio.
 
 ## Validation réelle nécessaire
 
