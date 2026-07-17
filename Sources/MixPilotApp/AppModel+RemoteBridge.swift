@@ -57,8 +57,8 @@ extension AppModel: MixPilotRemoteStateProvider {
 
         case .resumeAutopilot:
             decision = await LiveRuntimeCoordinatorRegistry.shared.requestResume(
-                midiReady: mappingProfile.completionRatio >= 0.95 && !midiStatus.localizedCaseInsensitiveContains("échec"),
-                audioWatchdogReady: audioStatus.localizedCaseInsensitiveContains("active")
+                midiReady: remoteResumeControlReady,
+                audioWatchdogReady: audioMonitor.isRunning
             )
 
         case .skipTransition:
@@ -73,6 +73,20 @@ extension AppModel: MixPilotRemoteStateProvider {
         return .init(accepted: decision.accepted, message: decision.message)
     }
 
+    private var activeRemoteCapabilities: DJBackendCapabilities? {
+        guard let selectedBackend else { return nil }
+        return backendDescriptors.first { $0.identifier == selectedBackend }?.capabilities
+    }
+
+    private var remoteResumeControlReady: Bool {
+        guard let selectedBackend, let capabilities = activeRemoteCapabilities else { return false }
+        if selectedBackend == .djay {
+            return capabilities.confirmsAllForLive([.automix, .trackStateReading, .transitionTrigger])
+        }
+        return capabilities.confirmsAllForLive([.trackLoading, .playPause, .channelVolume]) &&
+            mappingProfile.liveControlCoverageRatio >= 0.95
+    }
+
     private var remoteBackendSummary: MixPilotRemoteBackendSummary? {
         guard let selectedBackend,
               let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }) else {
@@ -83,12 +97,13 @@ extension AppModel: MixPilotRemoteStateProvider {
             .sorted()
 
         let directCritical: Set<DJCapability> = [.trackLoading, .playPause, .channelVolume]
+        let stateReady = descriptor.capabilities.confirmsForLive(.deckStateReading) ||
+            descriptor.capabilities.confirmsForLive(.trackStateReading)
         let modeLabel: String
         if selectedBackend == .djay,
-           descriptor.capabilities[.automix].isConfirmedForLive,
-           descriptor.capabilities[.trackStateReading].isConfirmedForLive {
+           descriptor.capabilities.confirmsAllForLive([.automix, .trackStateReading, .transitionTrigger]) {
             modeLabel = "Automix supervisé"
-        } else if descriptor.capabilities.confirmsAllForLive(directCritical) {
+        } else if descriptor.capabilities.confirmsAllForLive(directCritical), stateReady {
             modeLabel = "MixPilot avancé"
         } else {
             modeLabel = "Configuration supervisée"
