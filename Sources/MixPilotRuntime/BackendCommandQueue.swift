@@ -69,25 +69,28 @@ public actor BackendCommandQueue: DJCommandSending {
     }
 
     public func trigger(_ action: DJControlAction) async throws {
-        _ = try await execute(
+        let requiresImmediateProof = action.requiresImmediateRuntimeVerification
+        _ = try await executeInternal(
             DJBackendCommand(
                 action: action,
                 idempotencyKey: nextIdempotencyKey(action)
             ),
             expectedEffect: expectedEffect(for: action, value: nil),
-            requireVerification: false
+            requireVerification: requiresImmediateProof,
+            attemptVerification: requiresImmediateProof
         )
     }
 
     public func set(_ action: DJControlAction, value: Double) async throws {
-        _ = try await execute(
+        _ = try await executeInternal(
             DJBackendCommand(
                 action: action,
                 normalizedValue: value,
                 idempotencyKey: nextIdempotencyKey(action)
             ),
             expectedEffect: expectedEffect(for: action, value: value),
-            requireVerification: false
+            requireVerification: false,
+            attemptVerification: false
         )
     }
 
@@ -96,6 +99,20 @@ public actor BackendCommandQueue: DJCommandSending {
         _ command: DJBackendCommand,
         expectedEffect: DJExpectedEffect,
         requireVerification: Bool
+    ) async throws -> DJCommandReceipt {
+        try await executeInternal(
+            command,
+            expectedEffect: expectedEffect,
+            requireVerification: requireVerification,
+            attemptVerification: true
+        )
+    }
+
+    private func executeInternal(
+        _ command: DJBackendCommand,
+        expectedEffect: DJExpectedEffect,
+        requireVerification: Bool,
+        attemptVerification: Bool
     ) async throws -> DJCommandReceipt {
         guard !status.circuitOpen else { throw BackendCommandQueueError.circuitOpen }
 
@@ -126,7 +143,7 @@ public actor BackendCommandQueue: DJCommandSending {
             }
             status.lastCommandAt = Date()
 
-            guard executionWasAcknowledged(receipt.status) else {
+            guard executionWasSent(receipt.status) else {
                 throw BackendCommandQueueError.executionNotAcknowledged(
                     command.action,
                     receipt.status,
@@ -135,11 +152,15 @@ public actor BackendCommandQueue: DJCommandSending {
             }
 
             let verification: DJCommandVerification?
-            do {
-                verification = try await withTimeout(timeout, action: command.action) {
-                    try await backend.verify(command: command, expectedEffect: expectedEffect)
+            if attemptVerification {
+                do {
+                    verification = try await withTimeout(timeout, action: command.action) {
+                        try await backend.verify(command: command, expectedEffect: expectedEffect)
+                    }
+                } catch DJBackendError.stateUnavailable {
+                    verification = nil
                 }
-            } catch DJBackendError.stateUnavailable {
+            } else {
                 verification = nil
             }
 
@@ -211,7 +232,7 @@ public actor BackendCommandQueue: DJCommandSending {
         }
     }
 
-    private func executionWasAcknowledged(_ status: DJCommandLifecycleStatus) -> Bool {
+    private func executionWasSent(_ status: DJCommandLifecycleStatus) -> Bool {
         switch status {
         case .sent, .acknowledged, .observed, .verified:
             true
@@ -319,6 +340,17 @@ public actor BackendCommandQueue: DJCommandSending {
             }
             group.cancelAll()
             return result
+        }
+    }
+}
+
+private extension DJControlAction {
+    var requiresImmediateRuntimeVerification: Bool {
+        switch requiredCapability {
+        case .playPause, .sync, .trackLoading:
+            true
+        default:
+            false
         }
     }
 }
