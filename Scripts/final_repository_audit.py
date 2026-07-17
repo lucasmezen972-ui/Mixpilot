@@ -12,8 +12,7 @@ import json
 import pathlib
 import re
 import subprocess
-import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOW_ROOT = ROOT / ".github" / "workflows"
@@ -36,11 +35,12 @@ AUTOMATIC_WORKFLOW_EVENTS = {
 }
 GENERIC_USERNAMES = {"dj", "example", "runner", "test", "user"}
 CRITICAL_UI_FILES = (
+    pathlib.Path("Sources/MixPilotApp/MixPilotApp.swift"),
     pathlib.Path("Sources/MixPilotApp/MixPilotMainShellView.swift"),
     pathlib.Path("Sources/MixPilotApp/DJSoftwareSettingsView.swift"),
     pathlib.Path("Sources/MixPilotApp/UnifiedWorkspaceView.swift"),
 )
-ALLOWED_UI_LITERALS = {"MIXPILOT"}
+ALLOWED_UI_LITERALS = {"MIXPILOT", "MixPilot"}
 
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")
 TOKEN_PATTERNS = (
@@ -55,8 +55,8 @@ LOCAL_PATH_RE = re.compile(
 )
 MARKER_RE = re.compile(r"\b(?:TODO|FIXME|HACK|XXX)\b")
 UI_LITERAL_RE = re.compile(
-    r"\b(?:Text|Button|Label|Toggle|Picker|Section|TextField|SecureField)"
-    r"\(\s*\"([^\"\\]*(?:\\.[^\"\\]*)*)\""
+    r"\b(?:Text|Button|Label|Toggle|Picker|Section|TextField|SecureField|"
+    r"CommandMenu|Window|WindowGroup)\(\s*\"([^\"\\]*(?:\\.[^\"\\]*)*)\""
 )
 HELP_LITERAL_RE = re.compile(r"\.help\(\s*\"([^\"\\]*(?:\\.[^\"\\]*)*)\"")
 
@@ -197,6 +197,9 @@ def audit_required_files(findings: list[Finding]) -> None:
         "Sources/MixPilotHelp/Resources/fr.lproj/Workspace.strings",
         "Sources/MixPilotHelp/Resources/en.lproj/Workspace.strings",
         "Sources/MixPilotHelp/Resources/es.lproj/Workspace.strings",
+        "Sources/MixPilotHelp/Resources/fr.lproj/Commands.strings",
+        "Sources/MixPilotHelp/Resources/en.lproj/Commands.strings",
+        "Sources/MixPilotHelp/Resources/es.lproj/Commands.strings",
         "Scripts/check_localization_consistency.py",
     )
     for value in required:
