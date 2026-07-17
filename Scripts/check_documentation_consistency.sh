@@ -25,6 +25,7 @@ CURRENT_REFERENCES=(
   Documentation/RC_STATUS.md
   Documentation/RELEASE.md
   Documentation/CLOUD_OBSERVABILITY.md
+  Documentation/SUPABASE_ADVISOR_REPORT.md
   Documentation/REMOTE_COMPATIBILITY.md
   Documentation/IPHONE_REMOTE_BRIDGE.md
 )
@@ -56,6 +57,17 @@ for section in \
   "Risques restants"; do
   grep -q "$section" Documentation/MULTI_BACKEND_REFACTOR_REPORT.md || {
     echo "The refactor report is missing section: $section" >&2
+    exit 1
+  }
+done
+
+for section in \
+  "Security Advisor" \
+  "Performance Advisor" \
+  "Critère de réévaluation" \
+  "Aucune migration destructive"; do
+  grep -q "$section" Documentation/SUPABASE_ADVISOR_REPORT.md || {
+    echo "The Supabase advisor report is missing section or decision: $section" >&2
     exit 1
   }
 done
