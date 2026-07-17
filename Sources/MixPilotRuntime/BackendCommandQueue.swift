@@ -5,6 +5,7 @@ import MixPilotCore
 public enum BackendCommandQueueError: Error, LocalizedError, Sendable {
     case circuitOpen
     case commandInFlight
+    case uncertainOutcome(DJControlAction)
     case verificationRequired(DJControlAction, String)
 
     public var errorDescription: String? {
@@ -13,6 +14,8 @@ public enum BackendCommandQueueError: Error, LocalizedError, Sendable {
             "Le contrôle automatique a été suspendu après plusieurs réponses incertaines. Reprends la main et vérifie le logiciel DJ."
         case .commandInFlight:
             "Cette commande est déjà en cours. MixPilot n’envoie pas de doublon."
+        case .uncertainOutcome:
+            "Cette commande a peut-être déjà été exécutée. MixPilot refuse de la renvoyer sans vérification manuelle."
         case .verificationRequired(_, let detail):
             detail
         }
@@ -47,6 +50,8 @@ public actor BackendCommandQueue: DJCommandSending {
     private var completed: [String: DJCommandReceipt] = [:]
     private var completedOrder: [String] = []
     private var inFlightKeys: Set<String> = []
+    private var uncertainKeys: Set<String> = []
+    private var uncertainOrder: [String] = []
     private var sequence: UInt64 = 0
     private var status = BackendCommandQueueStatus()
 
@@ -61,9 +66,6 @@ public actor BackendCommandQueue: DJCommandSending {
         self.failureThreshold = max(1, failureThreshold)
     }
 
-    /// Transition automation uses commands that have already passed the
-    /// configuration validation. Per-command observation remains best effort;
-    /// critical load/play checkpoints call `execute` directly and can require it.
     public func trigger(_ action: DJControlAction) async throws {
         _ = try await execute(
             DJBackendCommand(
@@ -94,6 +96,10 @@ public actor BackendCommandQueue: DJCommandSending {
         requireVerification: Bool
     ) async throws -> DJCommandReceipt {
         guard !status.circuitOpen else { throw BackendCommandQueueError.circuitOpen }
+
+        if uncertainKeys.contains(command.idempotencyKey) {
+            throw BackendCommandQueueError.uncertainOutcome(command.action)
+        }
 
         if let existing = completed[command.idempotencyKey] {
             if !requireVerification || isVerified(existing) {
@@ -136,11 +142,14 @@ public actor BackendCommandQueue: DJCommandSending {
                     status: verification.status,
                     detail: verification.detail
                 )
+                clearUncertain(command.idempotencyKey)
                 remember(verified, key: command.idempotencyKey)
                 return verified
             }
 
             guard !requireVerification else {
+                remember(receipt, key: command.idempotencyKey)
+                markUncertain(command.idempotencyKey)
                 throw BackendCommandQueueError.verificationRequired(
                     command.action,
                     "La commande \(humanName(command.action)) n’a pas pu être confirmée. MixPilot suspend cette étape au lieu de continuer à l’aveugle."
@@ -148,9 +157,11 @@ public actor BackendCommandQueue: DJCommandSending {
             }
 
             status.consecutiveFailures = 0
+            clearUncertain(command.idempotencyKey)
             remember(receipt, key: command.idempotencyKey)
             return receipt
         } catch {
+            markUncertain(command.idempotencyKey)
             registerFailure()
             throw error
         }
@@ -246,8 +257,26 @@ public actor BackendCommandQueue: DJCommandSending {
         guard overflow > 0 else { return }
         for expiredKey in completedOrder.prefix(overflow) {
             completed.removeValue(forKey: expiredKey)
+            clearUncertain(expiredKey)
         }
         completedOrder.removeFirst(overflow)
+    }
+
+    private func markUncertain(_ key: String) {
+        if uncertainKeys.insert(key).inserted {
+            uncertainOrder.append(key)
+        }
+        let overflow = uncertainOrder.count - 500
+        guard overflow > 0 else { return }
+        for expiredKey in uncertainOrder.prefix(overflow) {
+            uncertainKeys.remove(expiredKey)
+        }
+        uncertainOrder.removeFirst(overflow)
+    }
+
+    private func clearUncertain(_ key: String) {
+        uncertainKeys.remove(key)
+        uncertainOrder.removeAll { $0 == key }
     }
 
     private func withTimeout<T: Sendable>(
