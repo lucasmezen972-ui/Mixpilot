@@ -9,72 +9,86 @@ extension AppModel {
         refreshEnvironment()
         guard let selectedBackend else {
             liveArmed = false
-            runtimeStatus = "Choisis le logiciel DJ avant d’armer le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.arm_choose_backend")
             return
         }
         guard let project = preparedProject else {
             liveArmed = false
-            runtimeStatus = "Prépare un set avant d’armer le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.arm_prepare_set")
             selectedSection = .studio
             return
         }
         guard project.locked else {
             liveArmed = false
-            runtimeStatus = "Verrouille le plan du set avant d’armer le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.arm_lock_plan")
             selectedSection = .studio
             return
         }
         guard let projectBackend = project.backend else {
             liveArmed = false
-            runtimeStatus = "Ce projet ancien ne précise pas le logiciel DJ. Sélectionne \(selectedBackend.displayName), vérifie le set et verrouille-le de nouveau."
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.live.legacy_project",
+                selectedBackend.displayName
+            )
             selectedSection = .studio
             return
         }
         guard projectBackend == selectedBackend else {
             liveArmed = false
-            runtimeStatus = "Ce projet est préparé pour \(projectBackend.displayName), pas pour \(selectedBackend.displayName). Relance la vérification après avoir choisi le bon backend."
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.live.project_backend_mismatch",
+                projectBackend.displayName,
+                selectedBackend.displayName
+            )
             selectedSection = .preflight
             return
         }
         guard preflightReport.canStartLive else {
             liveArmed = false
-            runtimeStatus = "La vérification contient encore \(preflightReport.failedItems.count) blocage(s)."
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.live.blockers",
+                preflightReport.failedItems.count
+            )
             selectedSection = .preflight
             return
         }
         liveArmed.toggle()
         runtimeStatus = liveArmed
-            ? "Live armé pour \(selectedBackend.displayName)"
-            : "Live désarmé"
+            ? AppLocalizedCopy.statusFormat("status.live.armed", selectedBackend.displayName)
+            : AppLocalizedCopy.status("status.live.disarmed")
     }
 
     func startLive() {
         refreshEnvironment()
         guard liveArmed else {
-            runtimeStatus = "Arme le Live avant de le lancer."
+            runtimeStatus = AppLocalizedCopy.status("status.live.start_arm_first")
             return
         }
         guard let selectedBackend else {
             liveArmed = false
-            runtimeStatus = "Choisis le logiciel DJ avant de lancer le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.start_choose_backend")
             return
         }
         guard preflightReport.canStartLive else {
             liveArmed = false
-            runtimeStatus = "La vérification contient encore des erreurs critiques."
+            runtimeStatus = AppLocalizedCopy.status("status.live.critical_errors")
             selectedSection = .preflight
             return
         }
         guard let project = preparedProject, project.locked else {
             liveArmed = false
-            runtimeStatus = "Prépare et verrouille le set avant le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.prepare_and_lock")
             return
         }
         guard project.backend == selectedBackend else {
             liveArmed = false
             runtimeStatus = project.backend.map {
-                "Le set est verrouillé pour \($0.displayName), mais \(selectedBackend.displayName) est sélectionné."
-            } ?? "Le set ne précise pas le logiciel DJ. Vérifie-le et verrouille-le de nouveau."
+                AppLocalizedCopy.statusFormat(
+                    "status.live.locked_backend_mismatch",
+                    $0.displayName,
+                    selectedBackend.displayName
+                )
+            } ?? AppLocalizedCopy.status("status.live.project_backend_missing")
             selectedSection = .preflight
             return
         }
@@ -82,7 +96,11 @@ extension AppModel {
         guard coordinator.backendIdentifier == selectedBackend else {
             liveArmed = false
             runtimeCoordinator = nil
-            runtimeStatus = "La connexion Live correspond encore à \(coordinator.backendDisplayName), alors que \(selectedBackend.displayName) est sélectionné. MixPilot reconstruit la connexion avant tout envoi."
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.live.coordinator_mismatch",
+                coordinator.backendDisplayName,
+                selectedBackend.displayName
+            )
             selectedSection = .preflight
             Task {
                 try? await rebuildRuntimeCoordinator()
@@ -94,12 +112,15 @@ extension AppModel {
         do {
             try sleepAssertion.acquire()
         } catch {
-            runtimeStatus = "Le Mac peut encore se mettre en veille. Garde-le branché et désactive la veille avant le Live."
+            runtimeStatus = AppLocalizedCopy.status("status.live.sleep_warning")
         }
 
         isLiveRunning = true
         runtimeEvents = []
-        runtimeStatus = "Vérification du système avec \(selectedBackend.displayName)"
+        runtimeStatus = AppLocalizedCopy.statusFormat(
+            "status.live.system_check_backend",
+            selectedBackend.displayName
+        )
         Task { await backendRegistry?.setLiveActive(true) }
         startLiveReconciliation(expectedBackend: selectedBackend, coordinator: coordinator)
 
@@ -111,7 +132,7 @@ extension AppModel {
                     }
                 }
             } catch is CancellationError {
-                runtimeStatus = "Autopilote arrêté"
+                runtimeStatus = AppLocalizedCopy.status("status.live.autopilot_stopped")
             } catch {
                 runtimeStatus = humanMessage(for: error)
                 snapshot.statusMessage = runtimeStatus
@@ -130,13 +151,13 @@ extension AppModel {
     func takeManualControl() {
         guard isLiveRunning, let coordinator = runtimeCoordinator else {
             liveArmed = false
-            runtimeStatus = "Le contrôle manuel est déjà actif."
+            runtimeStatus = AppLocalizedCopy.status("status.live.manual_already_active")
             return
         }
 
         liveArmed = false
-        runtimeStatus = "Reprise manuelle demandée…"
-        snapshot.statusMessage = "MixPilot termine le point sûr courant avant de rendre la main."
+        runtimeStatus = AppLocalizedCopy.status("status.live.manual_requested")
+        snapshot.statusMessage = AppLocalizedCopy.status("status.live.manual_safe_point")
 
         Task {
             let decision = await coordinator.requestManualControl()
@@ -149,7 +170,7 @@ extension AppModel {
             // the registry or sleep assertion earlier could allow a backend
             // change while a final transition command is still in flight.
             if snapshot.state == .transitioning {
-                snapshot.statusMessage = "La transition en cours se termine sans nouvelle automation."
+                snapshot.statusMessage = AppLocalizedCopy.status("status.live.transition_finishing")
             }
         }
     }
@@ -172,7 +193,7 @@ extension AppModel {
                 guard let self, self.isLiveRunning else { return }
                 guard let registry = self.backendRegistry else {
                     await self.requestSafeManualControl(
-                        reason: "Le registre des logiciels DJ n’est plus disponible.",
+                        reason: AppLocalizedCopy.status("status.live.registry_unavailable"),
                         coordinator: coordinator
                     )
                     return
@@ -185,7 +206,10 @@ extension AppModel {
                           environment.identifier == expectedBackend,
                           environment.isRunning else {
                         await self.requestSafeManualControl(
-                            reason: "La connexion avec \(expectedBackend.displayName) a été perdue ou remplacée.",
+                            reason: AppLocalizedCopy.statusFormat(
+                                "status.live.backend_lost",
+                                expectedBackend.displayName
+                            ),
                             coordinator: coordinator
                         )
                         return
@@ -195,20 +219,22 @@ extension AppModel {
                     let stateIsReliable = state?.isReliable == true
                     if reliabilityTracker.record(isReliable: stateIsReliable) {
                         await self.requestSafeManualControl(
-                            reason: "MixPilot ne peut plus confirmer l’état réel des decks depuis dix secondes.",
+                            reason: AppLocalizedCopy.status("status.live.reconcile_state_lost"),
                             coordinator: coordinator
                         )
                         return
                     }
                     guard let state, state.isReliable else {
-                        self.runtimeStatus = "Lecture de l’état momentanément indisponible • nouvelle vérification dans 5 secondes"
+                        self.runtimeStatus = AppLocalizedCopy.status(
+                            "status.live.state_temporarily_unavailable"
+                        )
                         continue
                     }
 
                     if let observedDeck = state.activeDeck,
                        observedDeck != self.snapshot.activeDeck {
                         await self.requestSafeManualControl(
-                            reason: "Le deck actif a changé en dehors du plan confirmé.",
+                            reason: AppLocalizedCopy.status("status.live.active_deck_changed"),
                             coordinator: coordinator
                         )
                         return
@@ -217,14 +243,14 @@ extension AppModel {
                        let observedTrack = state.decks[self.snapshot.activeDeck]?.track,
                        !self.trackReference(observedTrack, matches: expectedTrack) {
                         await self.requestSafeManualControl(
-                            reason: "Le morceau visible ne correspond plus au dernier état confirmé.",
+                            reason: AppLocalizedCopy.status("status.live.visible_track_mismatch"),
                             coordinator: coordinator
                         )
                         return
                     }
                 } catch {
                     await self.requestSafeManualControl(
-                        reason: "L’état du backend actif ne peut plus être réconcilié en sécurité.",
+                        reason: AppLocalizedCopy.status("status.live.reconcile_failed"),
                         coordinator: coordinator
                     )
                     return
@@ -253,9 +279,11 @@ extension AppModel {
         let decision = await coordinator.requestManualControl()
         runtimeStatus = reason
         snapshot.statusMessage = decision.accepted
-            ? "\(reason) MixPilot rend la main au point sûr."
+            ? AppLocalizedCopy.statusFormat("status.live.safe_point_suffix", reason)
             : reason
-        runtimeEvents.append("Sécurité : \(reason)")
+        runtimeEvents.append(
+            AppLocalizedCopy.statusFormat("status.live.security_event", reason)
+        )
         if runtimeEvents.count > 100 {
             runtimeEvents.removeFirst(runtimeEvents.count - 100)
         }
@@ -295,7 +323,9 @@ extension AppModel {
                     minimumConfidence: plans.map(\.confidence).min() ?? 100
                 )
             } catch {
-                snapshot.statusMessage = "La simulation a été interrompue. Consulte le diagnostic avancé pour les détails."
+                snapshot.statusMessage = AppLocalizedCopy.status(
+                    "status.live.simulation_interrupted"
+                )
             }
             isRunningSimulation = false
         }
@@ -310,20 +340,27 @@ extension AppModel {
         switch event {
         case .preparing:
             snapshot.state = .preflight
-            snapshot.statusMessage = "Vérification du système"
+            snapshot.statusMessage = AppLocalizedCopy.status("status.event.system_check")
         case .backendObserved(let environment):
-            backendStatus = environment.isRunning
-                ? "\(environment.identifier.displayName) connecté"
-                : "\(environment.identifier.displayName) hors ligne"
+            backendStatus = AppLocalizedCopy.statusFormat(
+                environment.isRunning
+                    ? "status.event.backend_connected"
+                    : "status.event.backend_offline",
+                environment.identifier.displayName
+            )
         case .loading(let index, let track, let deck),
              .preloading(let index, let track, let deck):
             snapshot.state = index == 0 ? .loadingInitialTrack : .preloadingNextTrack
             snapshot.nextTrack = track
-            snapshot.statusMessage = "Chargement de \(track.title) sur le deck \(deck.rawValue)"
+            snapshot.statusMessage = AppLocalizedCopy.statusFormat(
+                "status.event.loading",
+                track.title,
+                deck.rawValue
+            )
         case .loaded(_, let track, _, let verified):
             runtimeStatus = verified
-                ? "Morceau confirmé : \(track.title)"
-                : "Morceau chargé, confirmation limitée"
+                ? AppLocalizedCopy.statusFormat("status.event.track_confirmed", track.title)
+                : AppLocalizedCopy.status("status.event.track_confirmation_limited")
         case .playing(let index, let track, let deck):
             snapshot.state = .playing
             snapshot.currentTrack = track
@@ -335,14 +372,24 @@ extension AppModel {
             snapshot.progress = project.transitions.isEmpty
                 ? 1
                 : Double(index) / Double(project.transitions.count)
-            snapshot.statusMessage = "Lecture : \(track.title)"
+            snapshot.statusMessage = AppLocalizedCopy.statusFormat(
+                "status.event.playing",
+                track.title
+            )
         case .transitionAdapted(_, _, let selected, let explanation):
             runtimeStatus = "\(selected.rawValue) • \(explanation)"
         case .transitionStarted(let index, let plan, _):
             snapshot.state = .transitioning
-            snapshot.statusMessage = "\(plan.kind.rawValue) • transition \(index + 1)"
+            snapshot.statusMessage = AppLocalizedCopy.statusFormat(
+                "status.event.transition_started",
+                plan.kind.rawValue,
+                index + 1
+            )
         case .transitionProgress(_, let progress):
-            runtimeStatus = "Transition \(Int(progress * 100)) %"
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.event.transition_progress",
+                Int(progress * 100)
+            )
         case .transitionCompleted(let index, _):
             snapshot.state = .validatingTransition
             snapshot.completedTransitions = index + 1
@@ -354,46 +401,82 @@ extension AppModel {
             runtimeStatus = message
         case .manualControl:
             snapshot.state = .manualControl
-            snapshot.statusMessage = "Contrôle manuel actif"
-            runtimeStatus = "Tu as repris la main"
+            snapshot.statusMessage = AppLocalizedCopy.status("status.event.manual_active")
+            runtimeStatus = AppLocalizedCopy.status("status.event.manual_taken")
         case .completed:
             snapshot.state = .completed
             snapshot.progress = 1
-            snapshot.statusMessage = "Set terminé"
-            runtimeStatus = "Terminé"
+            snapshot.statusMessage = AppLocalizedCopy.status("status.event.set_completed")
+            runtimeStatus = AppLocalizedCopy.status("status.event.completed")
         }
     }
 
     func describe(_ event: LiveRuntimeEvent) -> String {
         switch event {
         case .preparing(let name):
-            "Préparation : \(name)"
+            AppLocalizedCopy.statusFormat("status.log.preparing", name)
         case .backendObserved(let environment):
-            "Backend : \(environment.identifier.displayName)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.backend",
+                environment.identifier.displayName
+            )
         case .loading(_, let track, let deck):
-            "Chargement \(track.title) → deck \(deck.rawValue)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.loading",
+                track.title,
+                deck.rawValue
+            )
         case .loaded(_, let track, _, let verified):
-            "\(track.title) • \(verified ? "confirmé" : "non confirmé")"
+            AppLocalizedCopy.statusFormat(
+                "status.log.loaded",
+                track.title,
+                AppLocalizedCopy.status(
+                    verified ? "status.log.confirmed" : "status.log.unconfirmed"
+                )
+            )
         case .playing(_, let track, let deck):
-            "Lecture \(track.title) • deck \(deck.rawValue)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.playing",
+                track.title,
+                deck.rawValue
+            )
         case .preloading(_, let track, let deck):
-            "Préchargement \(track.title) • deck \(deck.rawValue)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.preloading",
+                track.title,
+                deck.rawValue
+            )
         case .transitionAdapted(_, let original, let selected, _):
-            "Transition adaptée : \(original.rawValue) → \(selected.rawValue)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.adapted",
+                original.rawValue,
+                selected.rawValue
+            )
         case .transitionStarted(let index, let plan, _):
-            "Transition \(index + 1) : \(plan.kind.rawValue)"
+            AppLocalizedCopy.statusFormat(
+                "status.log.transition_started",
+                index + 1,
+                plan.kind.rawValue
+            )
         case .transitionProgress(let index, let progress):
-            "Transition \(index + 1) : \(Int(progress * 100)) %"
+            AppLocalizedCopy.statusFormat(
+                "status.log.transition_progress",
+                index + 1,
+                Int(progress * 100)
+            )
         case .transitionCompleted(let index, _):
-            "Transition \(index + 1) terminée"
+            AppLocalizedCopy.statusFormat(
+                "status.log.transition_completed",
+                index + 1
+            )
         case .warning(let message):
-            "Avertissement : \(message)"
+            AppLocalizedCopy.statusFormat("status.log.warning", message)
         case .emergency(let message):
-            "Secours : \(message)"
+            AppLocalizedCopy.statusFormat("status.log.emergency", message)
         case .manualControl:
-            "Contrôle manuel"
+            AppLocalizedCopy.status("status.log.manual")
         case .completed:
-            "Set terminé"
+            AppLocalizedCopy.status("status.log.set_completed")
         }
     }
 }
