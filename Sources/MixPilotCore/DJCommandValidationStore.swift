@@ -22,9 +22,7 @@ public struct DJValidationPlatformContext: Codable, Hashable, Sendable {
         Self(
             operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             hardwareModel: currentHardwareModel(),
-            appBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-                ?? ProcessInfo.processInfo.environment["MIXPILOT_BUILD_ID"]
-                ?? "development"
+            appBuild: currentAppBuild()
         )
     }
 
@@ -37,6 +35,23 @@ public struct DJValidationPlatformContext: Codable, Hashable, Sendable {
         return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private static func currentAppBuild() -> String? {
+        if let bundleBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+           !bundleBuild.isEmpty {
+            return bundleBuild
+        }
+        if let environmentBuild = ProcessInfo.processInfo.environment["MIXPILOT_BUILD_ID"],
+           !environmentBuild.isEmpty {
+            return environmentBuild
+        }
+        guard let executableURL = Bundle.main.executableURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: executableURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return "development-\(Int(modificationDate.timeIntervalSince1970))"
+    }
+
     private static func currentHardwareModel() -> String? {
         #if os(macOS)
         var size = 0
@@ -44,9 +59,10 @@ public struct DJValidationPlatformContext: Codable, Hashable, Sendable {
             return nil
         }
         var value = [CChar](repeating: 0, count: size)
-        guard sysctlbyname("hw.model", &value, &size, nil, 0) == 0 else {
-            return nil
+        let result = value.withUnsafeMutableBytes { buffer in
+            sysctlbyname("hw.model", buffer.baseAddress, &size, nil, 0)
         }
+        guard result == 0 else { return nil }
         return String(cString: value)
         #else
         return nil
