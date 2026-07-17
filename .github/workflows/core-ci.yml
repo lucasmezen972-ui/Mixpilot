@@ -1,0 +1,45 @@
+name: Core and Remote CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "Sources/MixPilotCore/**"
+      - "Sources/MixPilotSimulatorCLI/**"
+      - "Shared/RemoteProtocolV2/**"
+      - "Tests/MixPilotCoreTests/**"
+      - ".github/workflows/core-ci.yml"
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "integration/**"
+      - "release/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixpilot-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift toolchain
+        run: swift --version
+
+      - name: Core and shared Remote tests
+        run: swift test --parallel
+
+      - name: Simulation 50 tracks with failures
+        run: swift run MixPilotSimulatorCLI --tracks 50 --inject-failures
+
+      - name: Simulation 250 tracks with failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --inject-failures
