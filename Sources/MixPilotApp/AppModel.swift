@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     @Published var backendDescriptors: [DJBackendDescriptor] = []
     @Published var backendValidationReport: DJBackendValidationReport?
     @Published var accessibilityStatus = "Non autorisée"
+    @Published var accessibilityGranted = false
     @Published var audioStatus = "Non testée"
     @Published var audioLevelDB = -160.0
     @Published var libraryRowCount = 0
