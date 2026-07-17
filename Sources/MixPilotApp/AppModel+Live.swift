@@ -7,9 +7,33 @@ import MixPilotRuntime
 extension AppModel {
     func armLive() {
         refreshEnvironment()
-        guard selectedBackend != nil else {
+        guard let selectedBackend else {
             liveArmed = false
             runtimeStatus = "Choisis le logiciel DJ avant d’armer le Live."
+            return
+        }
+        guard let project = preparedProject else {
+            liveArmed = false
+            runtimeStatus = "Prépare un set avant d’armer le Live."
+            selectedSection = .studio
+            return
+        }
+        guard project.locked else {
+            liveArmed = false
+            runtimeStatus = "Verrouille le plan du set avant d’armer le Live."
+            selectedSection = .studio
+            return
+        }
+        guard let projectBackend = project.backend else {
+            liveArmed = false
+            runtimeStatus = "Ce projet ancien ne précise pas le logiciel DJ. Sélectionne \(selectedBackend.displayName), vérifie le set et verrouille-le de nouveau."
+            selectedSection = .studio
+            return
+        }
+        guard projectBackend == selectedBackend else {
+            liveArmed = false
+            runtimeStatus = "Ce projet est préparé pour \(projectBackend.displayName), pas pour \(selectedBackend.displayName). Relance la vérification après avoir choisi le bon backend."
+            selectedSection = .preflight
             return
         }
         guard preflightReport.canStartLive else {
@@ -19,7 +43,9 @@ extension AppModel {
             return
         }
         liveArmed.toggle()
-        runtimeStatus = liveArmed ? "Live armé" : "Live désarmé"
+        runtimeStatus = liveArmed
+            ? "Live armé pour \(selectedBackend.displayName)"
+            : "Live désarmé"
     }
 
     func startLive() {
@@ -28,13 +54,28 @@ extension AppModel {
             runtimeStatus = "Arme le Live avant de le lancer."
             return
         }
+        guard let selectedBackend else {
+            liveArmed = false
+            runtimeStatus = "Choisis le logiciel DJ avant de lancer le Live."
+            return
+        }
         guard preflightReport.canStartLive else {
+            liveArmed = false
             runtimeStatus = "La vérification contient encore des erreurs critiques."
             selectedSection = .preflight
             return
         }
         guard let project = preparedProject, project.locked else {
+            liveArmed = false
             runtimeStatus = "Prépare et verrouille le set avant le Live."
+            return
+        }
+        guard project.backend == selectedBackend else {
+            liveArmed = false
+            runtimeStatus = project.backend.map {
+                "Le set est verrouillé pour \($0.displayName), mais \(selectedBackend.displayName) est sélectionné."
+            } ?? "Le set ne précise pas le logiciel DJ. Vérifie-le et verrouille-le de nouveau."
+            selectedSection = .preflight
             return
         }
         guard let coordinator = runtimeCoordinator, !isLiveRunning else { return }
@@ -47,7 +88,7 @@ extension AppModel {
 
         isLiveRunning = true
         runtimeEvents = []
-        runtimeStatus = "Vérification du système"
+        runtimeStatus = "Vérification du système avec \(selectedBackend.displayName)"
         Task { await backendRegistry?.setLiveActive(true) }
 
         liveTask = Task {
