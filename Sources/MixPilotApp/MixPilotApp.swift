@@ -9,19 +9,35 @@ struct MixPilotAutopilotApp: App {
     @StateObject private var remoteBridge = MixPilotRemoteBridge()
     @StateObject private var cloud = MixPilotCloudCoordinator()
     @State private var mainSurface: MixPilotMainSurface = .home
+    private let cloudBackendContextStore = MixPilotCloudBackendContextStore()
 
     var body: some Scene {
         WindowGroup("MixPilot") {
             MixPilotMainShellView(model: model, surface: $mainSurface, cloud: cloud)
                 .frame(minWidth: 1_180, minHeight: 790)
                 .onAppear {
+                    let store = cloudBackendContextStore
                     cloud.configureBackendContextProvider {
-                        await model.onlineBackendContext
+                        await store.current()
                     }
+                    publishCloudBackendContext()
                     cloud.start(liveMode: model.isLiveRunning)
                 }
                 .onChange(of: model.isLiveRunning) { _, isLiveRunning in
+                    publishCloudBackendContext()
                     cloud.setLiveMode(isLiveRunning)
+                }
+                .onChange(of: model.selectedBackend) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.backendStatus) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.midiStatus) { _, _ in
+                    publishCloudBackendContext()
+                }
+                .onChange(of: model.preflightReport.generatedAt) { _, _ in
+                    publishCloudBackendContext()
                 }
         }
         .windowStyle(.titleBar)
@@ -149,6 +165,14 @@ struct MixPilotAutopilotApp: App {
             RecoveryCenterView()
         }
         .defaultSize(width: 820, height: 620)
+    }
+
+    private func publishCloudBackendContext() {
+        let context = model.onlineBackendContext
+        let store = cloudBackendContextStore
+        Task {
+            await store.update(context)
+        }
     }
 
     private func showPairingCode() {
