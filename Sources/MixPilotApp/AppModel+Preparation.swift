@@ -149,14 +149,20 @@ extension AppModel {
             audioStatus = String(format: "Silence détecté %.1f s", duration)
         case .criticalSilence(let duration):
             audioStatus = String(format: "Silence critique %.1f s", duration)
-            if isLiveRunning, emergencyPlayer.currentURL != nil, !emergencyPlayer.isPlaying {
-                emergencyPlayer.play()
-                emergencyStatus = "Musique de secours déclenchée automatiquement"
+            if isLiveRunning {
+                if emergencyPlayer.currentURL != nil, !emergencyPlayer.isPlaying {
+                    emergencyPlayer.play()
+                    emergencyStatus = "Musique de secours déclenchée automatiquement"
+                }
+                takeManualControl()
             }
         case .clipping(let peakDB):
             audioStatus = String(format: "Saturation %.1f dB", peakDB)
         case .sourceUnavailable:
             audioStatus = "Source audio indisponible"
+            if isLiveRunning {
+                takeManualControl()
+            }
         case .sourceRestored:
             audioStatus = "Source audio rétablie"
         }
