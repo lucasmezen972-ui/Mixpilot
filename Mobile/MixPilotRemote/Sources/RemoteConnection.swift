@@ -15,7 +15,11 @@ final class RemoteConnection: ObservableObject {
     private var socket: URLSessionWebSocketTask?
     private var receiverTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var sequencePolicy = RemoteSnapshotSequencePolicy()
+    private var reconnectPolicy = RemoteTransportRetryPolicy()
+    private var shouldReconnect = false
+    private var transportGeneration: UInt64 = 0
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -40,56 +44,16 @@ final class RemoteConnection: ObservableObject {
     }
 
     func connect(to endpoint: RemoteEndpoint) {
-        closeTransport()
+        stopAllTransport()
         isDemo = false
         snapshot = nil
         lastError = nil
         lastAcknowledgement = nil
         pairingRequired = false
         self.endpoint = endpoint
-        status = .connecting(endpoint.name)
-
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = endpoint.host
-        components.port = endpoint.port
-        components.path = "/v1/remote"
-
-        guard let url = components.url else {
-            status = .failed("Adresse réseau invalide")
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 10
-        request.setValue(
-            "mixpilot-remote-v\(MixPilotRemoteProtocolVersion.current)",
-            forHTTPHeaderField: "Sec-WebSocket-Protocol"
-        )
-
-        let socket = URLSession.shared.webSocketTask(with: request)
-        self.socket = socket
-        socket.resume()
-
-        receiverTask = Task { [weak self] in
-            await self?.receiveLoop()
-        }
-
-        heartbeatTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
-                guard let self, !Task.isCancelled else { return }
-                await self.send(.ping())
-            }
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            await self.send(.hello(deviceID: self.deviceID, deviceName: UIDevice.current.name))
-            if let token = KeychainStore.shared.read(account: endpoint.id) {
-                await self.send(.authenticate(deviceID: self.deviceID, token: token))
-            }
-        }
+        shouldReconnect = true
+        reconnectPolicy.reset()
+        beginConnection()
     }
 
     func pair(using pin: String) {
@@ -100,13 +64,18 @@ final class RemoteConnection: ObservableObject {
             return
         }
 
+        let generation = transportGeneration
         Task { [weak self] in
             guard let self else { return }
-            await self.send(.pair(
-                deviceID: self.deviceID,
-                deviceName: UIDevice.current.name,
-                pin: normalized
-            ))
+            await self.send(
+                .pair(
+                    deviceID: self.deviceID,
+                    deviceName: UIDevice.current.name,
+                    pin: normalized
+                ),
+                generation: generation
+            )
+            guard generation == self.transportGeneration else { return }
             self.status = .pairingRequired(endpoint.name)
         }
     }
@@ -123,13 +92,14 @@ final class RemoteConnection: ObservableObject {
         }
 
         let command = RemoteCommand(kind: kind)
+        let generation = transportGeneration
         Task { [weak self] in
-            await self?.send(.command(command))
+            await self?.send(.command(command), generation: generation)
         }
     }
 
     func startDemo() {
-        closeTransport()
+        stopAllTransport()
         isDemo = true
         endpoint = nil
         pairingRequired = false
@@ -140,7 +110,7 @@ final class RemoteConnection: ObservableObject {
     }
 
     func disconnect(reason: String = "Fermé par l’utilisateur") {
-        closeTransport()
+        stopAllTransport()
         isDemo = false
         endpoint = nil
         pairingRequired = false
@@ -148,7 +118,80 @@ final class RemoteConnection: ObservableObject {
         status = .disconnected(reason)
     }
 
-    private func closeTransport() {
+    private func beginConnection() {
+        guard shouldReconnect, let endpoint else { return }
+        closeSocketTransport()
+        transportGeneration &+= 1
+        let generation = transportGeneration
+        status = .connecting(endpoint.name)
+
+        var components = URLComponents()
+        components.scheme = "ws"
+        components.host = endpoint.host
+        components.port = endpoint.port
+        components.path = "/v1/remote"
+
+        guard let url = components.url else {
+            shouldReconnect = false
+            status = .failed("Adresse réseau invalide")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue(
+            "mixpilot-remote-v\(MixPilotRemoteProtocolVersion.current)",
+            forHTTPHeaderField: "Sec-WebSocket-Protocol"
+        )
+
+        let socket = URLSession.shared.webSocketTask(with: request)
+        self.socket = socket
+        socket.resume()
+
+        receiverTask = Task { [weak self] in
+            await self?.receiveLoop(generation: generation)
+        }
+
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(12))
+                } catch {
+                    return
+                }
+                guard let self,
+                      !Task.isCancelled,
+                      generation == self.transportGeneration else { return }
+                await self.send(.ping(), generation: generation)
+            }
+        }
+
+        Task { [weak self] in
+            guard let self, generation == self.transportGeneration else { return }
+            await self.send(
+                .hello(deviceID: self.deviceID, deviceName: UIDevice.current.name),
+                generation: generation
+            )
+            guard generation == self.transportGeneration else { return }
+            if let token = KeychainStore.shared.read(account: endpoint.id) {
+                await self.send(
+                    .authenticate(deviceID: self.deviceID, token: token),
+                    generation: generation
+                )
+            }
+        }
+    }
+
+    private func stopAllTransport() {
+        shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectPolicy.reset()
+        closeSocketTransport()
+    }
+
+    private func closeSocketTransport() {
+        transportGeneration &+= 1
         receiverTask?.cancel()
         heartbeatTask?.cancel()
         receiverTask = nil
@@ -157,22 +200,26 @@ final class RemoteConnection: ObservableObject {
         socket = nil
     }
 
-    private func send(_ message: RemoteClientMessage) async {
-        guard let socket else { return }
+    private func send(
+        _ message: RemoteClientMessage,
+        generation: UInt64
+    ) async {
+        guard generation == transportGeneration, let socket else { return }
         do {
             let data = try encoder.encode(message)
             try await socket.send(.data(data))
         } catch {
-            lastError = error.localizedDescription
-            status = .disconnected("Envoi impossible")
+            handleTransportFailure(error.localizedDescription, generation: generation)
         }
     }
 
-    private func receiveLoop() async {
+    private func receiveLoop(generation: UInt64) async {
         do {
             while !Task.isCancelled {
-                guard let socket else { return }
+                guard generation == transportGeneration, let socket else { return }
                 let message = try await socket.receive()
+                guard generation == transportGeneration else { return }
+
                 let data: Data
                 switch message {
                 case .data(let value):
@@ -188,15 +235,49 @@ final class RemoteConnection: ObservableObject {
             }
         } catch {
             guard !Task.isCancelled else { return }
-            snapshot = nil
-            pairingRequired = false
-            status = .disconnected(error.localizedDescription)
+            handleTransportFailure(error.localizedDescription, generation: generation)
+        }
+    }
+
+    private func handleTransportFailure(_ message: String, generation: UInt64) {
+        guard generation == transportGeneration,
+              shouldReconnect,
+              !isDemo,
+              endpoint != nil else { return }
+
+        closeSocketTransport()
+        snapshot = nil
+        pairingRequired = false
+        guard reconnectTask == nil else { return }
+
+        guard let delay = reconnectPolicy.nextDelay() else {
+            shouldReconnect = false
+            lastError = "La reconnexion automatique a échoué. Sélectionne de nouveau le Mac."
+            status = .disconnected("Mac indisponible")
+            return
+        }
+
+        let seconds = max(1, Int(delay.rounded()))
+        lastError = "Connexion interrompue. Nouvelle tentative dans \(seconds) s."
+        status = .disconnected("Reconnexion en cours")
+        reconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled, self.shouldReconnect else { return }
+            self.reconnectTask = nil
+            self.beginConnection()
         }
     }
 
     private func handle(_ message: RemoteServerMessage) {
         guard MixPilotRemoteProtocolVersion.supports(message.version) else {
             lastError = "Version du protocole non compatible. Mets à jour MixPilot sur le Mac et l’iPhone."
+            shouldReconnect = false
+            reconnectTask?.cancel()
+            reconnectTask = nil
             return
         }
 
@@ -212,21 +293,29 @@ final class RemoteConnection: ObservableObject {
             }
             do {
                 try KeychainStore.shared.save(token, account: endpoint.id)
+                reconnectPolicy.markReady()
                 pairingRequired = false
                 lastError = nil
                 status = .authenticated(endpoint.name)
                 let lastSequence = sequencePolicy.lastSequence(for: endpoint.id)
-                Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
+                let generation = transportGeneration
+                Task { [weak self] in
+                    await self?.send(.subscribe(lastSequence: lastSequence), generation: generation)
+                }
             } catch {
                 lastError = error.localizedDescription
             }
 
         case "authenticated":
+            reconnectPolicy.markReady()
             pairingRequired = false
             lastError = nil
             status = .authenticated(endpoint?.name ?? "Mac")
             let lastSequence = endpoint.flatMap { sequencePolicy.lastSequence(for: $0.id) }
-            Task { [weak self] in await self?.send(.subscribe(lastSequence: lastSequence)) }
+            let generation = transportGeneration
+            Task { [weak self] in
+                await self?.send(.subscribe(lastSequence: lastSequence), generation: generation)
+            }
 
         case "snapshot":
             if let endpoint,
