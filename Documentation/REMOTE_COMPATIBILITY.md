@@ -1,52 +1,74 @@
-# Compatibilité et mappings à distance
+# Compatibilité et correctifs à distance
 
-MixPilot utilise GitHub pour le code et Supabase pour distribuer des décisions de compatibilité strictement typées. Aucun script, binaire ou code Swift arbitraire n'est chargé depuis Supabase.
+MixPilot utilise GitHub pour le code et les artefacts contrôlés, puis Supabase pour distribuer des métadonnées de compatibilité strictement typées. Aucun script, binaire, code Swift, commande système ou message MIDI arbitraire n’est chargé depuis Supabase.
 
-## Flux d'un mapping
+## Portée multi-backend
 
-1. Un correctif est développé dans GitHub et validé par les tests et simulations.
-2. Le profil `MIDIMappingProfile` est encodé de manière déterministe.
-3. Son SHA-256 et celui du preset rekordbox recompilé sont enregistrés dans `mixpilot_mapping_releases`.
-4. La publication peut cibler un canal, un contrôleur, une plage de versions rekordbox, un build minimal et un pourcentage d'installations.
-5. MixPilot télécharge uniquement les lignes publiées correspondant à son environnement.
-6. L'application recalcule les deux empreintes et recompile le CSV avec le générateur local.
-7. Le profil actuel est sauvegardé avant toute écriture.
-8. Le nouveau profil est enregistré pour le prochain lancement. Le contrôleur actif en mémoire n'est jamais remplacé pendant un Live.
-9. Le CSV officiel est écrit atomiquement et doit être importé via MIDI IMPORT dans rekordbox.
-10. L'état découvert, validé, installé, refusé ou restauré est enregistré dans `mixpilot_mapping_installations`.
+Les tables et le contexte client enregistrent toujours :
 
-## Modes de publication
+- le backend actif ;
+- la version du logiciel DJ ;
+- le contrôleur ou profil ;
+- la version et l’empreinte du mapping ;
+- les capacités et validations connues.
 
-- `notify` : affiche la proposition et attend une action locale.
-- `next_launch` : valide et prépare automatiquement le mapping hors Live ; il devient actif au prochain lancement.
-- `required` : affiche un correctif requis et empêche sa fermeture dans l'interface. Il n'est toutefois jamais injecté pendant le Live.
+Le catalogue peut donc distinguer djay Pro, rekordbox et Serato DJ Pro sans valeur codée en dur.
+
+## Limite actuelle
+
+Le mécanisme générique de découverte et de ciblage existe pour les trois backends. En revanche, l’installateur automatique de correctif présent dans cette branche ne prépare actuellement qu’un preset rekordbox contrôlé.
+
+Pour djay et Serato, MixPilot conserve le mapping local et affiche uniquement les instructions ou avertissements compatibles. Il ne prétend pas installer un format qui n’a pas été implémenté et validé.
+
+## Flux d’un mapping publié
+
+1. le correctif est développé dans une PR GitHub ;
+2. les tests, simulations et contrôles de provenance doivent réussir ;
+3. le profil est encodé de manière déterministe ;
+4. les empreintes SHA-256 sont calculées ;
+5. la publication précise backend, logiciel, version, contrôleur, build minimal, canal et rollout ;
+6. MixPilot consulte uniquement les lignes publiées correspondant à son environnement ;
+7. le client recalcule les empreintes et revalide localement le format ;
+8. le mapping actuel est sauvegardé avant toute écriture ;
+9. aucune modification en mémoire n’est appliquée pendant un Live ;
+10. l’état découvert, préparé, refusé, installé ou restauré est enregistré sans donnée musicale.
+
+## Modes
+
+- `notify` : proposition locale, aucune préparation automatique ;
+- `next_launch` : vérification et préparation hors Live pour le prochain lancement ;
+- `required` : avertissement obligatoire, sans injection pendant le Live.
+
+Un correctif requis ne donne jamais le droit de démarrer, arrêter ou modifier un Live à distance.
 
 ## Rollback
 
-La dernière version locale est conservée dans Application Support. Le bouton Rollback restaure le profil précédent pour le prochain lancement et génère également un CSV rekordbox de restauration.
+Le profil précédent est conservé localement. La restauration est exécutée hors Live et devient active au prochain lancement ou après l’étape manuelle exigée par le logiciel DJ.
+
+Pour rekordbox, MixPilot peut également régénérer le CSV de restauration. Cette capacité n’est pas généralisée artificiellement à djay ou Serato.
 
 ## Règles de compatibilité
 
-`mixpilot_compatibility_overrides` permet de publier uniquement des données connues de l'application :
+Les overrides peuvent uniquement décrire des décisions connues du client :
 
-- actions concernées ;
-- validations requises ;
-- avertissements ;
-- suspension du Live ;
-- ciblage par version et contrôleur.
+- capacités concernées ;
+- validation supplémentaire requise ;
+- avertissement utilisateur ;
+- suspension du mode complet ;
+- ciblage par backend, version, contrôleur et build.
 
-Ces règles ne contiennent pas de commandes système et ne peuvent pas modifier une base rekordbox.
+Ils ne peuvent pas ajouter une nouvelle commande, modifier le moteur de transitions, écrire dans une base interne du logiciel DJ ou contourner le préflight.
 
 ## Garde-fous
 
-- RLS sur toutes les tables ;
-- aucune écriture de release depuis le client macOS ;
-- clé Supabase publique uniquement dans l'application ;
-- contrôles SHA-256 ;
-- recompilation locale du preset ;
-- détection des doublons MIDI ;
-- écriture atomique et relecture ;
-- sauvegarde avant installation ;
-- aucun changement pendant le Live ;
-- déploiement progressif ;
-- PR, tests et CI avant publication d'un correctif.
+- RLS sur les tables exposées ;
+- publication impossible depuis le client macOS ;
+- vues en lecture seule pour l’application ;
+- empreintes SHA-256 et provenance GitHub ;
+- sauvegarde, écriture atomique et relecture ;
+- aucune installation pendant le Live ;
+- rollout progressif ;
+- aucune clé privilégiée dans l’application ;
+- aucune donnée musicale, audio ou Accessibilité brute ;
+- PR et CI avant publication ;
+- validation matérielle toujours séparée de la simple installation.
