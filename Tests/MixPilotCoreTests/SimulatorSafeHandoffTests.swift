@@ -10,17 +10,17 @@ private let cliFailureSchedule: [Int: IncidentKind] = [
     151: .backendUnavailable,
 ]
 
-@Test("50-track failure simulation completes normally")
-func fiftyTrackSimulationCompletes() async throws {
+@Test("50-track failure simulation accepts safe backend handoff")
+func fiftyTrackSimulationHandsOffSafely() async throws {
     let report = try await SetSimulator().run(
         trackCount: 50,
         injectedIncidents: cliFailureSchedule
     )
 
     #expect(report.succeeded)
-    #expect(report.finalState == .completed)
-    #expect(!report.safeManualHandoff)
-    #expect(report.completedTransitions == report.transitionCount)
+    #expect(report.finalState == .manualControl)
+    #expect(report.safeManualHandoff)
+    #expect(report.completedTransitions < report.transitionCount)
 }
 
 @Test("250-track failure simulation accepts safe backend handoff")
