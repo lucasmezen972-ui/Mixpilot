@@ -5,7 +5,9 @@ import Testing
 func transientUnreliableReadIsTolerated() {
     var tracker = LiveStateReliabilityTracker(failureThreshold: 2)
 
-    #expect(!tracker.record(isReliable: false))
+    let shouldHandOff = tracker.record(isReliable: false)
+
+    #expect(!shouldHandOff)
     #expect(tracker.consecutiveFailures == 1)
 }
 
@@ -13,8 +15,11 @@ func transientUnreliableReadIsTolerated() {
 func repeatedUnreliableReadsRequireHandoff() {
     var tracker = LiveStateReliabilityTracker(failureThreshold: 2)
 
-    #expect(!tracker.record(isReliable: false))
-    #expect(tracker.record(isReliable: false))
+    let firstResult = tracker.record(isReliable: false)
+    let secondResult = tracker.record(isReliable: false)
+
+    #expect(!firstResult)
+    #expect(secondResult)
     #expect(tracker.consecutiveFailures == 2)
 }
 
@@ -22,16 +27,22 @@ func repeatedUnreliableReadsRequireHandoff() {
 func reliableObservationResetsFailures() {
     var tracker = LiveStateReliabilityTracker(failureThreshold: 2)
 
-    #expect(!tracker.record(isReliable: false))
-    #expect(!tracker.record(isReliable: true))
-    #expect(tracker.consecutiveFailures == 0)
-    #expect(!tracker.record(isReliable: false))
+    let firstFailure = tracker.record(isReliable: false)
+    let reliableResult = tracker.record(isReliable: true)
+    let nextFailure = tracker.record(isReliable: false)
+
+    #expect(!firstFailure)
+    #expect(!reliableResult)
+    #expect(tracker.consecutiveFailures == 1)
+    #expect(!nextFailure)
 }
 
 @Test("The tracker always uses a positive threshold")
 func trackerNormalizesInvalidThresholds() {
     var tracker = LiveStateReliabilityTracker(failureThreshold: 0)
 
+    let shouldHandOff = tracker.record(isReliable: false)
+
     #expect(tracker.failureThreshold == 1)
-    #expect(tracker.record(isReliable: false))
+    #expect(shouldHandOff)
 }
