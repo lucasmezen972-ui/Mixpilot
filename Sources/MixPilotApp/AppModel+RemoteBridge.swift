@@ -81,13 +81,19 @@ extension AppModel: MixPilotRemoteStateProvider {
         let degraded = descriptor.capabilities.degradedCapabilities
             .map(humanCapabilityName)
             .sorted()
+
+        let directCritical: Set<DJCapability> = [.trackLoading, .playPause, .channelVolume]
         let modeLabel: String
         if selectedBackend == .djay,
-           descriptor.capabilities[.automix].isVerifiedForLive {
+           descriptor.capabilities[.automix].isConfirmedForLive,
+           descriptor.capabilities[.trackStateReading].isConfirmedForLive {
             modeLabel = "Automix supervisé"
-        } else {
+        } else if descriptor.capabilities.confirmsAllForLive(directCritical) {
             modeLabel = "MixPilot avancé"
+        } else {
+            modeLabel = "Configuration supervisée"
         }
+
         return MixPilotRemoteBackendSummary(
             identifier: remoteIdentifier(selectedBackend),
             softwareVersion: descriptor.environment.softwareVersion,
