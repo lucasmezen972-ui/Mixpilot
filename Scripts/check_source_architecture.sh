@@ -47,19 +47,9 @@ for policy in SeratoBackendPolicy RekordboxBackendPolicy DjayBackendPolicy; do
 done
 
 fail_if_found \
-  'DJSoftwareSelectionStore\.current' \
-  'no code may recreate a default DJ software selection' \
-  Sources
-
-if grep -RInE \
-  --exclude='DJSoftware.swift' \
-  --exclude='SeratoAccessibilityBridge.swift' \
-  --exclude-dir=.build \
-  --exclude-dir=.git \
-  'DJSoftwareSelectionStore\.selected' Sources; then
-  echo 'Architecture check failed: active source must use DJBackendSelectionStoring' >&2
-  exit 1
-fi
+  'DJSoftwareSelectionStore' \
+  'the redundant legacy selection store must not return; migration belongs to DJBackendSelectionStoring' \
+  Sources Tests
 
 # The old property remains source-compatible in DJBackend.swift for the moment,
 # but active source code must use the strict isConfirmedForLive contract.
