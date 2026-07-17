@@ -18,6 +18,16 @@ require_pattern() {
   }
 }
 
+reject_pattern() {
+  local pattern="$1"
+  local file="$2"
+  local message="$3"
+  if grep -qE "$pattern" "$file"; then
+    echo "Runtime safety check failed: $message" >&2
+    exit 1
+  fi
+}
+
 require_file Sources/MixPilotCore/StrictVerificationDJBackend.swift
 require_file Tests/MixPilotCoreTests/StrictVerificationDJBackendTests.swift
 require_file Tests/MixPilotRuntimeTests/BackendCommandQueueSafetyTests.swift
@@ -28,6 +38,7 @@ require_file Sources/MixPilotCore/MIDIMappingRuntimeCompatibility.swift
 require_file Tests/MixPilotCoreTests/MIDIMappingRuntimeCompatibilityTests.swift
 require_file Tests/MixPilotCoreTests/AudioWatchdogStateTests.swift
 require_file Tests/MixPilotSystemTests/EmergencyAudioPlayerTests.swift
+require_file Tests/MixPilotCoreTests/LiveCheckpointMigrationTests.swift
 
 require_pattern 'StrictVerificationDJBackend' Sources/MixPilotApp/AppModel+Mapping.swift \
   'active backends must use the strict verification boundary'
@@ -63,5 +74,14 @@ require_pattern 'takeManualControl\(\)' Sources/MixPilotApp/AppModel+Preparation
   'critical audio incidents must hand control back'
 require_pattern 'operationGeneration' Sources/MixPilotSystem/EmergencyAudioPlayer.swift \
   'stale emergency-player fades must be invalidated'
+require_pattern 'let baseIndex = currentIndex' Sources/MixPilotSystem/EmergencyAudioPlayer.swift \
+  'emergency fallback order must remain stable across failed candidates'
+require_pattern 'invalidPaths' Sources/MixPilotSystem/EmergencyAudioPlayer.swift \
+  'known-bad emergency files must not be retried in a loop'
+require_pattern 'decision: \.requireManualConfirmation' Sources/MixPilotCore/LiveCheckpoint.swift \
+  'crash recovery must require confirmation on the Mac'
+reject_pattern 'decision: \.resumeAutomatically' Sources/MixPilotCore/LiveCheckpoint.swift \
+  'crash recovery must never restart the Live automatically'
+
 
 echo 'Runtime safety consistency: OK'
