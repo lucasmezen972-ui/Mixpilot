@@ -28,10 +28,11 @@ extension AppModel {
 
         preparedProject = SetPreparationEngine().prepare(
             name: "Playlist \(selectedBackend.displayName) — \(Date().formatted(date: .abbreviated, time: .shortened))",
-            tracks: result.tracks
+            tracks: result.tracks,
+            backend: selectedBackend
         )
         optimizationReport = SetOptimizer().analyze(tracks: result.tracks)
-        runtimeStatus = "\(result.tracks.count) morceaux préparés"
+        runtimeStatus = "\(result.tracks.count) morceaux préparés pour \(selectedBackend.displayName)"
         updateSnapshotForProject()
         evaluatePreflight()
     }
@@ -45,21 +46,29 @@ extension AppModel {
         let tracks = SetSimulator().makeTracks(count: 30)
         preparedProject = SetPreparationEngine().prepare(
             name: "Set de démonstration",
-            tracks: tracks
+            tracks: tracks,
+            backend: selectedBackend
         )
         optimizationReport = SetOptimizer().analyze(tracks: tracks)
         playlistWarnings = []
-        runtimeStatus = "Set de démonstration préparé"
+        runtimeStatus = selectedBackend.map {
+            "Set de démonstration préparé pour \($0.displayName)"
+        } ?? "Set de démonstration préparé • choisis le logiciel DJ avant le Live"
         updateSnapshotForProject()
         evaluatePreflight()
     }
 
     func lockPreparedProject() {
         guard var project = preparedProject else { return }
+        guard let selectedBackend else {
+            runtimeStatus = "Choisis le logiciel DJ avant de verrouiller le plan."
+            return
+        }
+        project.selectBackend(selectedBackend)
         project.lock()
         preparedProject = project
         Task { try? await projectStore.save(project) }
-        runtimeStatus = "Plan verrouillé • prêt pour la vérification"
+        runtimeStatus = "Plan verrouillé pour \(selectedBackend.displayName) • prêt pour la vérification"
         evaluatePreflight()
     }
 
