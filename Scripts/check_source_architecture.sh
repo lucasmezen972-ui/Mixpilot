@@ -96,6 +96,16 @@ grep -q 'MixPilotRemoteProtocolVersion.supports(message.version)' \
     exit 1
   }
 
+grep -q 'applyingRuntimeAvailability' Sources/MixPilotApp/AppModel+Backend.swift || {
+  echo 'Architecture check failed: preflight planning must apply current runtime permissions before confirming capabilities' >&2
+  exit 1
+}
+
+if grep -n 'liveTask?.cancel()' Sources/MixPilotApp/AppModel+Live.swift; then
+  echo 'Architecture check failed: manual control must use the coordinator safe-point handoff instead of cancelling the Live task first' >&2
+  exit 1
+fi
+
 if grep -RInE \
   --exclude='RemoteMappingUpdates.swift' \
   --exclude-dir=.build \
