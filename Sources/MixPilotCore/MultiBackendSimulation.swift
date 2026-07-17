@@ -151,9 +151,8 @@ public struct MultiBackendSimulationSuite: Sendable {
         var result = baselineCapabilities(for: backend)
 
         switch scenario {
-        case .baseline, .backendLost, .delayedCommand, .unconfirmedCommand,
-             .duplicateCommand, .internetLost, .iphoneLost, .softwareVersionChanged,
-             .manualControl:
+        case .baseline, .delayedCommand, .duplicateCommand, .internetLost,
+             .iphoneLost, .manualControl:
             break
 
         case .partialCapabilities:
@@ -176,6 +175,28 @@ public struct MultiBackendSimulationSuite: Sendable {
             makeUnavailable(.trackLoading, in: &result)
             makeUnavailable(.playPause, in: &result)
             makeUnavailable(.channelVolume, in: &result)
+
+        case .backendLost:
+            for capability in [
+                DJCapability.processDetection,
+                .trackLoading,
+                .playPause,
+                .channelVolume,
+                .deckStateReading,
+                .trackStateReading,
+            ] {
+                makeUnavailable(capability, in: &result)
+            }
+
+        case .unconfirmedCommand:
+            makePending(.trackLoading, in: &result)
+            makePending(.playPause, in: &result)
+            makePending(.channelVolume, in: &result)
+
+        case .softwareVersionChanged:
+            for capability in DJCapability.allCases {
+                makePending(capability, in: &result)
+            }
         }
 
         return result
@@ -280,10 +301,27 @@ public struct MultiBackendSimulationSuite: Sendable {
                 !capabilities.supports(.trackLoading) &&
                 !capabilities.supports(.playPause)
 
-        case .backendLost, .delayedCommand, .unconfirmedCommand, .manualControl:
+        case .backendLost:
+            return blockedCount > 0 &&
+                !capabilities.supports(.processDetection) &&
+                !capabilities.supports(.trackLoading) &&
+                !capabilities.supports(.playPause)
+
+        case .delayedCommand:
+            // Timeout and circuit-breaker behavior is exercised by BackendCommandQueue tests.
+            return blockedCount == 0
+
+        case .unconfirmedCommand:
+            return blockedCount > 0 &&
+                !capabilities[.trackLoading].isConfirmedForLive &&
+                !capabilities[.playPause].isConfirmedForLive &&
+                !capabilities[.channelVolume].isConfirmedForLive
+
+        case .manualControl:
             return blockedCount == 0
 
         case .duplicateCommand:
+            // Idempotency behavior is exercised by BackendCommandQueue tests.
             return blockedCount == 0
 
         case .internetLost, .iphoneLost:
@@ -291,7 +329,8 @@ public struct MultiBackendSimulationSuite: Sendable {
 
         case .softwareVersionChanged:
             return DJCapability.allCases.allSatisfy {
-                capabilities[$0].validation != .automatedSuccess
+                !capabilities[$0].isConfirmedForLive &&
+                    capabilities[$0].validation == .requiresDeviceValidation
             }
         }
     }
