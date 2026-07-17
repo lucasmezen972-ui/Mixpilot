@@ -105,12 +105,12 @@ extension AppModel {
                 ? "\(descriptor.displayName) est installé mais fermé"
                 : "\(descriptor.displayName) n’est pas installé"
 
-        let observation = accessibilityBridge.observe(software: legacySoftware(selectedBackend))
+        let observation = accessibilityBridge.observe(backend: selectedBackend)
         accessibilityStatus = observation.accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : "Surveillance arrêtée"
         libraryRowCount = observation.accessibilityGranted
             ? accessibilityBridge.libraryRows(
-                software: legacySoftware(selectedBackend),
+                backend: selectedBackend,
                 maxRows: 1_000
             ).count
             : 0
