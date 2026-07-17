@@ -11,9 +11,6 @@ struct BrandedRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             workspaceHeader
-            Rectangle()
-                .fill(.white.opacity(0.09))
-                .frame(height: 1)
             AdvancedContentView(model: model)
         }
         .background(MixPilotPremiumBackground())
@@ -21,41 +18,71 @@ struct BrandedRootView: View {
     }
 
     private var workspaceHeader: some View {
-        HStack(spacing: 14) {
-            MixPilotBrandLogoView(size: 48, cornerRadius: 13)
-                .shadow(color: .purple.opacity(0.25), radius: 14, y: 6)
+        HStack(spacing: 15) {
+            HStack(spacing: 12) {
+                MixPilotBrandLogoView(size: 44, cornerRadius: 12)
+                    .shadow(color: .indigo.opacity(0.22), radius: 16, y: 7)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
-                    Text("MIXPILOT")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .tracking(0.7)
-                    Text("AUTOPILOT")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .tracking(1.5)
-                        .foregroundStyle(.cyan)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
+                        Text("MIXPILOT")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .tracking(0.75)
+                        Text("CONTROL CENTER")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .tracking(1.35)
+                            .foregroundStyle(.cyan)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("TRADIKOM BY LUCAS MEZEN")
+                            .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                            .tracking(1.0)
+                            .foregroundStyle(MixPilotPalette.textTertiary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.25))
+                        Text(model.selectedSection.rawValue)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.64))
+                    }
                 }
-                Text("TRADIKOM BY LUCAS MEZEN")
-                    .font(.system(size: 7.5, weight: .bold, design: .rounded))
-                    .tracking(1.05)
-                    .foregroundStyle(.white.opacity(0.42))
-                Text(model.selectedSection.rawValue)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.46))
             }
 
-            Spacer()
+            Spacer(minLength: 16)
 
             Button {
                 openWindow(id: "dj-software")
             } label: {
-                MixPilotStatusBadge(
-                    title: selectedSoftware.displayName,
-                    symbol: softwareSymbol,
-                    accent: .purple
-                )
+                HStack(spacing: 9) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(.purple.opacity(0.12))
+                        Image(systemName: softwareSymbol)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.purple)
+                    }
+                    .frame(width: 30, height: 30)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("LOGICIEL DJ")
+                            .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                            .tracking(0.8)
+                            .foregroundStyle(MixPilotPalette.textTertiary)
+                        Text(selectedSoftware.displayName)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white.opacity(0.09), lineWidth: 1)
+                }
             }
             .buttonStyle(.plain)
+            .help("Changer de logiciel DJ")
 
             if selectedSoftware == .rekordbox {
                 Button {
@@ -73,29 +100,62 @@ struct BrandedRootView: View {
                 .buttonStyle(MixPilotSecondaryButtonStyle())
             }
 
-            VStack(alignment: .trailing, spacing: 3) {
-                MixPilotStatusBadge(
-                    title: model.isLiveRunning ? "Autopilot actif" : "Système prêt",
-                    symbol: model.isLiveRunning ? "bolt.circle.fill" : "checkmark.circle.fill",
-                    accent: model.isLiveRunning ? .green : .cyan
-                )
-                Text(model.runtimeStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
-                    .frame(maxWidth: 210, alignment: .trailing)
-            }
+            runtimeState
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .background(.black.opacity(0.16))
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    LinearGradient(
+                        colors: [.black.opacity(0.18), .black.opacity(0.08)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+        }
         .overlay(alignment: .bottom) {
             LinearGradient(
-                colors: [.purple.opacity(0.28), .cyan.opacity(0.16), .clear],
+                colors: [.indigo.opacity(0.28), .cyan.opacity(0.13), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
             .frame(height: 1)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+    }
+
+    private var runtimeState: some View {
+        HStack(spacing: 9) {
+            ZStack {
+                Circle()
+                    .fill((model.isLiveRunning ? Color.green : Color.cyan).opacity(0.12))
+                Circle()
+                    .fill(model.isLiveRunning ? Color.green : Color.cyan)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: model.isLiveRunning ? .green.opacity(0.70) : .cyan.opacity(0.60), radius: 6)
+            }
+            .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.isLiveRunning ? "AUTOPILOT ACTIF" : "SYSTÈME PRÊT")
+                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .tracking(0.65)
+                    .foregroundStyle(model.isLiveRunning ? .green : .cyan)
+                Text(model.runtimeStatus)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(MixPilotPalette.textTertiary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 210, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.white.opacity(0.040), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         }
     }
 
