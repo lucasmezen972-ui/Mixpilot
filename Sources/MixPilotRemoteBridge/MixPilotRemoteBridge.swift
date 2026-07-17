@@ -104,8 +104,9 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     private var sessions: [UUID: MixPilotRemoteClientSession] = [:]
     private var snapshotTask: Task<Void, Never>?
     private var restartTask: Task<Void, Never>?
-    private var restartPolicy = RemoteListenerRestartPolicy()
+    private var restartPolicy = RemoteTransportRetryPolicy()
     private var wantsRemote = false
+    private var lifecycleGeneration: UInt64 = 0
     private var sequence = 0
     private let networkQueue = DispatchQueue(label: "com.mixpilot.remote.listener")
     private let pairingAuthority: MixPilotRemotePairingAuthority
@@ -142,6 +143,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
 
         if wantsRemote {
             if listener == nil, restartTask == nil, !isRunning {
+                lifecycleGeneration &+= 1
                 restartPolicy.reset()
                 startListener()
             }
@@ -149,6 +151,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
         }
 
         wantsRemote = true
+        lifecycleGeneration &+= 1
         pairingCode = pairingAuthority.rotatePairingCode()
         restartPolicy.reset()
         startSnapshotLoop()
@@ -157,6 +160,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
 
     public func stop() {
         wantsRemote = false
+        lifecycleGeneration &+= 1
         restartTask?.cancel()
         restartTask = nil
         restartPolicy.reset()
@@ -208,7 +212,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     private func applyListenerState(_ state: NWListener.State, listener eventListener: NWListener?) {
-        guard eventListener === listener || eventListener == nil else { return }
+        guard let eventListener, eventListener === listener else { return }
 
         switch state {
         case .ready:
@@ -247,6 +251,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             return
         }
 
+        let generation = lifecycleGeneration
         let seconds = max(1, Int(delay.rounded()))
         status = "Télécommande indisponible • nouvelle tentative dans \(seconds) s • le Live continue"
         restartTask = Task { [weak self] in
@@ -255,7 +260,10 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             } catch {
                 return
             }
-            guard let self, !Task.isCancelled, self.wantsRemote else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  self.wantsRemote,
+                  self.lifecycleGeneration == generation else { return }
             self.restartTask = nil
             self.startListener()
         }
@@ -412,7 +420,11 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
         snapshotTask?.cancel()
         snapshotTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
                 guard let self, !Task.isCancelled else { return }
                 self.publishSnapshot()
             }
