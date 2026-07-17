@@ -18,7 +18,7 @@ extension AppModel {
                 }
                 try await backendRegistry.select(identifier)
                 selectedBackend = identifier
-                DJSoftwareSelectionStore.current = legacySoftware(identifier)
+                DJSoftwareSelectionStore.selected = DJSoftware(identifier)
                 try await rebuildRuntimeCoordinator()
                 await refreshEnvironmentNow()
             } catch {
@@ -139,11 +139,7 @@ extension AppModel {
     }
 
     func legacySoftware(_ identifier: DJBackendIdentifier) -> DJSoftware {
-        switch identifier {
-        case .djay: .djay
-        case .rekordbox: .rekordbox
-        case .serato: .serato
-        }
+        DJSoftware(identifier)
     }
 
     func humanMessage(for error: Error) -> String {
