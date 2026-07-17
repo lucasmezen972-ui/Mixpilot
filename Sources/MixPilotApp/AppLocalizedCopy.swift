@@ -48,6 +48,14 @@ enum AppLocalizedCopy {
         formatted(status(key), arguments)
     }
 
+    static func technical(_ key: String) -> String {
+        text(key, table: "Technical")
+    }
+
+    static func technicalFormat(_ key: String, _ arguments: CVarArg...) -> String {
+        formatted(technical(key), arguments)
+    }
+
     private static func formatted(_ format: String, _ arguments: [CVarArg]) -> String {
         String(
             format: format,
