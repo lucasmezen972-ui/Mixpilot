@@ -7,7 +7,7 @@ import MixPilotRuntime
 extension AppModel {
     func selectBackend(_ identifier: DJBackendIdentifier) {
         guard !isLiveRunning else {
-            runtimeStatus = "Le logiciel DJ ne peut pas être changé pendant le Live. Reprends la main avant de changer."
+            runtimeStatus = AppLocalizedCopy.status("status.backend.change_live_forbidden")
             return
         }
 
@@ -84,7 +84,7 @@ extension AppModel {
 
     func refreshEnvironmentNow() async {
         guard let backendRegistry else {
-            backendStatus = "Initialisation des logiciels DJ"
+            backendStatus = AppLocalizedCopy.status("status.backend.initializing")
             accessibilityGranted = false
             backendValidationReport = nil
             evaluatePreflight()
@@ -96,9 +96,9 @@ extension AppModel {
 
         guard let selectedBackend,
               let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }) else {
-            backendStatus = "Choisis djay Pro, rekordbox ou Serato DJ Pro"
+            backendStatus = AppLocalizedCopy.status("status.backend.choose_three")
             accessibilityGranted = false
-            accessibilityStatus = "En attente du choix"
+            accessibilityStatus = AppLocalizedCopy.status("status.backend.accessibility_waiting")
             libraryRowCount = 0
             backendValidationReport = nil
             runtimeCoordinator = nil
@@ -106,16 +106,43 @@ extension AppModel {
             return
         }
 
-        backendStatus = descriptor.environment.isRunning
-            ? "\(descriptor.displayName) connecté\(descriptor.environment.softwareVersion.map { " • v\($0)" } ?? "")"
-            : descriptor.environment.isInstalled
-                ? "\(descriptor.displayName) est installé mais fermé"
-                : "\(descriptor.displayName) n’est pas installé"
+        if descriptor.environment.isRunning {
+            if let version = descriptor.environment.softwareVersion {
+                backendStatus = AppLocalizedCopy.statusFormat(
+                    "status.backend.connected_version",
+                    descriptor.displayName,
+                    version
+                )
+            } else {
+                backendStatus = AppLocalizedCopy.statusFormat(
+                    "status.backend.connected",
+                    descriptor.displayName
+                )
+            }
+        } else if descriptor.environment.isInstalled {
+            backendStatus = AppLocalizedCopy.statusFormat(
+                "status.backend.installed_closed",
+                descriptor.displayName
+            )
+        } else {
+            backendStatus = AppLocalizedCopy.statusFormat(
+                "status.backend.not_installed",
+                descriptor.displayName
+            )
+        }
 
         let observation = accessibilityBridge.observe(backend: selectedBackend)
         accessibilityGranted = observation.accessibilityGranted
-        accessibilityStatus = accessibilityGranted ? "Autorisée" : "Action requise"
-        audioStatus = audioMonitor.isRunning ? "Surveillance active" : "Surveillance arrêtée"
+        accessibilityStatus = AppLocalizedCopy.status(
+            accessibilityGranted
+                ? "status.backend.accessibility_authorized"
+                : "status.backend.accessibility_required"
+        )
+        audioStatus = AppLocalizedCopy.status(
+            audioMonitor.isRunning
+                ? "status.backend.audio_active"
+                : "status.backend.audio_stopped"
+        )
         libraryRowCount = accessibilityGranted
             ? accessibilityBridge.libraryRows(
                 backend: selectedBackend,
@@ -130,7 +157,10 @@ extension AppModel {
         }
 
         if observation.isRunning && accessibilityGranted {
-            runtimeStatus = "\(descriptor.displayName) observable"
+            runtimeStatus = AppLocalizedCopy.statusFormat(
+                "status.backend.observable",
+                descriptor.displayName
+            )
         }
 
         if !isLiveRunning {
@@ -156,7 +186,10 @@ extension AppModel {
         preparedProject = project
         liveArmed = false
         _ = try await projectStore.save(project)
-        runtimeStatus = "Set associé à \(identifier.displayName) • inspecte les adaptations puis verrouille de nouveau le plan"
+        runtimeStatus = AppLocalizedCopy.statusFormat(
+            "status.backend.project_associated",
+            identifier.displayName
+        )
     }
 
     func legacySoftware(_ identifier: DJBackendIdentifier) -> DJSoftware {
@@ -169,7 +202,7 @@ extension AppModel {
            !message.isEmpty {
             return message
         }
-        return "Une étape n’a pas pu être terminée. Le Live reste arrêté et le contrôle manuel est disponible."
+        return AppLocalizedCopy.status("status.backend.generic_failure")
     }
 }
 #endif
