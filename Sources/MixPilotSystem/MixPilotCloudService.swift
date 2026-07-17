@@ -17,19 +17,76 @@ public struct MixPilotCloudContext: Sendable {
     }
 }
 
+public struct MixPilotCloudCapabilitySnapshot: Codable, Hashable, Sendable {
+    public var availability: String
+    public var confidence: String
+    public var validation: String
+    public var method: String?
+
+    public init(status: DJCapabilityStatus) {
+        availability = status.availability.rawValue
+        confidence = status.confidence.rawValue
+        validation = status.validation.rawValue
+        method = status.method?.rawValue
+    }
+}
+
+public struct MixPilotCloudBackendContext: Codable, Hashable, Sendable {
+    public var identifier: DJBackendIdentifier
+    public var softwareVersion: String?
+    public var controllerName: String?
+    public var mappingVersion: String?
+    public var mappingSHA256: String?
+    public var capabilities: [String: MixPilotCloudCapabilitySnapshot]
+    public var validationStatus: String?
+
+    public init(
+        identifier: DJBackendIdentifier,
+        softwareVersion: String? = nil,
+        controllerName: String? = nil,
+        mappingVersion: String? = nil,
+        mappingSHA256: String? = nil,
+        capabilities: DJBackendCapabilities = DJBackendCapabilities(),
+        validationStatus: String? = nil
+    ) {
+        self.identifier = identifier
+        self.softwareVersion = softwareVersion
+        self.controllerName = controllerName
+        self.mappingVersion = mappingVersion
+        self.mappingSHA256 = mappingSHA256
+        self.capabilities = Dictionary(uniqueKeysWithValues: capabilities.values.map {
+            ($0.key.rawValue, MixPilotCloudCapabilitySnapshot(status: $0.value))
+        })
+        self.validationStatus = validationStatus
+    }
+}
+
+public struct MixPilotOnlineDiagnosticsPreferences: Sendable {
+    public static let defaultsKey = "MixPilotOnlineDiagnosticsEnabledV1"
+
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public var isEnabled: Bool {
+        get { defaults.bool(forKey: Self.defaultsKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.defaultsKey) }
+    }
+}
+
 public enum MixPilotCloudError: Error, LocalizedError {
     case invalidResponse
     case emptyResponse
-    case rejected(statusCode: Int, body: String)
+    case rejected(statusCode: Int)
 
     public var errorDescription: String? {
         switch self {
-        case .invalidResponse:
-            "Réponse cloud invalide."
-        case .emptyResponse:
-            "Le cloud n’a renvoyé aucun enregistrement."
-        case .rejected(let statusCode, let body):
-            "Cloud MixPilot refusé (HTTP \(statusCode)) : \(body.prefix(180))"
+        case .invalidResponse, .emptyResponse:
+            "Les services en ligne n’ont pas répondu correctement. Le Live local reste disponible."
+        case .rejected:
+            "Les services en ligne ont refusé la demande. Réessaie plus tard ; le Live local n’est pas affecté."
         }
     }
 }
@@ -46,6 +103,8 @@ public actor MixPilotCloudService {
 
     private var context: MixPilotCloudContext?
     private var telemetry: SupabaseTelemetryClient?
+    private var telemetryEnabled = false
+    private var backendContext: MixPilotCloudBackendContext?
 
     public init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -66,17 +125,13 @@ public actor MixPilotCloudService {
             let value = try container.decode(String.self)
             let fractional = ISO8601DateFormatter()
             fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = fractional.date(from: value) {
-                return date
-            }
+            if let date = fractional.date(from: value) { return date }
             let regular = ISO8601DateFormatter()
             regular.formatOptions = [.withInternetDateTime]
-            if let date = regular.date(from: value) {
-                return date
-            }
+            if let date = regular.date(from: value) { return date }
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "Date ISO 8601 invalide : \(value)"
+                debugDescription: "Date ISO 8601 invalide"
             )
         }
         self.decoder = decoder
@@ -85,9 +140,12 @@ public actor MixPilotCloudService {
     public func connect(
         appVersion: String,
         appBuild: Int,
-        rekordboxVersion: String?,
-        liveMode: Bool
+        backend: MixPilotCloudBackendContext?,
+        liveMode: Bool,
+        telemetryEnabled: Bool
     ) async throws -> MixPilotCloudContext {
+        self.backendContext = backend
+        self.telemetryEnabled = telemetryEnabled
         let authSession = try await authenticatedSession()
         let userID = authSession.user.id
 
@@ -104,8 +162,9 @@ public actor MixPilotCloudService {
                     deviceName: Host.current().localizedName,
                     appVersion: appVersion,
                     appBuild: appBuild,
-                    rekordboxVersion: rekordboxVersion,
+                    backend: backend,
                     updateChannel: "stable",
+                    telemetryEnabled: telemetryEnabled,
                     lastSeenAt: Date()
                 )
             ]
@@ -123,9 +182,9 @@ public actor MixPilotCloudService {
                     deviceID: device.id,
                     appVersion: appVersion,
                     appBuild: appBuild,
-                    djBackend: "rekordbox",
-                    rekordboxVersion: rekordboxVersion,
-                    liveMode: liveMode
+                    backend: backend,
+                    liveMode: liveMode,
+                    telemetryEnabled: telemetryEnabled
                 )
             ]
         )
@@ -139,44 +198,51 @@ public actor MixPilotCloudService {
         )
         context = newContext
 
-        let configuration = MixPilotCloudConfiguration(
-            projectURL: Self.projectURL,
-            publishableKey: Self.publishableKey,
-            accessToken: authSession.accessToken,
-            userID: userID
-        )
-        let client = SupabaseTelemetryClient(
-            configuration: configuration,
-            queueFileURL: Self.telemetryQueueURL()
-        )
-        telemetry = client
-        try await client.record(
-            MixPilotTelemetryEvent(
-                category: "application",
-                name: "launched",
-                payload: [
-                    "app_version": appVersion,
-                    "app_build": String(appBuild),
-                    "platform": "macos"
-                ]
+        if telemetryEnabled {
+            let configuration = MixPilotCloudConfiguration(
+                projectURL: Self.projectURL,
+                publishableKey: Self.publishableKey,
+                accessToken: authSession.accessToken,
+                userID: userID
             )
-        )
-        _ = try await client.flush(
-            deviceID: device.id,
-            sessionID: cloudSession.id,
-            accessToken: authSession.accessToken
-        )
-
+            let client = SupabaseTelemetryClient(
+                configuration: configuration,
+                queueFileURL: Self.telemetryQueueURL()
+            )
+            telemetry = client
+            try await client.record(
+                MixPilotTelemetryEvent(
+                    category: "application",
+                    name: "launched",
+                    payload: [
+                        "app_version": appVersion,
+                        "app_build": String(appBuild),
+                        "platform": "macos",
+                        "dj_backend": backend?.identifier.rawValue ?? "not_selected"
+                    ]
+                )
+            )
+            _ = try await client.flush(
+                deviceID: device.id,
+                sessionID: cloudSession.id,
+                accessToken: authSession.accessToken
+            )
+        } else {
+            telemetry = nil
+        }
         return newContext
     }
 
     public func heartbeat(
         appVersion: String,
         appBuild: Int,
-        rekordboxVersion: String?,
-        liveMode: Bool
+        backend: MixPilotCloudBackendContext?,
+        liveMode: Bool,
+        telemetryEnabled: Bool
     ) async throws {
         guard let context else { throw MixPilotCloudError.emptyResponse }
+        self.backendContext = backend
+        self.telemetryEnabled = telemetryEnabled
         let authSession = try await authenticatedSession()
 
         let _: EmptyResponse = try await performRequest(
@@ -188,7 +254,8 @@ public actor MixPilotCloudService {
             body: HeartbeatRow(
                 appVersion: appVersion,
                 appBuild: appBuild,
-                rekordboxVersion: rekordboxVersion,
+                backend: backend,
+                telemetryEnabled: telemetryEnabled,
                 lastSeenAt: Date()
             )
         )
@@ -199,10 +266,14 @@ public actor MixPilotCloudService {
             accessToken: authSession.accessToken,
             queryItems: [URLQueryItem(name: "id", value: "eq.\(context.sessionID.uuidString)")],
             prefer: "return=minimal",
-            body: SessionHeartbeatRow(liveMode: liveMode)
+            body: SessionHeartbeatRow(
+                backend: backend,
+                liveMode: liveMode,
+                telemetryEnabled: telemetryEnabled
+            )
         )
 
-        if let telemetry {
+        if telemetryEnabled, let telemetry {
             _ = try await telemetry.flush(
                 deviceID: context.deviceID,
                 sessionID: context.sessionID,
@@ -212,7 +283,7 @@ public actor MixPilotCloudService {
     }
 
     public func record(_ event: MixPilotTelemetryEvent) async throws {
-        guard let telemetry else { throw MixPilotCloudError.emptyResponse }
+        guard telemetryEnabled, let telemetry else { return }
         try await telemetry.record(event)
     }
 
@@ -228,9 +299,7 @@ public actor MixPilotCloudService {
             ]
         )
         guard let release = releases.first else { return nil }
-        return release.isAvailable(currentBuild: currentBuild, installationID: installationID)
-            ? release
-            : nil
+        return release.isAvailable(currentBuild: currentBuild, installationID: installationID) ? release : nil
     }
 
     public func pendingCommands() async throws -> [MixPilotCloudCommand] {
@@ -285,16 +354,13 @@ public actor MixPilotCloudService {
                 body: SessionEndRow(endedAt: Date())
             )
         } catch {
-            // La fermeture distante est opportuniste ; une coupure réseau ne bloque jamais l’app.
+            // Session closure is opportunistic and never blocks local use.
         }
     }
 
     private func authenticatedSession() async throws -> Session {
-        do {
-            return try await supabase.auth.session
-        } catch {
-            return try await supabase.auth.signInAnonymously()
-        }
+        do { return try await supabase.auth.session }
+        catch { return try await supabase.auth.signInAnonymously() }
     }
 
     private func performRequest<Response: Decodable>(
@@ -352,22 +418,14 @@ public actor MixPilotCloudService {
         request.setValue(Self.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let prefer {
-            request.setValue(prefer, forHTTPHeaderField: "Prefer")
-        }
+        if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
         request.httpBody = bodyData
 
         let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw MixPilotCloudError.invalidResponse
-        }
+        guard let http = response as? HTTPURLResponse else { throw MixPilotCloudError.invalidResponse }
         guard 200..<300 ~= http.statusCode else {
-            throw MixPilotCloudError.rejected(
-                statusCode: http.statusCode,
-                body: String(data: data, encoding: .utf8) ?? ""
-            )
+            throw MixPilotCloudError.rejected(statusCode: http.statusCode)
         }
-
         if Response.self == EmptyResponse.self, data.isEmpty {
             return EmptyResponse() as! Response
         }
@@ -376,8 +434,7 @@ public actor MixPilotCloudService {
 
     private static func loadInstallationID() -> UUID {
         let key = "mixpilot.cloud.installation-id"
-        if let value = UserDefaults.standard.string(forKey: key),
-           let id = UUID(uuidString: value) {
+        if let value = UserDefaults.standard.string(forKey: key), let id = UUID(uuidString: value) {
             return id
         }
         let id = UUID()
@@ -392,7 +449,7 @@ public actor MixPilotCloudService {
         ).first ?? FileManager.default.temporaryDirectory
         return root
             .appendingPathComponent("MixPilot", isDirectory: true)
-            .appendingPathComponent("Cloud", isDirectory: true)
+            .appendingPathComponent("Online Diagnostics", isDirectory: true)
             .appendingPathComponent("telemetry-queue.json")
     }
 }
@@ -403,8 +460,9 @@ private struct DeviceUpsertRow: Encodable {
     let deviceName: String?
     let appVersion: String
     let appBuild: Int
-    let rekordboxVersion: String?
+    let backend: MixPilotCloudBackendContext?
     let updateChannel: String
+    let telemetryEnabled: Bool
     let lastSeenAt: Date
 
     enum CodingKeys: String, CodingKey {
@@ -413,24 +471,52 @@ private struct DeviceUpsertRow: Encodable {
         case deviceName = "device_name"
         case appVersion = "app_version"
         case appBuild = "app_build"
+        case djBackend = "dj_backend"
+        case djSoftwareVersion = "dj_software_version"
         case rekordboxVersion = "rekordbox_version"
+        case controllerName = "controller_name"
+        case mappingVersion = "mapping_version"
+        case mappingSHA256 = "mapping_sha256"
+        case capabilitiesSnapshot = "capabilities_snapshot"
+        case validationStatus = "validation_status"
         case updateChannel = "update_channel"
+        case telemetryEnabled = "telemetry_enabled"
         case lastSeenAt = "last_seen_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ownerID, forKey: .ownerID)
+        try container.encode(installationID, forKey: .installationID)
+        try container.encodeIfPresent(deviceName, forKey: .deviceName)
+        try container.encode(appVersion, forKey: .appVersion)
+        try container.encode(appBuild, forKey: .appBuild)
+        try container.encodeIfPresent(backend?.identifier.rawValue, forKey: .djBackend)
+        try container.encodeIfPresent(backend?.softwareVersion, forKey: .djSoftwareVersion)
+        if backend?.identifier == .rekordbox {
+            try container.encodeIfPresent(backend?.softwareVersion, forKey: .rekordboxVersion)
+        }
+        try container.encodeIfPresent(backend?.controllerName, forKey: .controllerName)
+        try container.encodeIfPresent(backend?.mappingVersion, forKey: .mappingVersion)
+        try container.encodeIfPresent(backend?.mappingSHA256, forKey: .mappingSHA256)
+        try container.encode(backend?.capabilities ?? [:], forKey: .capabilitiesSnapshot)
+        try container.encodeIfPresent(backend?.validationStatus, forKey: .validationStatus)
+        try container.encode(updateChannel, forKey: .updateChannel)
+        try container.encode(telemetryEnabled, forKey: .telemetryEnabled)
+        try container.encode(lastSeenAt, forKey: .lastSeenAt)
     }
 }
 
-private struct DeviceResponse: Decodable {
-    let id: UUID
-}
+private struct DeviceResponse: Decodable { let id: UUID }
 
 private struct SessionInsertRow: Encodable {
     let ownerID: UUID
     let deviceID: UUID
     let appVersion: String
     let appBuild: Int
-    let djBackend: String
-    let rekordboxVersion: String?
+    let backend: MixPilotCloudBackendContext?
     let liveMode: Bool
+    let telemetryEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case ownerID = "owner_id"
@@ -438,50 +524,125 @@ private struct SessionInsertRow: Encodable {
         case appVersion = "app_version"
         case appBuild = "app_build"
         case djBackend = "dj_backend"
+        case djSoftwareVersion = "dj_software_version"
         case rekordboxVersion = "rekordbox_version"
+        case controllerName = "controller_name"
+        case mappingVersion = "mapping_version"
+        case mappingSHA256 = "mapping_sha256"
+        case capabilitiesSnapshot = "capabilities_snapshot"
+        case validationStatus = "validation_status"
         case liveMode = "live_mode"
+        case telemetryEnabled = "telemetry_enabled"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ownerID, forKey: .ownerID)
+        try container.encode(deviceID, forKey: .deviceID)
+        try container.encode(appVersion, forKey: .appVersion)
+        try container.encode(appBuild, forKey: .appBuild)
+        try container.encodeIfPresent(backend?.identifier.rawValue, forKey: .djBackend)
+        try container.encodeIfPresent(backend?.softwareVersion, forKey: .djSoftwareVersion)
+        if backend?.identifier == .rekordbox {
+            try container.encodeIfPresent(backend?.softwareVersion, forKey: .rekordboxVersion)
+        }
+        try container.encodeIfPresent(backend?.controllerName, forKey: .controllerName)
+        try container.encodeIfPresent(backend?.mappingVersion, forKey: .mappingVersion)
+        try container.encodeIfPresent(backend?.mappingSHA256, forKey: .mappingSHA256)
+        try container.encode(backend?.capabilities ?? [:], forKey: .capabilitiesSnapshot)
+        try container.encodeIfPresent(backend?.validationStatus, forKey: .validationStatus)
+        try container.encode(liveMode, forKey: .liveMode)
+        try container.encode(telemetryEnabled, forKey: .telemetryEnabled)
     }
 }
 
-private struct SessionResponse: Decodable {
-    let id: UUID
-}
+private struct SessionResponse: Decodable { let id: UUID }
 
 private struct HeartbeatRow: Encodable {
     let appVersion: String
     let appBuild: Int
-    let rekordboxVersion: String?
+    let backend: MixPilotCloudBackendContext?
+    let telemetryEnabled: Bool
     let lastSeenAt: Date
 
     enum CodingKeys: String, CodingKey {
         case appVersion = "app_version"
         case appBuild = "app_build"
+        case djBackend = "dj_backend"
+        case djSoftwareVersion = "dj_software_version"
         case rekordboxVersion = "rekordbox_version"
+        case controllerName = "controller_name"
+        case mappingVersion = "mapping_version"
+        case mappingSHA256 = "mapping_sha256"
+        case capabilitiesSnapshot = "capabilities_snapshot"
+        case validationStatus = "validation_status"
+        case telemetryEnabled = "telemetry_enabled"
         case lastSeenAt = "last_seen_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(appVersion, forKey: .appVersion)
+        try container.encode(appBuild, forKey: .appBuild)
+        try container.encodeIfPresent(backend?.identifier.rawValue, forKey: .djBackend)
+        try container.encodeIfPresent(backend?.softwareVersion, forKey: .djSoftwareVersion)
+        if backend?.identifier == .rekordbox {
+            try container.encodeIfPresent(backend?.softwareVersion, forKey: .rekordboxVersion)
+        }
+        try container.encodeIfPresent(backend?.controllerName, forKey: .controllerName)
+        try container.encodeIfPresent(backend?.mappingVersion, forKey: .mappingVersion)
+        try container.encodeIfPresent(backend?.mappingSHA256, forKey: .mappingSHA256)
+        try container.encode(backend?.capabilities ?? [:], forKey: .capabilitiesSnapshot)
+        try container.encodeIfPresent(backend?.validationStatus, forKey: .validationStatus)
+        try container.encode(telemetryEnabled, forKey: .telemetryEnabled)
+        try container.encode(lastSeenAt, forKey: .lastSeenAt)
     }
 }
 
 private struct SessionHeartbeatRow: Encodable {
+    let backend: MixPilotCloudBackendContext?
     let liveMode: Bool
+    let telemetryEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
+        case djBackend = "dj_backend"
+        case djSoftwareVersion = "dj_software_version"
+        case rekordboxVersion = "rekordbox_version"
+        case controllerName = "controller_name"
+        case mappingVersion = "mapping_version"
+        case mappingSHA256 = "mapping_sha256"
+        case capabilitiesSnapshot = "capabilities_snapshot"
+        case validationStatus = "validation_status"
         case liveMode = "live_mode"
+        case telemetryEnabled = "telemetry_enabled"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(backend?.identifier.rawValue, forKey: .djBackend)
+        try container.encodeIfPresent(backend?.softwareVersion, forKey: .djSoftwareVersion)
+        if backend?.identifier == .rekordbox {
+            try container.encodeIfPresent(backend?.softwareVersion, forKey: .rekordboxVersion)
+        }
+        try container.encodeIfPresent(backend?.controllerName, forKey: .controllerName)
+        try container.encodeIfPresent(backend?.mappingVersion, forKey: .mappingVersion)
+        try container.encodeIfPresent(backend?.mappingSHA256, forKey: .mappingSHA256)
+        try container.encode(backend?.capabilities ?? [:], forKey: .capabilitiesSnapshot)
+        try container.encodeIfPresent(backend?.validationStatus, forKey: .validationStatus)
+        try container.encode(liveMode, forKey: .liveMode)
+        try container.encode(telemetryEnabled, forKey: .telemetryEnabled)
     }
 }
 
 private struct SessionEndRow: Encodable {
     let endedAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case endedAt = "ended_at"
-    }
+    enum CodingKeys: String, CodingKey { case endedAt = "ended_at" }
 }
 
 private struct CommandCompletionRow: Encodable {
     let status: String
     let completedAt: Date
     let result: [String: String]
-
     enum CodingKeys: String, CodingKey {
         case status
         case completedAt = "completed_at"
@@ -489,7 +650,5 @@ private struct CommandCompletionRow: Encodable {
     }
 }
 
-private struct EmptyResponse: Codable {
-    init() {}
-}
+private struct EmptyResponse: Codable { init() {} }
 #endif
