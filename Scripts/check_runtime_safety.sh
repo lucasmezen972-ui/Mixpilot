@@ -39,6 +39,10 @@ require_file Tests/MixPilotCoreTests/MIDIMappingRuntimeCompatibilityTests.swift
 require_file Tests/MixPilotCoreTests/AudioWatchdogStateTests.swift
 require_file Tests/MixPilotSystemTests/EmergencyAudioPlayerTests.swift
 require_file Tests/MixPilotCoreTests/LiveCheckpointMigrationTests.swift
+require_file Sources/MixPilotCore/BoundedBackoffPolicy.swift
+require_file Tests/MixPilotCoreTests/BoundedBackoffPolicyTests.swift
+require_file Shared/RemoteProtocolV2/Sources/MixPilotRemoteProtocol/RemoteListenerRestartPolicy.swift
+require_file Shared/RemoteProtocolV2/Tests/MixPilotRemoteProtocolTests/RemoteListenerRestartPolicyTests.swift
 
 require_pattern 'StrictVerificationDJBackend' Sources/MixPilotApp/AppModel+Mapping.swift \
   'active backends must use the strict verification boundary'
@@ -83,5 +87,19 @@ require_pattern 'decision: \.requireManualConfirmation' Sources/MixPilotCore/Liv
 reject_pattern 'decision: \.resumeAutomatically' Sources/MixPilotCore/LiveCheckpoint.swift \
   'crash recovery must never restart the Live automatically'
 
+require_pattern 'RemoteListenerRestartPolicy' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
+  'the Remote listener needs a bounded restart policy'
+require_pattern 'scheduleRestart\(reason:' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
+  'listener failures must schedule a bounded restart instead of stopping the Live'
+require_pattern 'le Live local reste actif' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
+  'Remote exhaustion must state that the local Live remains active'
+require_pattern 'AVAudioEngineConfigurationChange' Sources/MixPilotSystem/AudioLevelMonitor.swift \
+  'audio route and format changes must be observed explicitly'
+require_pattern 'BoundedBackoffPolicy' Sources/MixPilotSystem/AudioLevelMonitor.swift \
+  'audio monitor restarts must have a bounded retry budget'
+require_pattern 'generation == self\.generation' Sources/MixPilotSystem/AudioLevelMonitor.swift \
+  'buffers from an obsolete audio-engine generation must be ignored'
+require_pattern 'recoveryQueue' Sources/MixPilotSystem/AudioLevelMonitor.swift \
+  'audio engine reconstruction must happen outside the framework callback'
 
 echo 'Runtime safety consistency: OK'
