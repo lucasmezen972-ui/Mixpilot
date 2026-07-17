@@ -76,6 +76,12 @@ require_pattern 'AudioWatchdogEvent\?' Sources/MixPilotCore/AudioWatchdog.swift 
   'watchdog notifications must be edge triggered'
 require_pattern 'audioMonitoringGeneration' Sources/MixPilotApp/AppModel.swift \
   'audio monitoring needs a session generation'
+require_pattern '@Published var accessibilityGranted = false' Sources/MixPilotApp/AppModel.swift \
+  'Accessibility permission must be represented by state, not localized copy'
+require_pattern 'accessibilityGranted: accessibilityGranted' Sources/MixPilotApp/AppModel+Backend.swift \
+  'preflight must consume the language-independent Accessibility state'
+reject_pattern 'accessibilityStatus[[:space:]]*==' Sources/MixPilotApp/AppModel+Backend.swift \
+  'preflight must never infer permission from a translated status string'
 require_pattern 'audioMonitoringGeneration == generation' Sources/MixPilotApp/AppModel+Preparation.swift \
   'stale audio callbacks must be ignored'
 require_pattern 'sample\.timestamp - self\.lastAudioLevelUIUpdateAt >= 0\.1' Sources/MixPilotApp/AppModel+Preparation.swift \
