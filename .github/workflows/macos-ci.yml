@@ -31,6 +31,9 @@ jobs:
           swift --version
           chmod +x Scripts/*.sh
 
+      - name: Package manifest consistency
+        run: ./Scripts/check_package_manifest.sh
+
       - name: Source architecture consistency
         run: ./Scripts/check_source_architecture.sh
 
