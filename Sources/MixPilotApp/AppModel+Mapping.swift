@@ -36,8 +36,11 @@ extension AppModel {
                 selectedBackend = await registry.restoreSelection()
 
                 if let selectedBackend {
-                    DJSoftwareSelectionStore.current = legacySoftware(selectedBackend)
+                    DJSoftwareSelectionStore.selected = DJSoftware(selectedBackend)
                     try? await rebuildRuntimeCoordinator()
+                } else {
+                    DJSoftwareSelectionStore.selected = nil
+                    runtimeCoordinator = nil
                 }
 
                 midiStatus = "Contrôleur actif • \(Int(profile.completionRatio * 100)) % configuré"
