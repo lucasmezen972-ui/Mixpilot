@@ -20,6 +20,7 @@ on:
       - "Documentation/**"
       - "Mobile/MixPilotRemote/README.md"
       - "Scripts/check_documentation_consistency.sh"
+      - "Scripts/check_package_manifest.sh"
       - "Scripts/check_source_architecture.sh"
       - ".github/workflows/core-ci.yml"
   push:
@@ -46,6 +47,9 @@ jobs:
 
       - name: Swift toolchain
         run: swift --version
+
+      - name: Package manifest consistency
+        run: bash Scripts/check_package_manifest.sh
 
       - name: Source architecture consistency
         run: bash Scripts/check_source_architecture.sh
