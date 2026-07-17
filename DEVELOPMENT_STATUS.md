@@ -1,98 +1,158 @@
-# Development Status
+# État de développement
 
-Dernière mise à jour : 2026-07-15
+Dernière mise à jour : 17 juillet 2026
 
 ## État global
 
-**Phase 8 — Release candidate RC2 automatisée, validation matérielle requise**
+**Refonte canonique multi-backend en cours — PR brouillon #29**
 
-Branche active : `release/0.3.0-rc.2`
+- branche : `feature/first-class-multi-backend` ;
+- base : `release/0.3.0-rc.2` ;
+- PR : #29 ;
+- fusion dans `main` : interdite tant que les critères de sortie ne sont pas remplis.
 
-Pull Request de release : **#17** vers `main`.
+La branche récupère les fonctions utiles des PR djay, rekordbox, Serato, Remote et services en ligne, puis remplace progressivement les dépendances historiques au lieu d’ajouter une couche supplémentaire.
 
-## Réalisé sur macOS
+## Réalisé dans la refonte
 
-- [x] Package Swift 6 modulaire et application SwiftUI macOS 14+
-- [x] Port virtuel CoreMIDI `MixPilot Virtual Controller`
-- [x] Assistant de mapping avec confirmations réelles séparées du simple profil
-- [x] Génération et exécution beat-par-beat des automations MIDI
-- [x] Préparation des cue markers, transitions et timeline de set
-- [x] Analyse audio locale temporaire sans conservation du flux brut
-- [x] Optimisation non destructive de playlist
-- [x] Répétition mesurée et inspecteur de variantes de transition
-- [x] Coordinateur Live avec alternance des decks et checkpoints persistants
-- [x] Pause coopérative sans annulation de la Task principale
-- [x] Reprise protégée par observation Serato, checkpoint, MIDI et watchdog
-- [x] Skip Transition remplaçant uniquement la technique par un Safe Fade contrôlé
-- [x] Contrôle manuel distant idempotent
-- [x] Watchdog silence, clipping et perte de source
-- [x] Bibliothèque locale de secours multi-fichiers
-- [x] Préflight bloquant
-- [x] Centre de récupération prudent après interruption
-- [x] Diagnostics anonymisés et journal d’incidents
-- [x] Matrice automatisée de treize scénarios de panne
-- [x] Probe matériel `MixPilotHardwareProbeCLI`
-- [x] Workflow Serato pour runner Mac auto-hébergé
-- [x] Build Release, `.app`, `.dmg`, manifest et checksum en CI
+### Audit et consolidation
 
-## Réalisé pour l’iPhone et le bridge
+- [x] branches et PR structurantes examinées ;
+- [x] branche la plus complète identifiée ;
+- [x] inventaire des redondances et contradictions ;
+- [x] décisions Conserver / Fusionner / Renommer / Déplacer / Supprimer documentées ;
+- [x] branche canonique créée ;
+- [x] ancienne chaîne de PR empilées remplacée par une PR vers RC2 ;
+- [x] anciennes coquilles d’interface parallèles supprimées.
 
-- [x] Application iOS 17 isolée dans `Mobile/MixPilotRemote`
-- [x] Génération XcodeGen et compilation iOS Simulator
-- [x] Déclaration Réseau local et Bonjour `_mixpilot._tcp`
-- [x] Découverte locale et client WebSocket v1
-- [x] Jetons stockés dans les Trousseaux iOS et macOS
-- [x] Bridge macOS dans le target séparé `MixPilotRemoteBridge`
-- [x] Bridge désactivé par défaut et activation explicite sur le Mac
-- [x] Code à six chiffres limité à deux minutes
-- [x] Jetons aléatoires de 256 bits
-- [x] Appareil principal et appareils secondaires en lecture seule
-- [x] Refus des commandes anciennes, dupliquées ou non authentifiées
-- [x] Protection stricte contre les snapshots anciens et dupliqués
-- [x] Fixtures JSON Remote v1 décodées côté Mac et côté iPhone
-- [x] Perte réseau sans commande métier ni modification automatique du Live Mac
-- [x] Safe Fade distant maintenu verrouillé jusqu’à validation audio réelle
+### Contrats et moteur
 
-## Validation automatisée vérifiée
+- [x] contrat commun `DJBackend` ;
+- [x] registre des backends ;
+- [x] sélection explicite et persistance ;
+- [x] blocage du changement pendant le Live ;
+- [x] commandes universelles `DJControlAction` ;
+- [x] cycle Requested / Sent / Acknowledged / Observed / Verified / Failed / Unknown ;
+- [x] matrice détaillée des capacités ;
+- [x] fallbacks de transitions ;
+- [x] mocks complet, partiel, instable, lecture seule et déconnecté ;
+- [x] file de commandes, timeout, idempotence et circuit breaker ;
+- [x] coordinateur Live indépendant du nom du logiciel ;
+- [x] Autopilote complet bloqué sans lecture d’état fiable.
 
-Commit technique RC2 figé : `d0ce9c08559b491b47d7b478f99d87449519f955`.
+### Backends officiels
 
-- `AUTOMATED_SUCCESS` : `swift test --parallel` sur macOS.
-- `SIMULATED_SUCCESS` : set de 50 titres avec incidents injectés.
-- `SIMULATED_SUCCESS` : set de 250 titres avec incidents injectés.
-- `AUTOMATED_SUCCESS` : build Release `MixPilotAutopilot`.
-- `AUTOMATED_SUCCESS` : build Release `MixPilotHardwareProbeCLI`.
-- `AUTOMATED_SUCCESS` : création du DMG RC2.
-- `AUTOMATED_SUCCESS` : validation du checksum SHA-256.
-- `AUTOMATED_SUCCESS` : génération XcodeGen et build iOS Simulator.
-- `AUTOMATED_SUCCESS` : contrats Remote v1 et ordre des snapshots.
+- [x] `DjayBackend` ;
+- [x] `RekordboxBackend` ;
+- [x] `SeratoBackend` ;
+- [x] détection commune installation/processus/version ;
+- [x] validations enregistrées par backend, version, contrôleur et mapping ;
+- [x] capacités différentes affichées sans hiérarchie produit.
 
-Runs GitHub :
+L’existence d’un adaptateur ne vaut pas validation matérielle. Les capacités restent associées à leur statut réel.
 
-- macOS CI : `29459910562` ;
-- iPhone Remote CI : `29459910656` ;
-- Build DMG RC2 : `29459907907` ;
-- backport checksum vers `develop` : PR #18, CI `29459964526`, fusion `67237855deb3da8e7543ed6e9b562957dce139b2`.
+### Interface Mac
 
-Artifact RC2 : `MixPilot-Autopilot-0.3.0-rc.2`.
+- [x] écran de sélection avec trois cartes égales ;
+- [x] navigation réduite à Préparer, Vérifier, Live et Avancé ;
+- [x] nouveau workspace unifié ;
+- [x] messages visibles réécrits avec problème, impact et action ;
+- [x] termes Cloud et Supabase retirés du parcours normal ;
+- [x] outils rekordbox/Serato déplacés dans Avancé ;
+- [x] export diagnostic multi-backend sans titres ni artistes par défaut.
 
-SHA-256 : `cab6e3a3252a9e138edccacd52c35abcb7d66bd361c7fcfbcc3ac756d363e100`.
+### iPhone Remote
 
-## Limitations encore réelles
+- [x] contrat partagé Remote v2 ;
+- [x] compatibilité de lecture des snapshots v1 ;
+- [x] backend et version transmis ;
+- [x] deck, état audio et capacités dégradées transmis ;
+- [x] interface humanisée ;
+- [x] commandes de haut niveau uniquement ;
+- [x] Mac maintenu comme source de vérité.
 
-- `REQUIRES_SERATO_VALIDATION` : visibilité et mapping du port CoreMIDI dans Serato.
-- `REQUIRES_SERATO_VALIDATION` : chargement répétable du bon titre Spotify sur le bon deck.
-- `REQUIRES_SERATO_VALIDATION` : données réellement exposées par AXUIElement selon la version et la disposition Serato.
-- `REQUIRES_SERATO_VALIDATION` : Pause, Reprise et Skip Transition avec l’état réel des decks.
-- `REQUIRES_DEVICE_VALIDATION` : routage du master Serato vers le watchdog.
-- `REQUIRES_DEVICE_VALIDATION` : absence de blanc lors du secours et du Safe Fade.
-- `REQUIRES_DEVICE_VALIDATION` : découverte Bonjour, appairage et perte Wi-Fi sur Mac/iPhone physiques.
-- `REQUIRES_DEVICE_VALIDATION` : endurance de deux heures sur MacBook Pro M1.
-- `REQUIRES_DEVICE_VALIDATION` : Safe Fade distant, qui reste refusé en RC2 tant que le routage réel n’est pas validé.
-- `REQUIRES_DEVICE_VALIDATION` : Developer ID et notarisation, absents de la RC interne.
+### Services en ligne et Supabase
 
-## Prochaine étape
+- [x] backend réel enregistré ;
+- [x] version, contrôleur, mapping et capacités enregistrables ;
+- [x] diagnostics en ligne désactivés par défaut ;
+- [x] rétention limitée des événements ;
+- [x] vues `security_invoker` ;
+- [x] RLS et clé publiable conservées ;
+- [x] correctifs distants limités au format réellement implémenté ;
+- [x] aucune dépendance des services en ligne dans le Live.
 
-La PR #17 reste ouverte et ne doit pas être fusionnée vers `main`.
+### Documentation
 
-Le prochain travail indispensable est la campagne matérielle unique décrite dans `Documentation/FINAL_VALIDATION.md` : MacBook Pro M1, Serato DJ Pro, Spotify Premium, système audio réel et iPhone physique.
+- [x] README racine réécrit ;
+- [x] README iPhone réécrit ;
+- [x] architecture multi-backend ;
+- [x] matrice des capacités ;
+- [x] guides djay, rekordbox et Serato ;
+- [x] protocole de validation commun ;
+- [x] terminologie produit ;
+- [x] parcours utilisateur ;
+- [x] positionnement produit ;
+- [x] audit de consolidation.
+
+## CI et vérification actuelle
+
+Les workflows macOS, iPhone et Linux du dépôt échouent actuellement avant leur première étape, sans checkout, log de compilation ni artefact. Ce blocage de provisionnement GitHub Actions ne permet pas de conclure sur le code.
+
+Par conséquent, la refonte ne revendique pas encore :
+
+- tests Swift verts sur la branche canonique ;
+- build macOS réussi ;
+- build iPhone réussi ;
+- DMG produit ;
+- checksum de cette branche ;
+- validation des migrations dans un environnement neuf.
+
+Les résultats RC2 antérieurs restent des résultats historiques. Ils ne sont pas automatiquement attribués à la refonte multi-backend.
+
+## Restant avant sortie du brouillon
+
+### Code et migrations
+
+- [ ] résoudre les éventuelles erreurs Swift 6 lorsque les runners exécutent réellement les étapes ;
+- [ ] finaliser la migration des noms historiques Accessibilité et import de playlist ;
+- [ ] retirer le dernier store de sélection legacy non optionnel ;
+- [ ] généraliser les modèles de correctifs distants au-delà des champs historiques rekordbox ;
+- [ ] ajouter la réconciliation périodique de l’état backend ;
+- [ ] terminer les tests de migration des anciens projets et préférences ;
+- [ ] étendre le simulateur aux scénarios multi-backend demandés ;
+- [ ] exécuter les advisors Supabase sécurité et performance ;
+- [ ] corriger leurs éventuels résultats ;
+- [ ] vérifier la migration Supabase sur un environnement de validation neuf.
+
+### Documentation
+
+- [ ] harmoniser les documents historiques restants ;
+- [ ] mettre à jour les protocoles Remote historiques ;
+- [ ] mettre à jour les guides de release et checkpoints ;
+- [ ] ajouter le contrôle documentaire CI ;
+- [ ] produire le rapport final complet avec la liste exacte des README et écrans.
+
+### Validation matérielle
+
+- [ ] djay Automix supervisé ;
+- [ ] djay MIDI direct ;
+- [ ] rekordbox Mode Performance et CSV importé ;
+- [ ] Serato contrôleur virtuel et XML ;
+- [ ] chargement, lecture, volumes et Sync réels ;
+- [ ] état des decks ;
+- [ ] watchdog audio ;
+- [ ] musique de secours ;
+- [ ] Remote iPhone physique ;
+- [ ] dix transitions ;
+- [ ] trente minutes ;
+- [ ] deux heures.
+
+## Prochaine priorité
+
+1. restaurer une exécution GitHub Actions réelle ;
+2. corriger la compilation à partir de logs concrets ;
+3. terminer les tests et migrations ;
+4. exécuter la campagne matérielle ;
+5. mettre la PR #29 en état de revue ;
+6. ne fusionner qu’après validation explicite.
