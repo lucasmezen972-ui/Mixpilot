@@ -1,12 +1,10 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let dependencies: [Package.Dependency] = [
-    .package(
-        url: "https://github.com/supabase/supabase-swift.git",
-        exact: "2.46.0"
-    ),
-]
+// Keep the cross-platform test graph independent from macOS-only cloud and
+// hardware dependencies. The Supabase package is added only when the manifest
+// is evaluated on macOS, where MixPilotSystem is available.
+var dependencies: [Package.Dependency] = []
 
 var products: [Product] = [
     .library(name: "MixPilotCore", targets: ["MixPilotCore"]),
@@ -31,7 +29,8 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "MixPilotCoreTests",
-        dependencies: ["MixPilotCore"]
+        dependencies: ["MixPilotCore"],
+        path: "Tests/MixPilotCoreTests"
     ),
     .testTarget(
         name: "MixPilotRemoteProtocolTests",
@@ -41,8 +40,16 @@ var targets: [Target] = [
 ]
 
 #if os(macOS)
+dependencies.append(
+    .package(
+        url: "https://github.com/supabase/supabase-swift.git",
+        exact: "2.46.0"
+    )
+)
+
 products.append(.executable(name: "MixPilotAutopilot", targets: ["MixPilotApp"]))
 products.append(.executable(name: "MixPilotHardwareProbeCLI", targets: ["MixPilotHardwareProbeCLI"]))
+
 targets.append(
     .target(
         name: "MixPilotMIDI",
@@ -110,19 +117,22 @@ targets.append(
 targets.append(
     .testTarget(
         name: "MixPilotRemoteBridgeTests",
-        dependencies: ["MixPilotRemoteBridge", "MixPilotRemoteProtocol"]
+        dependencies: ["MixPilotRemoteBridge", "MixPilotRemoteProtocol"],
+        path: "Tests/MixPilotRemoteBridgeTests"
     )
 )
 targets.append(
     .testTarget(
         name: "MixPilotSystemTests",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"]
+        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem"],
+        path: "Tests/MixPilotSystemTests"
     )
 )
 targets.append(
     .testTarget(
         name: "MixPilotRuntimeTests",
-        dependencies: ["MixPilotCore", "MixPilotMIDI", "MixPilotSystem", "MixPilotRuntime"]
+        dependencies: ["MixPilotCore", "MixPilotRuntime"],
+        path: "Tests/MixPilotRuntimeTests"
     )
 )
 #endif
