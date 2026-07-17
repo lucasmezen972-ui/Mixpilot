@@ -37,13 +37,30 @@ final class RecoveryCenterModel: ObservableObject {
         status = "Lecture du checkpoint et vérification du logiciel DJ…"
 
         Task {
+            defer { isLoading = false }
             do {
-                let loadedCheckpoint = try await checkpointStore.load()
-                let projects = try await projectStore.list()
-                let loadedProject = loadedCheckpoint.flatMap { checkpoint in
-                    projects.first { $0.id == checkpoint.projectID }
+                guard let loadedCheckpoint = try await checkpointStore.load() else {
+                    checkpoint = nil
+                    project = nil
+                    observation = nil
+                    reconciliation = nil
+                    status = "Aucune session interrompue n’a été détectée."
+                    return
                 }
-                let recordedBackend = loadedCheckpoint?.backend ?? loadedProject?.backend
+
+                if loadedCheckpoint.state == .completed {
+                    try await checkpointStore.clear()
+                    checkpoint = nil
+                    project = nil
+                    observation = nil
+                    reconciliation = nil
+                    status = "La session précédente était terminée ; son checkpoint a été nettoyé."
+                    return
+                }
+
+                let projects = try await projectStore.list()
+                let loadedProject = projects.first { $0.id == loadedCheckpoint.projectID }
+                let recordedBackend = loadedCheckpoint.backend ?? loadedProject?.backend
                 let activeBackend = await backendSelectionStore.loadSelection()
                 let backendToObserve = activeBackend ?? recordedBackend
                 let currentObservation = backendToObserve.map {
@@ -58,7 +75,7 @@ final class RecoveryCenterModel: ObservableObject {
                 project = loadedProject
                 observation = currentObservation
 
-                if let loadedCheckpoint, let loadedProject {
+                if let loadedProject {
                     let expectedTitle = loadedProject.tracks.indices.contains(
                         loadedCheckpoint.currentTrackIndex
                     ) ? loadedProject.tracks[loadedCheckpoint.currentTrackIndex].track.title : nil
@@ -74,12 +91,9 @@ final class RecoveryCenterModel: ObservableObject {
                         audioActive: false
                     )
                     status = reconciliation?.explanation ?? "État à vérifier"
-                } else if loadedCheckpoint != nil {
-                    reconciliation = nil
-                    status = "Le checkpoint existe, mais son projet sauvegardé est introuvable. Contrôle manuel obligatoire."
                 } else {
                     reconciliation = nil
-                    status = "Aucune session interrompue n’a été détectée."
+                    status = "Le checkpoint existe, mais son projet sauvegardé est introuvable. Contrôle manuel obligatoire."
                 }
             } catch {
                 checkpoint = nil
@@ -88,7 +102,6 @@ final class RecoveryCenterModel: ObservableObject {
                 reconciliation = nil
                 status = "La récupération locale n’a pas pu être lue. Aucun redémarrage automatique n’est autorisé."
             }
-            isLoading = false
         }
     }
 
