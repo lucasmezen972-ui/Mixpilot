@@ -19,6 +19,7 @@ extension AppModel {
                 try await backendRegistry.select(identifier)
                 selectedBackend = identifier
                 DJSoftwareSelectionStore.selected = DJSoftware(identifier)
+                try await associatePreparedProject(with: identifier)
                 try await rebuildRuntimeCoordinator()
                 await refreshEnvironmentNow()
             } catch {
@@ -48,10 +49,11 @@ extension AppModel {
         } ?? []
         let fallbackCount = adaptations.filter { $0.usedFallback && $0.isExecutable }.count
         let blockedCount = adaptations.filter { !$0.isExecutable }.count
+        let projectBackendMatches = project?.backend == nil || project?.backend == selectedBackend
 
         preflightReport = PreflightEvaluator().evaluate(
             PreflightInput(
-                backendIdentifier: selectedBackend,
+                backendIdentifier: projectBackendMatches ? selectedBackend : nil,
                 backendEnvironment: descriptor?.environment,
                 backendCapabilities: capabilities,
                 backendValidation: backendValidationReport,
@@ -136,6 +138,18 @@ extension AppModel {
         guard let backendRegistry else { return }
         let backend = try await backendRegistry.activeBackend()
         runtimeCoordinator = LiveAutopilotCoordinator(backend: backend)
+    }
+
+    private func associatePreparedProject(
+        with identifier: DJBackendIdentifier
+    ) async throws {
+        guard var project = preparedProject else { return }
+        guard project.backend != identifier else { return }
+
+        project.selectBackend(identifier)
+        preparedProject = project
+        _ = try await projectStore.save(project)
+        runtimeStatus = "Set associé à \(identifier.displayName) • vérification à refaire"
     }
 
     func legacySoftware(_ identifier: DJBackendIdentifier) -> DJSoftware {
