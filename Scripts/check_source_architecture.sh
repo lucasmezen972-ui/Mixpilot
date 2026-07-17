@@ -79,6 +79,23 @@ fail_if_found \
   'serialized cloud payloads must use the selected backend dynamically' \
   Sources
 
+fail_if_found \
+  'message\.version[[:space:]]*==[[:space:]]*1' \
+  'Remote peers must negotiate the documented protocol range instead of hardcoding v1' \
+  Sources/MixPilotRemoteBridge Mobile/MixPilotRemote/Sources
+
+grep -q 'MixPilotRemoteProtocolVersion.supports(message.version)' \
+  Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift || {
+    echo 'Architecture check failed: the Mac bridge does not validate the shared Remote protocol range' >&2
+    exit 1
+  }
+
+grep -q 'MixPilotRemoteProtocolVersion.supports(message.version)' \
+  Mobile/MixPilotRemote/Sources/RemoteConnection.swift || {
+    echo 'Architecture check failed: the iPhone client does not validate the shared Remote protocol range' >&2
+    exit 1
+  }
+
 for deleted in \
   Sources/MixPilotApp/ContentView.swift \
   Sources/MixPilotApp/BrandedRootView.swift \
