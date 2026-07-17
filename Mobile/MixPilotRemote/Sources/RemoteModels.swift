@@ -1,6 +1,17 @@
 import Foundation
 import MixPilotRemoteProtocol
 
+typealias RemoteDJBackendIdentifier = MixPilotRemoteProtocol.RemoteDJBackendIdentifier
+typealias RemoteMode = MixPilotRemoteProtocol.RemoteMode
+typealias RemoteTrackSummary = MixPilotRemoteProtocol.RemoteTrackSummary
+typealias RemoteBackendSummary = MixPilotRemoteProtocol.RemoteBackendSummary
+typealias RemoteSnapshot = MixPilotRemoteProtocol.RemoteSnapshot
+typealias RemoteCommandKind = MixPilotRemoteProtocol.RemoteCommandKind
+typealias RemoteCommand = MixPilotRemoteProtocol.RemoteCommand
+typealias RemoteClientMessage = MixPilotRemoteProtocol.RemoteClientMessage
+typealias RemoteCommandAcknowledgement = MixPilotRemoteProtocol.RemoteCommandAcknowledgement
+typealias RemoteServerMessage = MixPilotRemoteProtocol.RemoteServerMessage
+
 enum RemoteConnectionStatus: Equatable {
     case idle
     case discovering
