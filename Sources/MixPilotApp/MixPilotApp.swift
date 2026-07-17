@@ -121,6 +121,9 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 650, height: 380)
 
+        // Backend-specific tools remain registered for the contextual card in
+        // the Advanced workspace. They are intentionally absent from the global
+        // menu so rekordbox, Serato and djay do not create parallel navigation.
         Window("Outils rekordbox", id: "rekordbox-hub") {
             RekordboxHubView(appModel: model)
         }
@@ -214,24 +217,6 @@ private struct MixPilotWindowCommands: Commands {
             }
             Button("Ouvrir le centre de récupération") {
                 openWindow(id: "recovery-center")
-            }
-
-            Divider()
-
-            Button("Outils rekordbox") {
-                openWindow(id: "rekordbox-hub")
-            }
-            Button("Inspecter rekordbox") {
-                openWindow(id: "rekordbox-compatibility")
-            }
-            Button("Valider rekordbox commande par commande") {
-                openWindow(id: "rekordbox-device-validation")
-            }
-            Button("Générer le mapping rekordbox") {
-                openWindow(id: "automatic-rekordbox-mapping")
-            }
-            Button("Configurer Serato") {
-                openWindow(id: "automatic-serato-mapping")
             }
 
             Divider()
