@@ -1,3 +1,4 @@
+import MixPilotRemoteProtocol
 import XCTest
 @testable import MixPilotRemote
 
