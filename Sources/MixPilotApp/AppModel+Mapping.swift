@@ -30,16 +30,15 @@ extension AppModel {
                         DjayBackend(midi: mapped, validationStore: commandValidationStore),
                         RekordboxBackend(midi: mapped, validationStore: commandValidationStore),
                         SeratoBackend(midi: mapped, validationStore: commandValidationStore),
-                    ]
+                    ],
+                    selectionStore: MigratingDJBackendSelectionStore()
                 )
                 backendRegistry = registry
                 selectedBackend = await registry.restoreSelection()
 
-                if let selectedBackend {
-                    DJSoftwareSelectionStore.selected = DJSoftware(selectedBackend)
+                if selectedBackend != nil {
                     try? await rebuildRuntimeCoordinator()
                 } else {
-                    DJSoftwareSelectionStore.selected = nil
                     runtimeCoordinator = nil
                 }
 
