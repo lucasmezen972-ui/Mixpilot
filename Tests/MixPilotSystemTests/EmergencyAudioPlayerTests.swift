@@ -35,6 +35,31 @@ func emergencyLibraryFiltersAndDeduplicates() throws {
 }
 
 @MainActor
+@Test("Emergency queue skips a file that becomes unreadable")
+func emergencyQueueSkipsUnreadableCandidate() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let first = directory.appendingPathComponent("first.caf")
+    let broken = directory.appendingPathComponent("broken.caf")
+    let fallback = directory.appendingPathComponent("fallback.caf")
+    try makeAudioFile(at: first, duration: 0.5)
+    try makeAudioFile(at: broken, duration: 0.5)
+    try makeAudioFile(at: fallback, duration: 0.5)
+
+    let player = EmergencyAudioPlayer()
+    _ = try player.prepare(urls: [first, broken, fallback])
+    try FileManager.default.removeItem(at: broken)
+
+    player.skip()
+
+    #expect(player.currentURL == fallback.standardizedFileURL)
+    #expect(player.isPlaying)
+    #expect(player.invalidFiles.contains("broken.caf"))
+    player.stop(fadeOutDuration: 0)
+}
+
+@MainActor
 @Test("Clear resets emergency playback state")
 func clearResetsEmergencyState() throws {
     let directory = try temporaryDirectory()
