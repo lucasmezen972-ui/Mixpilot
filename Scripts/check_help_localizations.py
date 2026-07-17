@@ -8,10 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_ROOT = ROOT / "Sources" / "MixPilotHelp" / "Resources"
 LANGUAGES = ("fr", "en", "es")
 KEY_PATTERN = re.compile(r'^\s*"([^"]+)"\s*=\s*"(?:[^"\\]|\\.)*"\s*;\s*$', re.MULTILINE)
-USED_REMOTE_KEY_PATTERN = re.compile(r'RemoteLocalizedCopy\.(?:text|format)\("([^"]+)"')
-USED_APP_KEY_PATTERN = re.compile(
-    r'AppLocalizedCopy\.(?:text|format|workspace|workspaceFormat)\(\s*"([^"]+)"'
-)
+USED_REMOTE_KEY_PATTERN = re.compile(r'"(remote\.[A-Za-z0-9_.-]+)"')
+USED_APP_KEY_PATTERN = re.compile(r'"((?:app|workspace)\.[A-Za-z0-9_.-]+)"')
 
 
 def keys_for(language: str, table: str) -> set[str]:
@@ -120,5 +118,6 @@ if undefined_app:
 print(
     "Localization consistency: OK "
     f"({len(help_keys)} shared keys, {len(remote_keys)} Remote keys, "
-    f"{len(workspace_keys)} workspace keys, {len(article_ids)} articles)"
+    f"{len(workspace_keys)} workspace keys, {len(article_ids)} articles, "
+    f"{len(used_app_keys)} macOS references)"
 )
