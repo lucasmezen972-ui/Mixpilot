@@ -35,6 +35,18 @@ fail_if_found \
   Sources/MixPilotApp Sources/MixPilotRuntime Sources/MixPilotRemoteBridge
 
 fail_if_found \
+  'StandardDJBackendAdapter' \
+  'backend-specific capability rules must not be hidden behind the former shared adapter' \
+  Sources/MixPilotSystem
+
+for policy in SeratoBackendPolicy RekordboxBackendPolicy DjayBackendPolicy; do
+  grep -q "struct ${policy}" Sources/MixPilotSystem/DJBackendAdapters.swift || {
+    echo "Architecture check failed: missing backend-specific policy: ${policy}" >&2
+    exit 1
+  }
+done
+
+fail_if_found \
   'DJSoftwareSelectionStore\.current' \
   'no code may recreate a default DJ software selection' \
   Sources
