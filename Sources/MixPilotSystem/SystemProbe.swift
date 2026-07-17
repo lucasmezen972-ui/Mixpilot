@@ -1,17 +1,27 @@
 #if os(macOS)
-import AppKit
 import ApplicationServices
 import AVFoundation
 import Foundation
 import MixPilotCore
 
-public struct SeratoProbeResult: Sendable {
+public struct DJEnvironmentProbeResult: Sendable {
+    public var backend: DJBackendIdentifier
+    public var softwareVersion: String?
     public var isRunning: Bool
     public var processIdentifier: Int32?
     public var accessibilityGranted: Bool
     public var audioPermission: String
 
-    public init(isRunning: Bool, processIdentifier: Int32?, accessibilityGranted: Bool, audioPermission: String) {
+    public init(
+        backend: DJBackendIdentifier,
+        softwareVersion: String?,
+        isRunning: Bool,
+        processIdentifier: Int32?,
+        accessibilityGranted: Bool,
+        audioPermission: String
+    ) {
+        self.backend = backend
+        self.softwareVersion = softwareVersion
         self.isRunning = isRunning
         self.processIdentifier = processIdentifier
         self.accessibilityGranted = accessibilityGranted
@@ -19,31 +29,26 @@ public struct SeratoProbeResult: Sendable {
     }
 }
 
-public struct SeratoEnvironmentProbe: Sendable {
-    public init() {}
+public struct DJEnvironmentProbe: Sendable {
+    public let backend: DJBackendIdentifier
+    private let detector: DJApplicationEnvironmentDetector
+
+    public init(
+        backend: DJBackendIdentifier,
+        detector: DJApplicationEnvironmentDetector = DJApplicationEnvironmentDetector()
+    ) {
+        self.backend = backend
+        self.detector = detector
+    }
 
     @MainActor
-    public func probe() -> SeratoProbeResult {
-        let selectedSoftware = DJSoftwareSelectionStore.current
-        let application = NSWorkspace.shared.runningApplications.first { application in
-            let name = application.localizedName?.lowercased() ?? ""
-            let bundle = application.bundleIdentifier?.lowercased() ?? ""
-            switch selectedSoftware {
-            case .serato:
-                return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
-            case .djay:
-                return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
-            case .rekordbox:
-                return RekordboxApplicationMatcher.matches(
-                    name: application.localizedName,
-                    bundleIdentifier: application.bundleIdentifier
-                )
-            }
-        }
-
-        return SeratoProbeResult(
-            isRunning: application != nil,
-            processIdentifier: application?.processIdentifier,
+    public func probe() -> DJEnvironmentProbeResult {
+        let environment = detector.detect(backend)
+        return DJEnvironmentProbeResult(
+            backend: backend,
+            softwareVersion: environment.softwareVersion,
+            isRunning: environment.isRunning,
+            processIdentifier: environment.processIdentifier,
             accessibilityGranted: AXIsProcessTrusted(),
             audioPermission: audioAuthorizationDescription()
         )
@@ -57,6 +62,19 @@ public struct SeratoEnvironmentProbe: Sendable {
         case .notDetermined: "Non demandée"
         @unknown default: "Inconnue"
         }
+    }
+}
+
+@available(*, deprecated, renamed: "DJEnvironmentProbeResult")
+public typealias SeratoProbeResult = DJEnvironmentProbeResult
+
+@available(*, deprecated, message: "Use DJEnvironmentProbe(backend:) with an explicit backend.")
+public struct SeratoEnvironmentProbe: Sendable {
+    public init() {}
+
+    @MainActor
+    public func probe() -> DJEnvironmentProbeResult {
+        DJEnvironmentProbe(backend: .serato).probe()
     }
 }
 #endif
