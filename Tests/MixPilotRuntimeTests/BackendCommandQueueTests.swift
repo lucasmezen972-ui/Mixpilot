@@ -7,6 +7,7 @@ import Testing
 private actor QueueTestState {
     var executionCount = 0
     var verification: DJCommandLifecycleStatus = .verified
+    var confidence: DJCapabilityConfidence = .validated
     var delay: Duration = .zero
     var manualControlCount = 0
 
@@ -46,9 +47,10 @@ private struct QueueTestBackend: DJBackend {
         expectedEffect: DJExpectedEffect
     ) async throws -> DJCommandVerification {
         let status = await state.verification
+        let confidence = await state.confidence
         return DJCommandVerification(
             status: status,
-            confidence: status == .verified ? .validated : .unverified,
+            confidence: confidence,
             detail: "test"
         )
     }
@@ -141,6 +143,71 @@ func queueDoesNotUpgradeUnverifiedCachedReceipt() async throws {
     #expect(await state.executionCount == 1)
 }
 
+@Test("An observed effect cannot verify a critical command")
+func observedEffectDoesNotVerifyCriticalCommand() async {
+    let state = QueueTestState()
+    await state.setVerification(.observed)
+    await state.setConfidence(.observed)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+
+    do {
+        _ = try await queue.execute(
+            DJBackendCommand(action: .loadA),
+            expectedEffect: .stateChanged,
+            requireVerification: true
+        )
+        Issue.record("A visible observation must not verify a critical command.")
+    } catch let error as BackendCommandQueueError {
+        guard case .verificationRequired = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test("Verified status without validated confidence remains insufficient")
+func weakVerifiedConfidenceDoesNotUnlockCriticalCommand() async {
+    let state = QueueTestState()
+    await state.setVerification(.verified)
+    await state.setConfidence(.observed)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+
+    do {
+        _ = try await queue.execute(
+            DJBackendCommand(action: .playA),
+            expectedEffect: .playback(true, deck: .a),
+            requireVerification: true
+        )
+        Issue.record("VERIFIED without validated confidence must remain insufficient.")
+    } catch let error as BackendCommandQueueError {
+        guard case .verificationRequired = error else {
+            Issue.record("Unexpected queue error: \(error)")
+            return
+        }
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test("Observed evidence may be returned for a non-critical command without becoming verified")
+func observedEvidenceRemainsNonCritical() async throws {
+    let state = QueueTestState()
+    await state.setVerification(.observed)
+    await state.setConfidence(.observed)
+    let queue = BackendCommandQueue(backend: QueueTestBackend(state: state))
+
+    let receipt = try await queue.execute(
+        DJBackendCommand(action: .browserDown),
+        expectedEffect: .stateChanged,
+        requireVerification: false
+    )
+
+    #expect(receipt.status == .observed)
+    #expect(await queue.currentStatus().lastVerifiedAt == nil)
+}
+
 @Test("An unverified critical command is refused")
 func queueRequiresCriticalVerification() async {
     let state = QueueTestState()
@@ -201,6 +268,10 @@ func manualControlOpensCircuit() async {
 private extension QueueTestState {
     func setVerification(_ value: DJCommandLifecycleStatus) {
         verification = value
+    }
+
+    func setConfidence(_ value: DJCapabilityConfidence) {
+        confidence = value
     }
 
     func setDelay(_ value: Duration) {
