@@ -1,0 +1,43 @@
+"commands.menu.mixpilot" = "MixPilot";
+"commands.prepare" = "Prepare";
+"commands.verify" = "Check";
+"commands.live" = "Live";
+"commands.advanced" = "Advanced";
+"commands.remote.disable" = "Disable iPhone Remote";
+"commands.remote.enable_development" = "Enable iPhone Remote (development)";
+"commands.remote.unavailable" = "iPhone Remote unavailable (security)";
+"commands.remote.new_pairing_code" = "Show a new pairing code…";
+"commands.check_updates" = "Check for updates";
+"commands.export_diagnostics" = "Export anonymized diagnostics…";
+"commands.take_control_now" = "Take control immediately";
+
+"commands.window.choose_software" = "Choose DJ software";
+"commands.window.quick_set" = "Prepare a set quickly";
+"commands.window.rekordbox_tools" = "rekordbox tools";
+"commands.window.rekordbox_inspection" = "rekordbox inspection";
+"commands.window.rekordbox_validation" = "Real rekordbox validation";
+"commands.window.rekordbox_mapping" = "rekordbox mapping";
+"commands.window.serato_mapping" = "Serato setup";
+"commands.window.rehearsal" = "Transition rehearsal";
+"commands.window.transition_inspector" = "Transition inspector";
+"commands.window.audio_analysis" = "Preparation audio analysis";
+"commands.window.recovery" = "Recovery center";
+"commands.window.help" = "Help Center";
+
+"commands.alert.pairing_unavailable.title" = "Pairing unavailable";
+"commands.alert.pairing_unavailable.detail" = "MixPilot could not generate a cryptographically secure code. Remote remains disabled.";
+"commands.alert.ok" = "OK";
+"commands.alert.pairing_development.title" = "Pair MixPilot Remote — development";
+"commands.alert.pairing_development.detail_format" = "This local transport is not encrypted yet. Use it only on an isolated development network. On the iPhone, select this Mac and enter code %@. It expires in two minutes.";
+"commands.alert.understood" = "I understand";
+"commands.alert.remote_disabled.title" = "Remote temporarily disabled";
+"commands.alert.remote_disabled.detail" = "The current iPhone–Mac transport is not encrypted yet. MixPilot blocks it in normal builds. For a development test on an isolated network, launch the app with MIXPILOT_ALLOW_INSECURE_REMOTE=1.";
+
+"commands.choose_software" = "Choose DJ software";
+"commands.quick_set" = "Prepare a set quickly";
+"commands.advanced_menu" = "Advanced";
+"commands.rehearse_transition" = "Rehearse a transition";
+"commands.inspect_transitions" = "Inspect transitions";
+"commands.analyze_audio" = "Analyze audio locally";
+"commands.open_recovery" = "Open recovery center";
+"commands.check_online_services" = "Check online services";
