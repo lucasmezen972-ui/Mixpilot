@@ -21,35 +21,39 @@ struct AutomaticRekordboxMappingView: View {
                     MixPilotSectionHero(
                         eyebrow: "MIDI Learn",
                         title: "Mapping rekordbox avancé",
-                        subtitle: "Génère un preset versionné, validé et importable pour MixPilot Virtual Controller.",
+                        subtitle: "Génère un preset versionné, vérifie sa structure puis accompagne son import dans rekordbox sans toucher au paquet signé de l’application.",
                         symbol: "slider.horizontal.3",
                         accent: .blue
                     ) {
                         MixPilotStatusBadge(
-                            title: "Device validation",
-                            symbol: "exclamationmark.shield.fill",
-                            accent: .orange
+                            title: preset == nil ? "Validation requise" : "Preset vérifié",
+                            symbol: preset == nil ? "exclamationmark.shield.fill" : "checkmark.seal.fill",
+                            accent: preset == nil ? .orange : .green
                         )
                     }
 
-                    MixPilotGlassCard(accent: preset == nil ? .blue : .green) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack(alignment: .top, spacing: 14) {
+                    MixPilotGlassCard(accent: preset == nil ? .blue : .green, elevation: .elevated) {
+                        VStack(alignment: .leading, spacing: 17) {
+                            HStack(alignment: .center, spacing: 15) {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 15)
-                                        .fill((preset == nil ? Color.blue : Color.green).opacity(0.14))
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .fill((preset == nil ? Color.blue : Color.green).opacity(0.13))
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .strokeBorder((preset == nil ? Color.blue : Color.green).opacity(0.22), lineWidth: 1)
                                     Image(systemName: preset == nil ? "arrow.down.doc.fill" : "checkmark.circle.fill")
-                                        .font(.system(size: 27, weight: .semibold))
+                                        .font(.system(size: 29, weight: .semibold))
                                         .foregroundStyle(preset == nil ? .blue : .green)
                                 }
-                                .frame(width: 58, height: 58)
+                                .frame(width: 66, height: 66)
 
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     Text(status)
-                                        .font(.system(size: 21, weight: .bold, design: .rounded))
-                                    Text("Écriture atomique, relecture après export et aucune modification du paquet signé de rekordbox.")
+                                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                                        .tracking(-0.2)
+                                    Text("Écriture atomique, relecture après export et validation du CSV avant toute utilisation réelle.")
                                         .font(.callout)
-                                        .foregroundStyle(.white.opacity(0.52))
+                                        .foregroundStyle(MixPilotPalette.textSecondary)
+                                        .lineSpacing(2)
                                 }
                                 Spacer()
                             }
@@ -59,13 +63,13 @@ struct AutomaticRekordboxMappingView: View {
                                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .blue))
 
                                 if let exportedURL {
-                                    Button("Afficher dans le Finder") {
+                                    Button("AFFICHER DANS LE FINDER") {
                                         NSWorkspace.shared.activateFileViewerSelecting([exportedURL])
                                     }
                                     .buttonStyle(MixPilotSecondaryButtonStyle())
                                 }
 
-                                Button("Afficher rekordbox") {
+                                Button("AFFICHER REKORDBOX") {
                                     _ = NSWorkspace.shared.runningApplications
                                         .first(where: {
                                             RekordboxApplicationMatcher.matches(
@@ -80,24 +84,36 @@ struct AutomaticRekordboxMappingView: View {
                         }
                     }
 
-                    HStack(alignment: .top, spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 330), spacing: 16)], spacing: 16) {
                         MixPilotGlassCard(accent: .cyan) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                MixPilotPanelTitle(title: "Validation du compilateur", symbol: "checkmark.shield.fill", subtitle: "Le fichier est refusé à la moindre incohérence.", accent: .cyan)
+                            VStack(alignment: .leading, spacing: 13) {
+                                MixPilotPanelTitle(
+                                    title: "Validation du compilateur",
+                                    symbol: "checkmark.shield.fill",
+                                    subtitle: "Le fichier est refusé à la moindre incohérence.",
+                                    accent: .cyan
+                                )
+                                MixPilotSectionDivider(accent: .cyan)
                                 validationLine("En-tête @file et nom du contrôleur")
                                 validationLine("15 colonnes par commande")
                                 validationLine("MIDI IN global, Deck 1 ou Deck 2")
                                 validationLine("Codes Note On et Control Change valides")
                                 validationLine("Aucun message MIDI dupliqué")
-                                validationLine("Commandes des catalogues étudiés uniquement")
+                                validationLine("Commandes issues des catalogues étudiés")
                                 validationLine("Focus et Color FX canaux 1/2")
-                                validationLine("Aucun jog ou 14 bits inventé")
+                                validationLine("Aucun jog ou message 14 bits inventé")
                             }
                         }
 
                         MixPilotGlassCard(accent: .purple) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                MixPilotPanelTitle(title: "Import dans rekordbox", symbol: "square.and.arrow.down.fill", subtitle: "Parcours officiel MIDI IMPORT.", accent: .purple)
+                            VStack(alignment: .leading, spacing: 13) {
+                                MixPilotPanelTitle(
+                                    title: "Import dans rekordbox",
+                                    symbol: "square.and.arrow.down.fill",
+                                    subtitle: "Parcours officiel MIDI IMPORT",
+                                    accent: .purple
+                                )
+                                MixPilotSectionDivider(accent: .purple)
                                 step(1, "Lance MixPilot pour publier le port virtuel.")
                                 step(2, "Passe rekordbox en mode PERFORMANCE.")
                                 step(3, "Ouvre MIDI et sélectionne MixPilot Virtual Controller.")
@@ -109,44 +125,44 @@ struct AutomaticRekordboxMappingView: View {
                     }
 
                     if let preset {
-                        MixPilotGlassCard(accent: .green) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                MixPilotPanelTitle(title: "Couverture du dernier preset", symbol: "chart.bar.fill", subtitle: preset.base.controllerName, accent: .green)
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
+                        MixPilotGlassCard(accent: .green, elevation: .elevated) {
+                            VStack(alignment: .leading, spacing: 15) {
+                                MixPilotPanelTitle(
+                                    title: "Couverture du dernier preset",
+                                    symbol: "chart.bar.fill",
+                                    subtitle: preset.base.controllerName,
+                                    accent: .green
+                                )
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), spacing: 10)], spacing: 10) {
                                     coverageTile("\(preset.base.supportedActions.count)", "Commandes principales", "dial.medium.fill")
                                     coverageTile("\(preset.addedActions.count)", "Commandes avancées", "plus.circle.fill")
                                     coverageTile(preset.base.observedCommandCatalogueVersions.joined(separator: ", "), "Catalogues", "books.vertical.fill")
                                     coverageTile("7 bits", "Résolution validée", "waveform.path.ecg")
                                 }
-                                Text("Avancées : \(preset.addedActions.map(\.rawValue).joined(separator: ", "))")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.white.opacity(0.5))
-                                    .textSelection(.enabled)
+                                MixPilotNotice(
+                                    title: "Commandes avancées intégrées",
+                                    message: preset.addedActions.map(\.rawValue).joined(separator: ", "),
+                                    kind: .success
+                                )
                                 ForEach(preset.warnings, id: \.self) { warning in
-                                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.orange)
+                                    MixPilotNotice(title: "Avertissement", message: warning, kind: .warning)
                                 }
                             }
                         }
                     }
 
-                    MixPilotGlassCard(accent: .orange) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            MixPilotPanelTitle(title: "Limite assumée", symbol: "waveform.badge.exclamationmark", subtitle: "L’Echo reste manuel.", accent: .orange)
-                            Text("Les catalogues exposent des emplacements FX génériques sans garantir qu’un message sélectionne précisément Echo sur toutes les versions. MixPilot refuse donc une commande ambiguë.")
-                                .font(.callout)
-                                .foregroundStyle(.white.opacity(0.56))
-                        }
-                    }
+                    MixPilotNotice(
+                        title: "Limite assumée : Echo reste manuel",
+                        message: "Les catalogues exposent des emplacements FX génériques sans garantir qu’un message sélectionne précisément Echo sur toutes les versions. MixPilot refuse donc une commande ambiguë.",
+                        kind: .warning
+                    )
                 }
                 .padding(28)
-                .frame(maxWidth: 1_020, alignment: .topLeading)
+                .frame(maxWidth: 1_060, alignment: .topLeading)
             }
             .scrollIndicators(.hidden)
         }
-        .preferredColorScheme(.dark)
-        .frame(minWidth: 940, minHeight: 720)
+        .mixPilotWindowSurface(minWidth: 960, minHeight: 740)
     }
 
     private func exportPreset() {
@@ -179,35 +195,57 @@ struct AutomaticRekordboxMappingView: View {
     }
 
     private func validationLine(_ text: String) -> some View {
-        Label(text, systemImage: "checkmark.circle.fill")
-            .font(.callout)
-            .foregroundStyle(.white.opacity(0.64))
+        HStack(spacing: 9) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(MixPilotPalette.textSecondary)
+            Spacer()
+        }
     }
 
     private func step(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text("\(number)")
-                .font(.caption.bold())
-                .frame(width: 25, height: 25)
-                .background(.purple.opacity(0.16), in: Circle())
+            Text(String(format: "%02d", number))
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .frame(width: 28, height: 28)
+                .background(.purple.opacity(0.13), in: Circle())
+                .overlay { Circle().strokeBorder(.purple.opacity(0.20), lineWidth: 1) }
                 .foregroundStyle(.purple)
             Text(text)
                 .font(.callout)
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(MixPilotPalette.textSecondary)
+                .padding(.top, 4)
+            Spacer()
         }
     }
 
     private func coverageTile(_ value: String, _ label: String, _ symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol).foregroundStyle(.green)
-            Text(value).font(.title3.bold().monospacedDigit()).lineLimit(2)
+        VStack(alignment: .leading, spacing: 7) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(.green.opacity(0.11))
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.green)
+            }
+            .frame(width: 30, height: 30)
+            Text(value)
+                .font(.title3.bold().monospacedDigit())
+                .lineLimit(2)
             Text(label.uppercased())
                 .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.38))
+                .tracking(0.65)
+                .foregroundStyle(MixPilotPalette.textTertiary)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
+        .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+        .background(.white.opacity(0.040), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.white.opacity(0.075), lineWidth: 1)
+        }
     }
 }
 
