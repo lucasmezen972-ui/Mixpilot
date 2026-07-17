@@ -126,3 +126,71 @@ func coreMacOSShellPlaceholdersRender() {
         #expect(!pending.contains("%d"))
     }
 }
+
+@Test("Primary workspace keys resolve in every language")
+func primaryWorkspaceKeysResolve() {
+    let catalog = MixPilotHelpCatalog.shared
+    let keys = [
+        "workspace.prepare.title",
+        "workspace.prepare.empty_message",
+        "workspace.verify.title",
+        "workspace.verify.allow_accessibility",
+        "workspace.live.title_running",
+        "workspace.live.take_control",
+        "workspace.advanced.title",
+        "workspace.advanced.simulation_detail",
+        "workspace.backend.not_selected_detail",
+        "workspace.transitions.subtitle",
+    ]
+
+    for language in MixPilotHelpLanguage.allCases {
+        for key in keys {
+            let value = catalog.localized(key, language: language, table: "Workspace")
+            #expect(!value.isEmpty)
+            #expect(value != key)
+        }
+    }
+}
+
+@Test("Workspace number and deck formats render in every language")
+func workspaceFormatsRender() {
+    let catalog = MixPilotHelpCatalog.shared
+
+    for language in MixPilotHelpLanguage.allCases {
+        let project = catalog.localizedFormat(
+            "workspace.project.summary_format",
+            language: language,
+            table: "Workspace",
+            10,
+            9,
+            2
+        )
+        let deck = catalog.localizedFormat(
+            "workspace.live.deck_progress_format",
+            language: language,
+            table: "Workspace",
+            "A",
+            4,
+            9
+        )
+        let transition = catalog.localizedFormat(
+            "workspace.transitions.row_format",
+            language: language,
+            table: "Workspace",
+            16,
+            87
+        )
+
+        #expect(project.contains("10"))
+        #expect(project.contains("9"))
+        #expect(project.contains("2"))
+        #expect(deck.contains("A"))
+        #expect(deck.contains("4"))
+        #expect(deck.contains("9"))
+        #expect(transition.contains("16"))
+        #expect(transition.contains("87"))
+        #expect(!project.contains("%d"))
+        #expect(!deck.contains("%@"))
+        #expect(!transition.contains("%d"))
+    }
+}
