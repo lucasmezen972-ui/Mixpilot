@@ -50,19 +50,25 @@ struct UnifiedWorkspaceView: View {
     private var prepareView: some View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
-                eyebrow: "Préparer",
-                title: "Construire un set fiable",
-                subtitle: "Choisis ton logiciel DJ, importe une playlist, vérifie l’ordre et prépare des transitions adaptées aux capacités réellement disponibles.",
+                eyebrow: AppLocalizedCopy.workspace("workspace.prepare.eyebrow"),
+                title: AppLocalizedCopy.workspace("workspace.prepare.title"),
+                subtitle: AppLocalizedCopy.workspace("workspace.prepare.subtitle"),
                 symbol: "waveform.path.ecg",
                 accent: .purple
             ) {
-                Button("Choisir le logiciel") { openWindow(id: "dj-software") }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                Button("Set de démonstration") { model.createDemoProject() }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                Button("Importer la playlist") { model.capturePlaylist() }
-                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .purple))
-                    .disabled(model.selectedBackend == nil)
+                Button(AppLocalizedCopy.workspace("workspace.prepare.choose_software")) {
+                    openWindow(id: "dj-software")
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button(AppLocalizedCopy.workspace("workspace.prepare.demo_set")) {
+                    model.createDemoProject()
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button(AppLocalizedCopy.workspace("workspace.prepare.import_playlist")) {
+                    model.capturePlaylist()
+                }
+                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .purple))
+                .disabled(model.selectedBackend == nil)
             }
 
             backendSummary
@@ -71,17 +77,23 @@ struct UnifiedWorkspaceView: View {
                 projectSummary(project)
                 transitionList(project)
                 HStack(spacing: 10) {
-                    Button(project.locked ? "Plan verrouillé" : "Verrouiller le plan") {
+                    Button(AppLocalizedCopy.workspace(
+                        project.locked ? "workspace.prepare.plan_locked" : "workspace.prepare.lock_plan"
+                    )) {
                         model.lockPreparedProject()
                     }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: project.locked ? .green : .cyan))
                     .disabled(project.locked)
 
-                    Button("Tester une transition") { openWindow(id: "rehearsal") }
-                        .buttonStyle(MixPilotSecondaryButtonStyle())
-                    Button("Affiner l’analyse audio") { openWindow(id: "preparation-analysis") }
-                        .buttonStyle(MixPilotSecondaryButtonStyle())
-                    Button("Passer à Vérifier") {
+                    Button(AppLocalizedCopy.workspace("workspace.prepare.test_transition")) {
+                        openWindow(id: "rehearsal")
+                    }
+                    .buttonStyle(MixPilotSecondaryButtonStyle())
+                    Button(AppLocalizedCopy.workspace("workspace.prepare.refine_audio")) {
+                        openWindow(id: "preparation-analysis")
+                    }
+                    .buttonStyle(MixPilotSecondaryButtonStyle())
+                    Button(AppLocalizedCopy.workspace("workspace.prepare.go_verify")) {
                         model.evaluatePreflight()
                         model.selectedSection = .preflight
                     }
@@ -89,8 +101,8 @@ struct UnifiedWorkspaceView: View {
                 }
             } else {
                 emptyCard(
-                    title: "Aucun set préparé",
-                    message: "Importe la playlist visible dans ton logiciel DJ ou utilise le set de démonstration. MixPilot ne lance aucune commande pendant cette étape.",
+                    title: AppLocalizedCopy.workspace("workspace.prepare.empty_title"),
+                    message: AppLocalizedCopy.workspace("workspace.prepare.empty_message"),
                     symbol: "music.note.list"
                 )
             }
@@ -100,42 +112,84 @@ struct UnifiedWorkspaceView: View {
     private var verifyView: some View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
-                eyebrow: "Vérifier",
-                title: "Contrôler le système avant le Live",
-                subtitle: "Chaque blocage explique ce qui ne fonctionne pas, son impact et l’action à effectuer. Internet et les services en ligne ne bloquent jamais un set local déjà préparé.",
+                eyebrow: AppLocalizedCopy.workspace("workspace.verify.eyebrow"),
+                title: AppLocalizedCopy.workspace("workspace.verify.title"),
+                subtitle: AppLocalizedCopy.workspace("workspace.verify.subtitle"),
                 symbol: "checkmark.shield.fill",
                 accent: model.preflightReport.canStartLive ? .green : .orange
             ) {
-                Button("Actualiser") { model.refreshEnvironment() }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                Button("Configurer le logiciel") { openWindow(id: "dj-software") }
-                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .cyan))
+                Button(AppLocalizedCopy.workspace("workspace.verify.refresh")) {
+                    model.refreshEnvironment()
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button(AppLocalizedCopy.workspace("workspace.verify.configure_software")) {
+                    openWindow(id: "dj-software")
+                }
+                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .cyan))
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 14)], spacing: 14) {
-                verificationTile("Logiciel DJ", model.backendStatus, "music.note.list", .purple)
-                verificationTile("Commandes", model.midiStatus, "slider.horizontal.3", .blue)
-                verificationTile("Lecture de l’état", model.accessibilityStatus, "eye.fill", .cyan)
-                verificationTile("Audio", model.audioStatus, "waveform", .mint)
-                verificationTile("Musique de secours", model.emergencyStatus, "lifepreserver.fill", .orange)
                 verificationTile(
-                    "Rapport final",
-                    model.preflightReport.canStartLive ? "Prêt pour le Live" : "\(model.preflightReport.failedItems.count) blocage(s)",
+                    AppLocalizedCopy.workspace("workspace.verify.tile.software"),
+                    model.backendStatus,
+                    "music.note.list",
+                    .purple
+                )
+                verificationTile(
+                    AppLocalizedCopy.workspace("workspace.verify.tile.commands"),
+                    model.midiStatus,
+                    "slider.horizontal.3",
+                    .blue
+                )
+                verificationTile(
+                    AppLocalizedCopy.workspace("workspace.verify.tile.state"),
+                    model.accessibilityStatus,
+                    "eye.fill",
+                    .cyan
+                )
+                verificationTile(
+                    AppLocalizedCopy.workspace("workspace.verify.tile.audio"),
+                    model.audioStatus,
+                    "waveform",
+                    .mint
+                )
+                verificationTile(
+                    AppLocalizedCopy.workspace("workspace.verify.tile.emergency"),
+                    model.emergencyStatus,
+                    "lifepreserver.fill",
+                    .orange
+                )
+                verificationTile(
+                    AppLocalizedCopy.workspace("workspace.verify.tile.final"),
+                    model.preflightReport.canStartLive
+                        ? AppLocalizedCopy.workspace("workspace.verify.ready")
+                        : AppLocalizedCopy.workspaceFormat(
+                            "workspace.verify.blockers_format",
+                            model.preflightReport.failedItems.count
+                        ),
                     "checkmark.seal.fill",
                     model.preflightReport.canStartLive ? .green : .red
                 )
             }
 
             HStack(spacing: 10) {
-                Button("Autoriser la lecture de l’interface") { model.requestAccessibility() }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                Button(model.audioMonitor.isRunning ? "Audio actif" : "Démarrer la surveillance audio") {
+                Button(AppLocalizedCopy.workspace("workspace.verify.allow_accessibility")) {
+                    model.requestAccessibility()
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button(AppLocalizedCopy.workspace(
+                    model.audioMonitor.isRunning
+                        ? "workspace.verify.audio_active"
+                        : "workspace.verify.start_audio"
+                )) {
                     model.startAudioMonitoring()
                 }
                 .buttonStyle(MixPilotSecondaryButtonStyle())
                 .disabled(model.audioMonitor.isRunning)
-                Button("Choisir la musique de secours") { model.selectEmergencyAudio() }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button(AppLocalizedCopy.workspace("workspace.verify.choose_emergency")) {
+                    model.selectEmergencyAudio()
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
             }
 
             VStack(spacing: 10) {
@@ -146,9 +200,11 @@ struct UnifiedWorkspaceView: View {
 
             HStack {
                 Spacer()
-                Button("Ouvrir le Live") { model.selectedSection = .live }
-                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
-                    .disabled(!model.preflightReport.canStartLive)
+                Button(AppLocalizedCopy.workspace("workspace.verify.open_live")) {
+                    model.selectedSection = .live
+                }
+                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
+                .disabled(!model.preflightReport.canStartLive)
             }
         }
     }
@@ -156,21 +212,34 @@ struct UnifiedWorkspaceView: View {
     private var liveView: some View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
-                eyebrow: "Live",
-                title: model.isLiveRunning ? "Autopilote en cours" : "Prêt à lancer le Live",
-                subtitle: "Le Mac reste la source de vérité. Un problème de services en ligne ou de connexion iPhone ne coupe jamais la musique.",
+                eyebrow: AppLocalizedCopy.workspace("workspace.live.eyebrow"),
+                title: AppLocalizedCopy.workspace(
+                    model.isLiveRunning ? "workspace.live.title_running" : "workspace.live.title_ready"
+                ),
+                subtitle: AppLocalizedCopy.workspace("workspace.live.subtitle"),
                 symbol: "play.circle.fill",
                 accent: model.isLiveRunning ? .green : .cyan
             ) {
-                Button(model.liveArmed ? "Désarmer" : "Armer le Live") { model.armLive() }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                    .disabled(model.isLiveRunning || !model.preflightReport.canStartLive)
-                Button("Lancer le Live") { model.startLive() }
-                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
-                    .disabled(!model.liveArmed || model.isLiveRunning)
-                Button("Reprendre la main", role: .destructive) { model.takeManualControl() }
-                    .buttonStyle(MixPilotDangerButtonStyle())
-                    .disabled(!model.isLiveRunning)
+                Button(AppLocalizedCopy.workspace(
+                    model.liveArmed ? "workspace.live.disarm" : "workspace.live.arm"
+                )) {
+                    model.armLive()
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                .disabled(model.isLiveRunning || !model.preflightReport.canStartLive)
+                Button(AppLocalizedCopy.workspace("workspace.live.start")) {
+                    model.startLive()
+                }
+                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
+                .disabled(!model.liveArmed || model.isLiveRunning)
+                Button(
+                    AppLocalizedCopy.workspace("workspace.live.take_control"),
+                    role: .destructive
+                ) {
+                    model.takeManualControl()
+                }
+                .buttonStyle(MixPilotDangerButtonStyle())
+                .disabled(!model.isLiveRunning)
             }
 
             backendSummary
@@ -179,17 +248,25 @@ struct UnifiedWorkspaceView: View {
                 MixPilotGlassCard(accent: .green) {
                     VStack(alignment: .leading, spacing: 12) {
                         MixPilotPanelTitle(
-                            title: "En cours",
+                            title: AppLocalizedCopy.workspace("workspace.live.current"),
                             symbol: "speaker.wave.2.fill",
                             subtitle: model.snapshot.statusMessage,
                             accent: .green
                         )
-                        Text(model.snapshot.currentTrack?.title ?? "Aucun morceau")
+                        Text(
+                            model.snapshot.currentTrack?.title
+                                ?? AppLocalizedCopy.workspace("workspace.live.no_track")
+                        )
                             .font(.system(size: 25, weight: .bold, design: .rounded))
                         Text(model.snapshot.currentTrack?.artist ?? "")
                             .foregroundStyle(.white.opacity(0.55))
                         ProgressView(value: model.snapshot.progress).tint(.green)
-                        Text("Deck \(model.snapshot.activeDeck.rawValue) • \(model.snapshot.completedTransitions)/\(model.snapshot.totalTransitions) transitions")
+                        Text(AppLocalizedCopy.workspaceFormat(
+                            "workspace.live.deck_progress_format",
+                            model.snapshot.activeDeck.rawValue,
+                            model.snapshot.completedTransitions,
+                            model.snapshot.totalTransitions
+                        ))
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.55))
                     }
@@ -198,12 +275,15 @@ struct UnifiedWorkspaceView: View {
                 MixPilotGlassCard(accent: .cyan) {
                     VStack(alignment: .leading, spacing: 12) {
                         MixPilotPanelTitle(
-                            title: "Ensuite",
+                            title: AppLocalizedCopy.workspace("workspace.live.next"),
                             symbol: "forward.end.fill",
-                            subtitle: "Plan préparé sur le Mac",
+                            subtitle: AppLocalizedCopy.workspace("workspace.live.plan_on_mac"),
                             accent: .cyan
                         )
-                        Text(model.snapshot.nextTrack?.title ?? "Fin du set")
+                        Text(
+                            model.snapshot.nextTrack?.title
+                                ?? AppLocalizedCopy.workspace("workspace.live.end_set")
+                        )
                             .font(.title2.bold())
                         Text(model.audioStatus)
                             .font(.callout)
@@ -219,9 +299,9 @@ struct UnifiedWorkspaceView: View {
                 MixPilotGlassCard(accent: .orange) {
                     VStack(alignment: .leading, spacing: 8) {
                         MixPilotPanelTitle(
-                            title: "Événements récents",
+                            title: AppLocalizedCopy.workspace("workspace.live.recent_events"),
                             symbol: "list.bullet.rectangle",
-                            subtitle: "Les données musicales restent locales.",
+                            subtitle: AppLocalizedCopy.workspace("workspace.live.local_data"),
                             accent: .orange
                         )
                         ForEach(Array(model.runtimeEvents.suffix(8).enumerated()), id: \.offset) { _, event in
@@ -238,30 +318,52 @@ struct UnifiedWorkspaceView: View {
     private var advancedView: some View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
-                eyebrow: "Avancé",
-                title: "Diagnostics et outils techniques",
-                subtitle: "Ces outils ne sont pas nécessaires au parcours normal. Ils servent à valider une version, inspecter un mapping ou préparer un rapport technique.",
+                eyebrow: AppLocalizedCopy.workspace("workspace.advanced.eyebrow"),
+                title: AppLocalizedCopy.workspace("workspace.advanced.title"),
+                subtitle: AppLocalizedCopy.workspace("workspace.advanced.subtitle"),
                 symbol: "gearshape.2.fill",
                 accent: .orange
             ) {
-                Button("Exporter un diagnostic") { model.exportDiagnostics() }
-                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .orange))
+                Button(AppLocalizedCopy.workspace("workspace.advanced.export")) {
+                    model.exportDiagnostics()
+                }
+                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .orange))
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
-                advancedCard("Choix et capacités", "Comparer les trois backends officiels.", "music.note.house.fill") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.advanced.choice_title"),
+                    AppLocalizedCopy.workspace("workspace.advanced.choice_detail"),
+                    "music.note.house.fill"
+                ) {
                     openWindow(id: "dj-software")
                 }
-                advancedCard("Répétition", "Mesurer et comparer les variantes de transition.", "repeat.circle.fill") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.advanced.rehearsal_title"),
+                    AppLocalizedCopy.workspace("workspace.advanced.rehearsal_detail"),
+                    "repeat.circle.fill"
+                ) {
                     openWindow(id: "rehearsal")
                 }
-                advancedCard("Inspecteur de transitions", "Voir les courbes, risques et recommandations.", "waveform.path") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.advanced.inspector_title"),
+                    AppLocalizedCopy.workspace("workspace.advanced.inspector_detail"),
+                    "waveform.path"
+                ) {
                     openWindow(id: "transition-inspector")
                 }
-                advancedCard("Analyse audio locale", "Affiner un morceau sans conserver l’audio brut.", "waveform.badge.magnifyingglass") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.advanced.audio_title"),
+                    AppLocalizedCopy.workspace("workspace.advanced.audio_detail"),
+                    "waveform.badge.magnifyingglass"
+                ) {
                     openWindow(id: "preparation-analysis")
                 }
-                advancedCard("Centre de récupération", "Examiner le dernier checkpoint sans reprise aveugle.", "arrow.counterclockwise.circle.fill") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.advanced.recovery_title"),
+                    AppLocalizedCopy.workspace("workspace.advanced.recovery_detail"),
+                    "arrow.counterclockwise.circle.fill"
+                ) {
                     openWindow(id: "recovery-center")
                 }
                 backendAdvancedCard
@@ -270,14 +372,18 @@ struct UnifiedWorkspaceView: View {
             MixPilotGlassCard(accent: .blue) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Simulation du moteur")
+                        Text(AppLocalizedCopy.workspace("workspace.advanced.simulation_title"))
                             .font(.headline)
-                        Text("Une simulation valide le code et les scénarios de panne. Elle ne remplace jamais un test sur le logiciel et le matériel réels.")
+                        Text(AppLocalizedCopy.workspace("workspace.advanced.simulation_detail"))
                             .font(.callout)
                             .foregroundStyle(.white.opacity(0.55))
                     }
                     Spacer()
-                    Button(model.isRunningSimulation ? "Simulation…" : "Simuler 50 titres") {
+                    Button(AppLocalizedCopy.workspace(
+                        model.isRunningSimulation
+                            ? "workspace.advanced.simulation_running"
+                            : "workspace.advanced.simulate_50"
+                    )) {
                         model.runSimulation()
                     }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .blue))
@@ -294,16 +400,21 @@ struct UnifiedWorkspaceView: View {
                     .font(.title2)
                     .foregroundStyle(.cyan)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.selectedBackend?.displayName ?? "Aucun logiciel DJ sélectionné")
+                    Text(
+                        model.selectedBackend?.displayName
+                            ?? AppLocalizedCopy.workspace("workspace.backend.none")
+                    )
                         .font(.headline)
                     Text(model.backendStatus)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.55))
                 }
                 Spacer()
-                Button("Changer") { openWindow(id: "dj-software") }
-                    .buttonStyle(MixPilotSecondaryButtonStyle())
-                    .disabled(model.isLiveRunning)
+                Button(AppLocalizedCopy.workspace("workspace.backend.change")) {
+                    openWindow(id: "dj-software")
+                }
+                .buttonStyle(MixPilotSecondaryButtonStyle())
+                .disabled(model.isLiveRunning)
             }
         }
     }
@@ -312,19 +423,35 @@ struct UnifiedWorkspaceView: View {
         Group {
             switch model.selectedBackend {
             case .rekordbox:
-                advancedCard("Outils rekordbox", "CSV MIDI, validation réelle et provenance.", "record.circle") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.backend.rekordbox_title"),
+                    AppLocalizedCopy.workspace("workspace.backend.rekordbox_detail"),
+                    "record.circle"
+                ) {
                     openWindow(id: "rekordbox-hub")
                 }
             case .serato:
-                advancedCard("Configuration Serato", "Installation, sauvegarde et restauration du mapping.", "slider.horizontal.3") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.backend.serato_title"),
+                    AppLocalizedCopy.workspace("workspace.backend.serato_detail"),
+                    "slider.horizontal.3"
+                ) {
                     openWindow(id: "automatic-serato-mapping")
                 }
             case .djay:
-                advancedCard("Inspection djay", "Observer Automix et l’interface validée sans inventer de commande.", "wand.and.stars") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.backend.djay_title"),
+                    AppLocalizedCopy.workspace("workspace.backend.djay_detail"),
+                    "wand.and.stars"
+                ) {
                     model.selectedSection = .feasibility
                 }
             case nil:
-                advancedCard("Backend non sélectionné", "Choisis le logiciel DJ avant d’ouvrir ses outils.", "questionmark.circle") {
+                advancedCard(
+                    AppLocalizedCopy.workspace("workspace.backend.not_selected_title"),
+                    AppLocalizedCopy.workspace("workspace.backend.not_selected_detail"),
+                    "questionmark.circle"
+                ) {
                     openWindow(id: "dj-software")
                 }
             }
@@ -336,12 +463,19 @@ struct UnifiedWorkspaceView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(project.name).font(.title2.bold())
-                    Text("\(project.tracks.count) morceaux • \(project.transitions.count) transitions • \(project.reviewTransitionCount) à revoir")
+                    Text(AppLocalizedCopy.workspaceFormat(
+                        "workspace.project.summary_format",
+                        project.tracks.count,
+                        project.transitions.count,
+                        project.reviewTransitionCount
+                    ))
                         .foregroundStyle(.white.opacity(0.55))
                 }
                 Spacer()
                 MixPilotStatusBadge(
-                    title: project.locked ? "Plan verrouillé" : "Brouillon",
+                    title: AppLocalizedCopy.workspace(
+                        project.locked ? "workspace.project.locked" : "workspace.project.draft"
+                    ),
                     symbol: project.locked ? "lock.fill" : "lock.open",
                     accent: project.locked ? .green : .orange
                 )
@@ -353,17 +487,24 @@ struct UnifiedWorkspaceView: View {
         MixPilotGlassCard(accent: .cyan) {
             VStack(alignment: .leading, spacing: 10) {
                 MixPilotPanelTitle(
-                    title: "Plan des transitions",
+                    title: AppLocalizedCopy.workspace("workspace.transitions.title"),
                     symbol: "arrow.left.arrow.right",
-                    subtitle: "Le moteur choisira uniquement des variantes exécutables.",
+                    subtitle: AppLocalizedCopy.workspace("workspace.transitions.subtitle"),
                     accent: .cyan
                 )
                 ForEach(Array(project.transitions.prefix(12).enumerated()), id: \.element.id) { index, transition in
                     HStack {
-                        Text("\(index + 1)").font(.caption.bold()).foregroundStyle(.cyan).frame(width: 24)
+                        Text("\(index + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.cyan)
+                            .frame(width: 24)
                         Text(transition.kind.rawValue).font(.callout.bold())
                         Spacer()
-                        Text("\(transition.bars) mesures • confiance \(transition.confidence) %")
+                        Text(AppLocalizedCopy.workspaceFormat(
+                            "workspace.transitions.row_format",
+                            transition.bars,
+                            transition.confidence
+                        ))
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.5))
                     }
@@ -416,7 +557,10 @@ struct UnifiedWorkspaceView: View {
                     Image(systemName: symbol).font(.title2).foregroundStyle(.orange).frame(width: 32)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title).font(.headline)
-                        Text(detail).font(.caption).foregroundStyle(.white.opacity(0.52)).multilineTextAlignment(.leading)
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.52))
+                            .multilineTextAlignment(.leading)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.3))
@@ -432,7 +576,10 @@ struct UnifiedWorkspaceView: View {
             VStack(spacing: 14) {
                 Image(systemName: symbol).font(.system(size: 46)).foregroundStyle(.purple)
                 Text(title).font(.title2.bold())
-                Text(message).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center).frame(maxWidth: 580)
+                Text(message)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 580)
             }
             .frame(maxWidth: .infinity, minHeight: 260)
         }
@@ -458,10 +605,10 @@ struct UnifiedWorkspaceView: View {
 }
 
 enum PrimaryWorkspaceArea: String, CaseIterable, Identifiable {
-    case prepare = "Préparer"
-    case verify = "Vérifier"
-    case live = "Live"
-    case advanced = "Avancé"
+    case prepare
+    case verify
+    case live
+    case advanced
 
     var id: String { rawValue }
 }
