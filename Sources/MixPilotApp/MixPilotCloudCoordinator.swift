@@ -122,8 +122,11 @@ final class MixPilotCloudCoordinator: ObservableObject {
     }
 
     func revealStagedPreset() {
-        guard let stagedMapping else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([stagedMapping.presetURL])
+        guard let url = stagedMapping?.generatedArtifactURL else {
+            mappingStatus = "Ce correctif ne génère pas de fichier à importer. Le profil MixPilot est déjà préparé localement."
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func rollbackMapping() {
@@ -134,25 +137,33 @@ final class MixPilotCloudCoordinator: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            guard let backend = await backendContextProvider(), backend.identifier == .rekordbox else {
-                mappingStatus = "La restauration automatique disponible actuellement concerne uniquement le correctif rekordbox installé."
+            guard let backend = await backendContextProvider() else {
+                mappingStatus = "Choisis le logiciel DJ concerné avant de restaurer le mapping."
                 return
             }
             do {
-                let controller = backend.controllerName ?? RekordboxMIDIPresetGenerator.defaultControllerName
-                let result = try await mappingInstaller.rollback(controllerName: controller)
+                let result = try await mappingInstaller.rollback(
+                    backend: backend.identifier,
+                    controllerName: controllerName(for: backend)
+                )
                 stagedMapping = result
-                mappingStatus = "L’ancien mapping a été restauré pour le prochain lancement."
+                mappingStatus = "L’ancien mapping de \(backend.identifier.displayName) a été restauré pour le prochain lancement."
                 if let release = availableMapping {
+                    var details = ["artifact_kind": result.artifactKind.rawValue]
+                    if let hash = result.generatedArtifactSHA256 {
+                        details["artifact_sha256"] = hash
+                    }
                     try? await remoteMappingService.recordInstallation(
                         release: release,
                         status: .rolledBack,
                         previousProfileSHA256: result.previousProfileSHA256,
                         appliedProfileSHA256: result.appliedProfileSHA256,
-                        details: ["preset_sha256": result.presetSHA256]
+                        details: details
                     )
                 }
-                NSWorkspace.shared.activateFileViewerSelecting([result.presetURL])
+                if let url = result.generatedArtifactURL {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
             } catch {
                 mappingStatus = "L’ancien mapping n’a pas pu être restauré. La configuration actuelle n’a pas été modifiée."
             }
@@ -250,35 +261,28 @@ final class MixPilotCloudCoordinator: ObservableObject {
             return
         }
 
-        guard backend.identifier == .rekordbox else {
-            availableMapping = nil
-            activeCompatibilityOverride = nil
-            stagedMapping = nil
-            if showNoUpdateMessage {
-                mappingStatus = "Aucun correctif distant publié pour \(backend.identifier.displayName). La configuration locale reste utilisée."
-            }
-            return
-        }
-
-        let controller = backend.controllerName ?? RekordboxMIDIPresetGenerator.defaultControllerName
+        let controller = controllerName(for: backend)
         do {
             activeCompatibilityOverride = try await remoteMappingService.activeCompatibilityOverride(
                 currentAppBuild: appBuild,
-                rekordboxVersion: backend.softwareVersion,
+                backend: backend.identifier,
+                softwareVersion: backend.softwareVersion,
                 controllerName: controller
             )
             let release = try await remoteMappingService.checkForMappingUpdate(
                 currentAppBuild: appBuild,
-                rekordboxVersion: backend.softwareVersion,
+                backend: backend.identifier,
+                softwareVersion: backend.softwareVersion,
                 controllerName: controller
             )
 
             if let release,
                let local = try? await mappingInstaller.currentState(),
-               local.releaseID == release.id {
+               local.releaseID == release.id,
+               local.backend == nil || local.backend == backend.identifier {
                 availableMapping = nil
                 if showNoUpdateMessage {
-                    mappingStatus = "Le correctif rekordbox v\(release.mappingVersion) est déjà installé."
+                    mappingStatus = "Le correctif \(backend.identifier.displayName) v\(release.mappingVersion) est déjà installé."
                 }
                 return
             }
@@ -286,12 +290,12 @@ final class MixPilotCloudCoordinator: ObservableObject {
             availableMapping = release
             guard let release else {
                 if showNoUpdateMessage {
-                    mappingStatus = "Aucun nouveau correctif compatible avec cette version de rekordbox."
+                    mappingStatus = "Aucun nouveau correctif compatible avec cette version de \(backend.identifier.displayName)."
                 }
                 return
             }
 
-            mappingStatus = "Correctif rekordbox v\(release.mappingVersion) disponible."
+            mappingStatus = "Correctif \(backend.identifier.displayName) v\(release.mappingVersion) disponible."
             try? await remoteMappingService.recordInstallation(
                 release: release,
                 status: .discovered,
@@ -316,38 +320,50 @@ final class MixPilotCloudCoordinator: ObservableObject {
             mappingStatus = "Le correctif attendra la fin du Live."
             return
         }
-        guard let backend = await backendContextProvider(), backend.identifier == .rekordbox else {
+        guard let backend = await backendContextProvider(),
+              release.backendIdentifier == backend.identifier else {
             mappingStatus = "Ce correctif ne correspond pas au logiciel DJ actif et ne sera pas installé."
             return
         }
 
         do {
             mappingStatus = "Vérification du correctif et sauvegarde du mapping actuel…"
-            let controller = backend.controllerName ?? RekordboxMIDIPresetGenerator.defaultControllerName
             let result = try await mappingInstaller.stage(
                 release: release,
                 currentAppBuild: appBuild,
-                rekordboxVersion: backend.softwareVersion,
-                controllerName: controller
+                backend: backend.identifier,
+                softwareVersion: backend.softwareVersion,
+                controllerName: controllerName(for: backend)
             )
             stagedMapping = result
-            mappingStatus = "Correctif v\(release.mappingVersion) prêt. Redémarre MixPilot puis importe le CSV dans rekordbox."
+            switch result.artifactKind {
+            case .rekordboxCSV:
+                mappingStatus = "Correctif v\(release.mappingVersion) prêt. Redémarre MixPilot puis importe le CSV dans rekordbox."
+            case .profile:
+                mappingStatus = "Correctif v\(release.mappingVersion) prêt pour \(backend.identifier.displayName). Redémarre MixPilot pour l’appliquer."
+            }
+
+            var details = [
+                "artifact_kind": result.artifactKind.rawValue,
+                "apply_mode": release.applyMode.rawValue
+            ]
+            if let hash = result.generatedArtifactSHA256 {
+                details["artifact_sha256"] = hash
+            }
             try? await remoteMappingService.recordInstallation(
                 release: release,
                 status: .staged,
                 previousProfileSHA256: result.previousProfileSHA256,
                 appliedProfileSHA256: result.appliedProfileSHA256,
-                details: [
-                    "preset_sha256": result.presetSHA256,
-                    "apply_mode": release.applyMode.rawValue
-                ]
+                details: details
             )
             try? await service.record(MixPilotTelemetryEvent(
                 category: "mapping",
                 name: "remote_mapping_staged",
                 payload: [
                     "mapping_version": String(release.mappingVersion),
-                    "dj_backend": backend.identifier.rawValue
+                    "dj_backend": backend.identifier.rawValue,
+                    "artifact_kind": result.artifactKind.rawValue
                 ]
             ))
         } catch {
@@ -359,6 +375,15 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 details: ["stage": "local_validation"]
             )
         }
+    }
+
+    private func controllerName(for backend: MixPilotCloudBackendContext) -> String {
+        if let controllerName = backend.controllerName, !controllerName.isEmpty {
+            return controllerName
+        }
+        return backend.identifier == .rekordbox
+            ? RekordboxMIDIPresetGenerator.defaultControllerName
+            : "MixPilot Virtual Controller"
     }
 
     private func processRemoteCommands() async {

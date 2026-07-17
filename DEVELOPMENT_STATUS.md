@@ -4,169 +4,174 @@ Dernière mise à jour : 17 juillet 2026
 
 ## État global
 
-**Refonte canonique multi-backend en cours — PR brouillon #29**
+**Refonte logicielle multi-backend terminée — correctifs de clôture en cours de fusion**
 
-- branche : `feature/first-class-multi-backend` ;
-- base : `release/0.3.0-rc.2` ;
-- PR : #29 ;
-- fusion dans `main` : interdite tant que les critères de sortie ne sont pas remplis.
+- PR canonique #29 : fusionnée dans `main` ;
+- branche de clôture : `fix/multi-backend-finalization` ;
+- périmètre : import visible générique, correctifs distants multi-backend, provenance, persistance et migration Supabase ;
+- fusion automatique dans `main` : uniquement après vérification de la PR de clôture.
 
-La branche récupère les fonctions utiles des PR djay, rekordbox, Serato, Remote et services en ligne, puis remplace progressivement les dépendances historiques au lieu d’ajouter une couche supplémentaire.
+### Pourcentage d’avancement
 
-## Réalisé dans la refonte
+- architecture et code multi-backend : **100 %** après fusion de la branche de clôture ;
+- documentation logicielle : **100 %** pour le périmètre courant ;
+- validations locales et statiques disponibles : **environ 85 %** ;
+- validation GitHub Actions complète : **bloquée par le provisionnement des runners** ;
+- validation matérielle Mac/iPhone/logiciels DJ : **0 %** ;
+- avancement global jusqu’à une version réellement éprouvée chez Lucas : **environ 82 %**.
+
+Le code terminé ne vaut pas validation matérielle. Aucun backend, mapping ou parcours Live n’est déclaré `REAL_SUCCESS` sans test sur le matériel cible.
+
+## Réalisé
 
 ### Audit et consolidation
 
 - [x] branches et PR structurantes examinées ;
-- [x] branche la plus complète identifiée ;
-- [x] inventaire des redondances et contradictions ;
-- [x] décisions Conserver / Fusionner / Renommer / Déplacer / Supprimer documentées ;
-- [x] branche canonique créée ;
-- [x] ancienne chaîne de PR empilées remplacée par une PR vers RC2 ;
-- [x] anciennes coquilles d’interface parallèles supprimées.
+- [x] redondances, contradictions et anciens prompts inventoriés ;
+- [x] chaîne de PR empilées remplacée par la PR canonique #29 ;
+- [x] PR intermédiaires obsolètes fermées ;
+- [x] anciennes interfaces principales parallèles supprimées ;
+- [x] PR #29 fusionnée dans `main`.
 
 ### Contrats et moteur
 
 - [x] contrat commun `DJBackend` ;
-- [x] registre des backends ;
-- [x] sélection explicite et persistance ;
-- [x] blocage du changement pendant le Live ;
-- [x] commandes universelles `DJControlAction` ;
-- [x] cycle Requested / Sent / Acknowledged / Observed / Verified / Failed / Unknown ;
-- [x] matrice détaillée des capacités ;
-- [x] fallbacks de transitions ;
-- [x] mocks complet, partiel, instable, lecture seule et déconnecté ;
+- [x] registre avec sélection explicite et sans backend implicite ;
+- [x] changement de backend interdit pendant le Live ;
+- [x] commandes universelles et matrice détaillée des capacités ;
 - [x] file de commandes, timeout, idempotence et circuit breaker ;
+- [x] preuve stricte `verified + validated` pour les commandes critiques ;
+- [x] distinction entre commande envoyée, observée et réellement vérifiée ;
 - [x] coordinateur Live indépendant du nom du logiciel ;
-- [x] Autopilote complet bloqué sans lecture d’état fiable ;
-- [x] refus d’un coordinateur Live construit pour un autre backend ;
-- [x] invalidation immédiate des capacités dépendantes de l’Accessibilité ;
-- [x] réconciliation périodique de l’identité et de l’état fiable du backend pendant le Live ;
-- [x] reprise manuelle demandée au point sûr en cas de backend fermé ou d’état contradictoire ;
-- [x] scénarios simulés réellement bloquants pour backend perdu, commande non confirmée et changement de version.
+- [x] blocage sans lecture d’état fiable ;
+- [x] réconciliation périodique du backend et de l’état pendant le Live ;
+- [x] reprise manuelle coopérative au point sûr ;
+- [x] aucun redémarrage automatique après crash ;
+- [x] checkpoints terminés automatiquement nettoyés.
+
+### Transitions et MIDI
+
+- [x] horloge monotone ;
+- [x] frames périmées abandonnées ;
+- [x] coalescence des valeurs MIDI ;
+- [x] valeurs normalisées et bornées ;
+- [x] pulses Note et Control Change momentanés espacés ;
+- [x] mappings continus obligatoirement en Control Change ;
+- [x] Play/Pause/Load strictement vérifiés ;
+- [x] Sync non bloquant tant qu’aucune lecture structurée de son effet n’existe ;
+- [x] couverture MIDI fondée sur la compatibilité réelle des messages.
+
+### Audio et secours
+
+- [x] watchdog audio à états ;
+- [x] un seul événement par épisode de silence, saturation ou perte de source ;
+- [x] retour sain uniquement après récupération réelle ;
+- [x] niveau UI limité à 10 Hz ;
+- [x] callbacks d’anciennes sessions ignorés ;
+- [x] silence critique : secours local puis reprise manuelle ;
+- [x] perte de source : reprise manuelle sans audio potentiellement superposé ;
+- [x] lecteur de secours protégé contre les anciens fondus ;
+- [x] fichiers invalides sautés sans boucle infinie ;
+- [x] ordre de la file conservé après plusieurs échecs successifs.
 
 ### Backends officiels
 
 - [x] `DjayBackend` ;
 - [x] `RekordboxBackend` ;
 - [x] `SeratoBackend` ;
-- [x] politiques de capacités séparées pour les trois logiciels ;
-- [x] détection commune installation/processus/version ;
-- [x] validations enregistrées par backend, version, contrôleur et mapping ;
-- [x] capacités différentes affichées sans hiérarchie produit ;
-- [x] bridge Accessibilité générique déplacé dans `DJAccessibilityBridge.swift` ;
-- [x] aucun fallback global silencieux dans les méthodes de compatibilité Accessibilité.
+- [x] politiques séparées ;
+- [x] détection installation/processus/version ;
+- [x] validations liées au backend, à la version, au contrôleur et au mapping ;
+- [x] garde `StrictVerificationDJBackend` appliqué aux trois backends ;
+- [x] capacités différentes affichées sans hiérarchie produit.
 
-L’existence d’un adaptateur ne vaut pas validation matérielle. Les capacités restent associées à leur statut réel.
+### Import de playlist visible
 
-### Interface Mac
-
-- [x] écran de sélection avec trois cartes égales ;
-- [x] navigation réduite à Préparer, Vérifier, Live et Avancé ;
-- [x] nouveau workspace unifié ;
-- [x] messages visibles réécrits avec problème, impact et action ;
-- [x] termes Cloud et Supabase retirés du parcours normal ;
-- [x] outils propres au backend déplacés dans une carte contextuelle d’Avancé ;
-- [x] entrées globales parallèles rekordbox/Serato retirées du menu macOS ;
-- [x] export diagnostic multi-backend sans titres ni artistes par défaut.
+- [x] `VisiblePlaylistImporter` est une implémentation réelle dans `MixPilotSystem` ;
+- [x] lignes génériques `DJLibraryRow` ;
+- [x] alias Serato limité à la compatibilité source ;
+- [x] ancien fichier Runtime supprimé ;
+- [x] dépendance circulaire Runtime/System supprimée ;
+- [x] tests génériques ajoutés.
 
 ### iPhone Remote
 
 - [x] contrat partagé Remote v2 ;
-- [x] négociation compatible v1/v2 sur le Mac et l’iPhone ;
-- [x] compatibilité de lecture des snapshots v1 ;
-- [x] backend et version transmis ;
-- [x] backend du coordinateur Live utilisé comme source de vérité ;
-- [x] deck, état audio et capacités dégradées transmis ;
-- [x] reprise distante bloquée si les capacités courantes, l’état réel ou la surveillance audio ne sont plus prêts ;
-- [x] interface humanisée ;
-- [x] commandes de haut niveau uniquement ;
-- [x] Mac maintenu comme source de vérité ;
-- [x] permissions Réseau local et service Bonjour déclarés dans les bundles Mac et iPhone ;
-- [x] cible XCTest de l’application iPhone reliée au host et au protocole partagé ;
-- [x] workflow prévu pour construire l’app, choisir un simulateur disponible et exécuter les tests applicatifs.
+- [x] négociation v1/v2 symétrique ;
+- [x] Mac source de vérité ;
+- [x] backend, version, deck, audio et capacités dégradées transmis ;
+- [x] reprise distante refusée sans état fiable ;
+- [x] reconnexion après redémarrage du bridge ;
+- [x] mode démo conservant le contexte backend ;
+- [x] cible XCTest iOS et workflow simulateur préparés.
 
-### Services en ligne et Supabase
+### Correctifs distants et services en ligne
 
-- [x] backend réel enregistré ;
-- [x] version, contrôleur, mapping et capacités enregistrables ;
-- [x] diagnostics en ligne désactivés par défaut ;
-- [x] rétention limitée des événements ;
-- [x] vues `security_invoker` ;
-- [x] RLS et clé publiable conservées ;
-- [x] correctifs distants limités au format réellement implémenté ;
-- [x] commandes cloud limitées aux mises à jour, configuration et diagnostics ;
-- [x] probe Supabase externe rendu non bloquant pour le build local ;
-- [x] aucune dépendance des services en ligne dans le Live ;
-- [x] Security Advisor exécuté : aucune alerte ;
-- [x] Performance Advisor exécuté : uniquement des avis `unused_index` sur des tables vides ;
-- [x] index conservés et décision documentée dans `Documentation/SUPABASE_ADVISOR_REPORT.md`.
+- [x] requêtes filtrées sur le backend réellement actif ;
+- [x] versions logicielles génériques ;
+- [x] compatibilité descendante avec les champs rekordbox historiques ;
+- [x] profil signé sans fichier inventé pour djay et Serato ;
+- [x] profil et CSV recompilé/vérifié pour rekordbox ;
+- [x] provenance GitHub acceptant un artefact optionnel ;
+- [x] persistance et rollback adaptés au backend ;
+- [x] outil de publication avec `--backend djay|rekordbox|serato` ;
+- [x] migration Supabase additive et synchronisation des anciennes colonnes ;
+- [x] RLS et services en ligne facultatifs conservés ;
+- [x] aucune dépendance cloud dans l’exécution Live.
 
-### Package, CI et distribution
+### Tests et garde-fous ajoutés
 
-- [x] test targets Runtime, System, Remote Bridge et Remote partagé déclarés ;
-- [x] dépendance Supabase exclue du graphe Linux ;
-- [x] SHA-256 rendu portable via CryptoKit / Swift Crypto ;
-- [x] contrôle automatisé du manifest SwiftPM ;
-- [x] runners définis via `ubuntu-latest` et `macos-latest` ;
-- [x] bundle Mac préparé avec permissions audio, observation, réseau local et Bonjour ;
-- [x] script DMG et vérification SHA-256 conservés comme étapes bloquantes.
+- [x] import visible générique ;
+- [x] mappings distants djay, rekordbox et Serato ;
+- [x] provenance sans CSV ;
+- [x] persistance et rollback profil/CSV ;
+- [x] reprise manuelle pendant une transition ;
+- [x] perte répétée de lecture d’état ;
+- [x] commandes observées non considérées comme validées ;
+- [x] cadence des commandes continues ;
+- [x] ordonnanceur de transition ;
+- [x] watchdog audio ;
+- [x] file audio de secours ;
+- [x] scripts d’architecture et de sécurité runtime.
 
-### Documentation
+## Validation actuelle
 
-- [x] README racine réécrit ;
-- [x] README iPhone réécrit ;
-- [x] architecture multi-backend ;
-- [x] matrice des capacités ;
-- [x] guides djay, rekordbox et Serato ;
-- [x] protocole de validation commun ;
-- [x] terminologie produit ;
-- [x] parcours utilisateur ;
-- [x] positionnement produit ;
-- [x] audit de consolidation ;
-- [x] contrôle documentaire CI ;
-- [x] rapport final de refonte avec README, écrans, tests, limites et risques ;
-- [x] rapport des advisors Supabase et décision de conservation des index neufs.
+### Validations réellement exécutées
 
-## CI et vérification actuelle
+- manifest SwiftPM partagé vérifié sous Swift 6.2.1 ;
+- package Remote partagé : tests réussis ;
+- modèles Remote iPhone : tests réussis ;
+- tracker de fiabilité Live : tests réussis ;
+- file de commandes stricte : tests isolés réussis ;
+- garde de vérification backend : compilation Swift 6 réussie ;
+- ordonnanceur de transition : compilation Swift 6 et test de charge isolé réussis ;
+- watchdog audio : quatre scénarios isolés réussis ;
+- garde-fous Bash vérifiés syntaxiquement lors de leur ajout.
 
-Les workflows macOS, iPhone et Linux du dépôt échouent actuellement avant leur première étape, sans checkout, log de compilation ni artefact. Le remplacement des images fixes par les alias officiels `ubuntu-latest` et `macos-latest` n’a pas modifié ce comportement. Ce blocage de provisionnement GitHub Actions ne permet pas de conclure sur le code.
+Ces validations locales ciblées ne remplacent pas `swift test` complet sur macOS, le build iPhone, le DMG ou les essais matériels.
 
-Par conséquent, la refonte ne revendique pas encore :
+### Blocage GitHub Actions
 
-- tests Swift complets verts sur la branche canonique ;
-- build macOS réussi ;
-- build iPhone complet réussi ;
-- simulations 50/250 exécutées par la CI courante ;
-- DMG produit depuis le head actuel ;
-- checksum du head actuel ;
-- validation des migrations dans un environnement neuf.
+Les workflows Linux, macOS et iPhone ont échoué avant leur première étape avec `steps: none`, sans checkout ni log. Ils sont temporairement en déclenchement manuel pour arrêter les notifications répétées.
 
-Les résultats RC2 antérieurs restent des résultats historiques. Ils ne sont pas automatiquement attribués à la refonte multi-backend.
+Ne sont donc pas encore revendiqués :
 
-Validations réellement exécutées et consignées : manifest partagé sous Linux, quatre tests du protocole Remote partagé, trois tests du package de modèles Remote iPhone, Security Advisor Supabase sans alerte et Performance Advisor Supabase avec seulement des avis informatifs sur des tables vides. Elles ne valent pas validation macOS, iOS complète ou matérielle.
+- suite Swift complète verte sur le head final ;
+- build macOS Release ;
+- build iPhone complet ;
+- simulations 50/250 du head final ;
+- DMG et checksum du head final ;
+- migration Supabase appliquée sur un projet neuf.
 
-## Restant avant sortie du brouillon
+## Restant hors développement de la refonte
 
-### Code et migrations
+### Infrastructure et validation automatisée
 
-- [ ] résoudre les éventuelles erreurs Swift 6 lorsque les runners exécutent réellement les étapes ;
-- [ ] migrer l’implémentation historique de l’importeur visible afin que `VisiblePlaylistImporter` ne soit plus un alias ;
-- [x] renommer et généraliser le bridge Accessibilité ;
-- [x] retirer le dernier store de sélection legacy non optionnel ;
-- [ ] généraliser les modèles de correctifs distants au-delà des champs historiques rekordbox ;
-- [x] ajouter la réconciliation périodique de l’état backend pendant le Live ;
-- [x] terminer les tests de migration des anciens projets et préférences ;
-- [x] étendre le simulateur aux scénarios multi-backend critiques ;
-- [x] exécuter les advisors Supabase sécurité et performance ;
-- [x] analyser leurs résultats sans supprimer d’index sur une base vide ;
-- [ ] vérifier la migration Supabase sur un environnement de validation neuf.
-
-### Documentation restante
-
-- [ ] harmoniser les documents historiques qui ne sont plus des références courantes ;
-- [ ] mettre à jour ou archiver le protocole Remote v1 historique ;
-- [ ] mettre à jour les guides historiques de release et checkpoints après une CI réellement verte.
+- [ ] rétablir l’exécution GitHub Actions ;
+- [ ] exécuter Core, Runtime, System, Remote Bridge et iPhone ;
+- [ ] exécuter les simulations 50/250 ;
+- [ ] construire le Mac, l’iPhone, le DMG et le checksum ;
+- [ ] appliquer les migrations sur un environnement Supabase de validation neuf.
 
 ### Validation matérielle
 
@@ -174,21 +179,22 @@ Validations réellement exécutées et consignées : manifest partagé sous Linu
 - [ ] djay MIDI direct ;
 - [ ] rekordbox Mode Performance et CSV importé ;
 - [ ] Serato contrôleur virtuel et XML ;
-- [ ] chargement, lecture, volumes et Sync réels ;
-- [ ] état des decks ;
-- [ ] watchdog audio ;
+- [ ] chargement, lecture, volumes, EQ, filtre, crossfader et Sync ;
+- [ ] lecture fiable de l’état des decks ;
+- [ ] routage et watchdog audio ;
 - [ ] musique de secours ;
-- [ ] Remote iPhone physique ;
+- [ ] Remote iPhone physique et perte Wi-Fi ;
+- [ ] reprise manuelle ;
 - [ ] dix transitions ;
 - [ ] trente minutes ;
-- [ ] deux heures.
+- [ ] une heure ;
+- [ ] deux heures ;
+- [ ] nuit complète.
 
-## Prochaine priorité
+## Prochaine étape
 
-1. restaurer une exécution GitHub Actions réelle ;
-2. corriger la compilation à partir de logs concrets ;
-3. terminer l’importeur visible générique et les correctifs distants multi-backend ;
-4. vérifier toutes les migrations sur un environnement Supabase neuf ;
-5. exécuter la campagne matérielle ;
-6. mettre la PR #29 en état de revue ;
-7. ne fusionner qu’après validation explicite.
+1. fusionner la PR de clôture multi-backend dans `main` ;
+2. rétablir GitHub Actions sans réactiver le spam de notifications ;
+3. produire une candidate installable ;
+4. lancer la campagne matérielle commune ;
+5. ne publier des mappings stables qu’après validation réelle.

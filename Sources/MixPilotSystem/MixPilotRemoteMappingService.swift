@@ -56,7 +56,8 @@ public actor MixPilotRemoteMappingService {
 
     public func checkForMappingUpdate(
         currentAppBuild: Int,
-        rekordboxVersion: String?,
+        backend: DJBackendIdentifier,
+        softwareVersion: String?,
         controllerName: String
     ) async throws -> MixPilotRemoteMappingRelease? {
         let authSession = try await authenticatedSession()
@@ -66,7 +67,7 @@ public actor MixPilotRemoteMappingService {
             accessToken: authSession.accessToken,
             queryItems: [
                 URLQueryItem(name: "channel", value: "eq.stable"),
-                URLQueryItem(name: "software", value: "eq.rekordbox"),
+                URLQueryItem(name: "software", value: "eq.\(backend.rawValue)"),
                 URLQueryItem(name: "order", value: "mapping_version.desc"),
                 URLQueryItem(name: "limit", value: "25")
             ]
@@ -74,7 +75,8 @@ public actor MixPilotRemoteMappingService {
 
         for release in releases where release.isCompatible(
             currentAppBuild: currentAppBuild,
-            rekordboxVersion: rekordboxVersion,
+            backend: backend,
+            softwareVersion: softwareVersion,
             controllerName: controllerName,
             installationID: installationID
         ) {
@@ -87,9 +89,24 @@ public actor MixPilotRemoteMappingService {
         return nil
     }
 
-    public func activeCompatibilityOverride(
+    @available(*, deprecated, message: "Pass the active backend and software version explicitly")
+    public func checkForMappingUpdate(
         currentAppBuild: Int,
         rekordboxVersion: String?,
+        controllerName: String
+    ) async throws -> MixPilotRemoteMappingRelease? {
+        try await checkForMappingUpdate(
+            currentAppBuild: currentAppBuild,
+            backend: .rekordbox,
+            softwareVersion: rekordboxVersion,
+            controllerName: controllerName
+        )
+    }
+
+    public func activeCompatibilityOverride(
+        currentAppBuild: Int,
+        backend: DJBackendIdentifier,
+        softwareVersion: String?,
         controllerName: String
     ) async throws -> MixPilotCompatibilityOverride? {
         let authSession = try await authenticatedSession()
@@ -99,7 +116,7 @@ public actor MixPilotRemoteMappingService {
             accessToken: authSession.accessToken,
             queryItems: [
                 URLQueryItem(name: "channel", value: "eq.stable"),
-                URLQueryItem(name: "software", value: "eq.rekordbox"),
+                URLQueryItem(name: "software", value: "eq.\(backend.rawValue)"),
                 URLQueryItem(name: "order", value: "published_at.desc"),
                 URLQueryItem(name: "limit", value: "25")
             ]
@@ -107,11 +124,26 @@ public actor MixPilotRemoteMappingService {
         return overrides.first {
             $0.applies(
                 currentAppBuild: currentAppBuild,
-                rekordboxVersion: rekordboxVersion,
+                backend: backend,
+                softwareVersion: softwareVersion,
                 controllerName: controllerName,
                 installationID: installationID
             )
         }
+    }
+
+    @available(*, deprecated, message: "Pass the active backend and software version explicitly")
+    public func activeCompatibilityOverride(
+        currentAppBuild: Int,
+        rekordboxVersion: String?,
+        controllerName: String
+    ) async throws -> MixPilotCompatibilityOverride? {
+        try await activeCompatibilityOverride(
+            currentAppBuild: currentAppBuild,
+            backend: .rekordbox,
+            softwareVersion: rekordboxVersion,
+            controllerName: controllerName
+        )
     }
 
     public func recordInstallation(

@@ -9,7 +9,7 @@ public enum MixPilotRemoteMappingInstallerError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .persistenceVerificationFailed:
-            "Le preset distant écrit sur le disque n’a pas pu être vérifié."
+            "Le correctif distant écrit sur le disque n’a pas pu être vérifié."
         }
     }
 }
@@ -17,10 +17,18 @@ public enum MixPilotRemoteMappingInstallerError: Error, LocalizedError {
 public struct MixPilotRemoteMappingInstallResult: Sendable {
     public let releaseID: UUID
     public let mappingVersion: Int
+    public let backend: DJBackendIdentifier
     public let previousProfileSHA256: String
     public let appliedProfileSHA256: String
-    public let presetSHA256: String
-    public let presetURL: URL
+    public let artifactKind: MixPilotRemoteMappingArtifactKind
+    public let generatedArtifactSHA256: String?
+    public let generatedArtifactURL: URL?
+
+    @available(*, deprecated, renamed: "generatedArtifactSHA256")
+    public var presetSHA256: String? { generatedArtifactSHA256 }
+
+    @available(*, deprecated, renamed: "generatedArtifactURL")
+    public var presetURL: URL? { generatedArtifactURL }
 }
 
 private struct MixPilotRemoteMappingBackup: Codable, Sendable {
@@ -32,9 +40,11 @@ private struct MixPilotRemoteMappingBackup: Codable, Sendable {
 private struct MixPilotRemoteMappingLocalState: Codable, Sendable {
     let releaseID: UUID
     let mappingVersion: Int
+    let backend: DJBackendIdentifier?
     let profileSHA256: String
-    let presetSHA256: String
-    let presetURL: URL
+    let artifactKind: MixPilotRemoteMappingArtifactKind?
+    let generatedArtifactSHA256: String?
+    let generatedArtifactURL: URL?
     let stagedAt: Date
 }
 
@@ -62,13 +72,15 @@ public actor MixPilotRemoteMappingInstaller {
     public func stage(
         release: MixPilotRemoteMappingRelease,
         currentAppBuild: Int,
-        rekordboxVersion: String?,
+        backend: DJBackendIdentifier,
+        softwareVersion: String?,
         controllerName: String
     ) async throws -> MixPilotRemoteMappingInstallResult {
         let validated = try validator.validate(
             release: release,
             currentAppBuild: currentAppBuild,
-            rekordboxVersion: rekordboxVersion,
+            backend: backend,
+            softwareVersion: softwareVersion,
             controllerName: controllerName,
             installationID: installationID
         )
@@ -79,25 +91,18 @@ public actor MixPilotRemoteMappingInstaller {
         try saveBackup(profile: currentProfile, hash: previousHash)
         _ = try await mappingStore.save(release.profile)
 
-        let presetURL = rootDirectory
-            .appendingPathComponent("Active", isDirectory: true)
-            .appendingPathComponent("MixPilot Virtual Controller Remote v\(release.mappingVersion).midi.csv")
-        try FileManager.default.createDirectory(
-            at: presetURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+        let artifact = try persistArtifact(
+            validated: validated,
+            mappingVersion: release.mappingVersion
         )
-        let presetData = Data(validated.presetCSV.utf8)
-        try presetData.write(to: presetURL, options: .atomic)
-        guard try Data(contentsOf: presetURL) == presetData else {
-            throw MixPilotRemoteMappingInstallerError.persistenceVerificationFailed
-        }
-
         let state = MixPilotRemoteMappingLocalState(
             releaseID: release.id,
             mappingVersion: release.mappingVersion,
+            backend: backend,
             profileSHA256: validated.profileSHA256,
-            presetSHA256: validated.presetSHA256,
-            presetURL: presetURL,
+            artifactKind: validated.artifactKind,
+            generatedArtifactSHA256: artifact.sha256,
+            generatedArtifactURL: artifact.url,
             stagedAt: Date()
         )
         try encode(state, to: rootDirectory.appendingPathComponent("state.json"))
@@ -105,34 +110,58 @@ public actor MixPilotRemoteMappingInstaller {
         return MixPilotRemoteMappingInstallResult(
             releaseID: release.id,
             mappingVersion: release.mappingVersion,
+            backend: backend,
             previousProfileSHA256: previousHash,
             appliedProfileSHA256: validated.profileSHA256,
-            presetSHA256: validated.presetSHA256,
-            presetURL: presetURL
+            artifactKind: validated.artifactKind,
+            generatedArtifactSHA256: artifact.sha256,
+            generatedArtifactURL: artifact.url
         )
     }
 
-    public func rollback(controllerName: String) async throws -> MixPilotRemoteMappingInstallResult {
+    @available(*, deprecated, message: "Pass the active backend and software version explicitly")
+    public func stage(
+        release: MixPilotRemoteMappingRelease,
+        currentAppBuild: Int,
+        rekordboxVersion: String?,
+        controllerName: String
+    ) async throws -> MixPilotRemoteMappingInstallResult {
+        try await stage(
+            release: release,
+            currentAppBuild: currentAppBuild,
+            backend: .rekordbox,
+            softwareVersion: rekordboxVersion,
+            controllerName: controllerName
+        )
+    }
+
+    public func rollback(
+        backend: DJBackendIdentifier,
+        controllerName: String
+    ) async throws -> MixPilotRemoteMappingInstallResult {
         let backupURL = rootDirectory.appendingPathComponent("backup.json")
         let backup: MixPilotRemoteMappingBackup = try decode(from: backupURL)
         _ = try await mappingStore.save(backup.profile)
 
-        let preset = try RekordboxAdvancedMIDIPresetGenerator().generate(
-            profile: backup.profile,
-            controllerName: controllerName
-        )
-        let presetData = Data(preset.csv.utf8)
-        let presetHash = MixPilotRemoteMappingValidator.sha256(presetData)
-        let presetURL = rootDirectory
-            .appendingPathComponent("Rollback", isDirectory: true)
-            .appendingPathComponent("MixPilot Virtual Controller Rollback.midi.csv")
-        try FileManager.default.createDirectory(
-            at: presetURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try presetData.write(to: presetURL, options: .atomic)
-        guard try Data(contentsOf: presetURL) == presetData else {
-            throw MixPilotRemoteMappingInstallerError.persistenceVerificationFailed
+        let artifact: (kind: MixPilotRemoteMappingArtifactKind, sha256: String?, url: URL?)
+        switch backend {
+        case .rekordbox:
+            let preset = try RekordboxAdvancedMIDIPresetGenerator().generate(
+                profile: backup.profile,
+                controllerName: controllerName
+            )
+            let data = Data(preset.csv.utf8)
+            let url = rootDirectory
+                .appendingPathComponent("Rollback", isDirectory: true)
+                .appendingPathComponent("MixPilot Virtual Controller Rollback.midi.csv")
+            try writeAndVerify(data, to: url)
+            artifact = (
+                .rekordboxCSV,
+                MixPilotRemoteMappingValidator.sha256(data),
+                url
+            )
+        case .djay, .serato:
+            artifact = (.profile, nil, nil)
         }
 
         let currentState = try? loadState()
@@ -141,19 +170,66 @@ public actor MixPilotRemoteMappingInstaller {
         return MixPilotRemoteMappingInstallResult(
             releaseID: currentState?.releaseID ?? UUID(),
             mappingVersion: currentState?.mappingVersion ?? 0,
+            backend: backend,
             previousProfileSHA256: currentState?.profileSHA256 ?? "",
             appliedProfileSHA256: backup.profileSHA256,
-            presetSHA256: presetHash,
-            presetURL: presetURL
+            artifactKind: artifact.kind,
+            generatedArtifactSHA256: artifact.sha256,
+            generatedArtifactURL: artifact.url
         )
     }
 
-    public func currentState() throws -> (releaseID: UUID, mappingVersion: Int, profileSHA256: String)? {
+    @available(*, deprecated, message: "Pass the active backend explicitly")
+    public func rollback(controllerName: String) async throws -> MixPilotRemoteMappingInstallResult {
+        try await rollback(backend: .rekordbox, controllerName: controllerName)
+    }
+
+    public func currentState() throws -> (
+        releaseID: UUID,
+        mappingVersion: Int,
+        backend: DJBackendIdentifier?,
+        profileSHA256: String
+    )? {
         guard FileManager.default.fileExists(atPath: rootDirectory.appendingPathComponent("state.json").path) else {
             return nil
         }
         let state = try loadState()
-        return (state.releaseID, state.mappingVersion, state.profileSHA256)
+        return (state.releaseID, state.mappingVersion, state.backend, state.profileSHA256)
+    }
+
+    private func persistArtifact(
+        validated: MixPilotValidatedRemoteMapping,
+        mappingVersion: Int
+    ) throws -> (sha256: String?, url: URL?) {
+        guard let text = validated.generatedArtifactText else {
+            return (nil, nil)
+        }
+        let url: URL
+        switch validated.artifactKind {
+        case .profile:
+            return (nil, nil)
+        case .rekordboxCSV:
+            url = rootDirectory
+                .appendingPathComponent("Active", isDirectory: true)
+                .appendingPathComponent("MixPilot Virtual Controller Remote v\(mappingVersion).midi.csv")
+        }
+        let data = Data(text.utf8)
+        try writeAndVerify(data, to: url)
+        return (
+            validated.generatedArtifactSHA256 ?? MixPilotRemoteMappingValidator.sha256(data),
+            url
+        )
+    }
+
+    private func writeAndVerify(_ data: Data, to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: .atomic)
+        guard try Data(contentsOf: url) == data else {
+            throw MixPilotRemoteMappingInstallerError.persistenceVerificationFailed
+        }
     }
 
     private func loadState() throws -> MixPilotRemoteMappingLocalState {
