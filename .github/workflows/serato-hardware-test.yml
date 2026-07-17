@@ -1,0 +1,69 @@
+name: Serato Hardware Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: "Échouer si une permission ou intégration réelle manque"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: mixpilot-serato-hardware
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-serato:
+    runs-on: [self-hosted, macOS, mixpilot-serato]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain and session
+        run: |
+          xcodebuild -version
+          swift --version
+          echo "User: $(id -un)"
+          echo "Console user: $(stat -f '%Su' /dev/console)"
+          pgrep -ifl "Serato" || true
+
+      - name: Core regression suite
+        run: swift test --parallel
+
+      - name: Build hardware probe and application
+        run: |
+          swift build -c release --product MixPilotHardwareProbeCLI
+          swift build -c release --product MixPilotAutopilot
+
+      - name: Collect macOS device inventory
+        run: |
+          mkdir -p hardware-results
+          system_profiler SPMIDIDataType > hardware-results/midi.txt || true
+          system_profiler SPAudioDataType > hardware-results/audio.txt || true
+          system_profiler SPPowerDataType > hardware-results/power.txt || true
+          sw_vers > hardware-results/macos.txt
+
+      - name: Run real hardware probe
+        shell: bash
+        run: |
+          args=""
+          if [[ "${{ inputs.strict }}" == "true" ]]; then
+            args="--strict"
+          fi
+          set +e
+          swift run -c release MixPilotHardwareProbeCLI $args | tee hardware-results/probe.json
+          status=${PIPESTATUS[0]}
+          echo "$status" > hardware-results/probe-exit-code.txt
+          exit "$status"
+
+      - name: Upload hardware report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-Serato-Hardware-Report
+          path: hardware-results/
+          if-no-files-found: error

@@ -1,0 +1,45 @@
+name: Core, Remote and Documentation CI
+
+# Temporarily manual-only while GitHub Actions fails before checkout with
+# `steps: none`. Restore pull_request/push triggers after account-level runner
+# execution is confirmed. This prevents notification spam without deleting CI.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixpilot-core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift toolchain
+        run: swift --version
+
+      - name: Package manifest consistency
+        run: bash Scripts/check_package_manifest.sh
+
+      - name: Source architecture consistency
+        run: bash Scripts/check_source_architecture.sh
+
+      - name: Runtime safety consistency
+        run: bash Scripts/check_runtime_safety.sh
+
+      - name: Documentation consistency
+        run: bash Scripts/check_documentation_consistency.sh
+
+      - name: Core and shared Remote tests
+        run: swift test --parallel
+
+      - name: Simulation 50 tracks with failures
+        run: swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures
+
+      - name: Simulation 250 tracks with failures
+        run: swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures
