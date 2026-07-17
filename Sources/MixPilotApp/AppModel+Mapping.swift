@@ -17,7 +17,7 @@ extension AppModel {
             let store = MIDIMappingProfileStore()
             midiController = controller
             mappingStore = store
-            midiStatus = "Contrôleur virtuel actif"
+            midiStatus = AppLocalizedCopy.status("status.mapping.virtual_active")
 
             Task {
                 let profile = (try? await store.load()) ?? .developmentDefault
@@ -48,11 +48,14 @@ extension AppModel {
                     runtimeCoordinator = nil
                 }
 
-                midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
+                midiStatus = AppLocalizedCopy.statusFormat(
+                    "status.mapping.coverage",
+                    Int(profile.liveControlCoverageRatio * 100)
+                )
                 await refreshEnvironmentNow()
             }
         } catch {
-            midiStatus = "Le contrôleur MIDI n’a pas pu être créé. Ferme les autres outils MIDI, puis réessaie."
+            midiStatus = AppLocalizedCopy.status("status.mapping.create_failed")
             runtimeStatus = humanMessage(for: error)
             evaluatePreflight()
         }
@@ -63,7 +66,7 @@ extension AppModel {
         Task {
             await mappedController?.replaceProfile(mappingProfile)
             _ = try? await mappingStore?.save(mappingProfile)
-            midiStatus = "Profil par défaut chargé"
+            midiStatus = AppLocalizedCopy.status("status.mapping.default_loaded")
             await refreshEnvironmentNow()
         }
     }
@@ -73,10 +76,10 @@ extension AppModel {
             do {
                 _ = try await mappingStore?.save(mappingProfile)
                 await mappedController?.replaceProfile(mappingProfile)
-                midiStatus = "Mapping sauvegardé"
+                midiStatus = AppLocalizedCopy.status("status.mapping.saved")
                 await refreshEnvironmentNow()
             } catch {
-                midiStatus = "Le mapping n’a pas pu être sauvegardé. Vérifie l’espace disponible, puis réessaie."
+                midiStatus = AppLocalizedCopy.status("status.mapping.save_failed")
             }
         }
     }
@@ -86,7 +89,7 @@ extension AppModel {
             do {
                 guard let mappedController else {
                     throw DJBackendError.commandRejected(
-                        "Le contrôleur MIDI n’est pas encore disponible."
+                        AppLocalizedCopy.status("status.mapping.controller_unavailable")
                     )
                 }
                 if let mapping = mappingProfile[action], mapping.kind == .controlChange {
@@ -94,9 +97,9 @@ extension AppModel {
                 } else {
                     try await mappedController.trigger(action)
                 }
-                midiStatus = "Commande envoyée. Confirme maintenant la réaction du logiciel DJ."
+                midiStatus = AppLocalizedCopy.status("status.mapping.command_sent")
             } catch {
-                midiStatus = "La commande n’a pas pu être envoyée. Vérifie le mapping et la connexion MIDI."
+                midiStatus = AppLocalizedCopy.status("status.mapping.command_failed")
                 runtimeStatus = humanMessage(for: error)
             }
         }
@@ -104,7 +107,7 @@ extension AppModel {
 
     func recordMappingValidation(_ action: DJControlAction, succeeded: Bool) {
         guard let selectedBackend else {
-            midiStatus = "Choisis d’abord le logiciel DJ à tester."
+            midiStatus = AppLocalizedCopy.status("status.mapping.choose_backend")
             return
         }
 
@@ -122,16 +125,21 @@ extension AppModel {
             key: key,
             status: succeeded ? .automatedSuccess : .failed,
             evidence: succeeded ? .deviceConfirmed : .userRejected,
-            detail: succeeded
-                ? "Réaction confirmée par l’utilisateur sur le logiciel DJ actif."
-                : "La réaction attendue n’a pas été observée."
+            detail: AppLocalizedCopy.status(
+                succeeded
+                    ? "status.mapping.validation_confirmed_detail"
+                    : "status.mapping.validation_rejected_detail"
+            )
         )
 
         Task {
             try? await commandValidationStore.record(record)
             midiStatus = succeeded
-                ? "Commande confirmée avec \(selectedBackend.displayName)."
-                : "Commande marquée comme non fonctionnelle. MixPilot ne l’utilisera pas en Live."
+                ? AppLocalizedCopy.statusFormat(
+                    "status.mapping.command_confirmed",
+                    selectedBackend.displayName
+                )
+                : AppLocalizedCopy.status("status.mapping.command_rejected")
             await refreshEnvironmentNow()
         }
     }
