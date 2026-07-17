@@ -107,24 +107,37 @@ extension AppModel {
 
             isLiveRunning = false
             liveArmed = false
+            liveTask = nil
             await backendRegistry?.setLiveActive(false)
             sleepAssertion.release()
         }
     }
 
     func takeManualControl() {
-        liveTask?.cancel()
-        liveTask = nil
-        Task {
-            _ = await runtimeCoordinator?.requestManualControl()
-            await backendRegistry?.setLiveActive(false)
+        guard isLiveRunning, let coordinator = runtimeCoordinator else {
+            liveArmed = false
+            runtimeStatus = "Le contrôle manuel est déjà actif."
+            return
         }
-        sleepAssertion.release()
-        isLiveRunning = false
+
         liveArmed = false
-        snapshot.state = .manualControl
-        snapshot.statusMessage = "Contrôle manuel repris"
-        runtimeStatus = "Tu as repris la main"
+        runtimeStatus = "Reprise manuelle demandée…"
+        snapshot.statusMessage = "MixPilot termine le point sûr courant avant de rendre la main."
+
+        Task {
+            let decision = await coordinator.requestManualControl()
+            runtimeStatus = decision.message
+            guard decision.accepted else { return }
+
+            // Do not cancel the Live task here. The coordinator owns the
+            // transition boundary, opens the command circuit at the safe point,
+            // publishes `.manualControl`, then lets the task finish. Releasing
+            // the registry or sleep assertion earlier could allow a backend
+            // change while a final transition command is still in flight.
+            if snapshot.state == .transitioning {
+                snapshot.statusMessage = "La transition en cours se termine sans nouvelle automation."
+            }
+        }
     }
 
     func runSimulation() {
@@ -220,6 +233,7 @@ extension AppModel {
             runtimeStatus = message
         case .manualControl:
             snapshot.state = .manualControl
+            snapshot.statusMessage = "Contrôle manuel actif"
             runtimeStatus = "Tu as repris la main"
         case .completed:
             snapshot.state = .completed
