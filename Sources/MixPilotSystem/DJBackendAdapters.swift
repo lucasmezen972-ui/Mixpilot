@@ -275,10 +275,14 @@ private actor StandardDJBackendAdapter {
         // taking manual control must never change the current mix.
     }
 
-    private func observation() async -> SeratoWindowObservation {
-        let software = legacySoftware
+    private func observation() async -> DJWindowObservation {
+        let backend = identifier
         return await MainActor.run {
-            SeratoAccessibilityBridge().observe(software: software, maxDepth: 6, maximumStrings: 400)
+            DJAccessibilityBridge().observe(
+                backend: backend,
+                maxDepth: 6,
+                maximumStrings: 400
+            )
         }
     }
 
@@ -407,7 +411,10 @@ private actor StandardDJBackendAdapter {
         )
     }
 
-    private func observedPartial(_ reason: String, _ environment: DJBackendEnvironment) -> DJCapabilityStatus {
+    private func observedPartial(
+        _ reason: String,
+        _ environment: DJBackendEnvironment
+    ) -> DJCapabilityStatus {
         status(
             .partiallyAvailable, .observed, .requiresDeviceValidation, .accessibility,
             environment: environment,
@@ -418,7 +425,8 @@ private actor StandardDJBackendAdapter {
     private func validatedMapping(_ environment: DJBackendEnvironment) -> DJCapabilityStatus {
         status(
             .available, .validated, .automatedSuccess, .importedMapping,
-            environment: environment
+            environment: environment,
+            reason: "Le fichier de mapping est géré et vérifié localement ; les réactions des commandes restent validées séparément."
         )
     }
 
@@ -434,14 +442,6 @@ private actor StandardDJBackendAdapter {
             mappingVersion: "profile-\(profile.schemaVersion)",
             action: action
         )
-    }
-
-    private var legacySoftware: DJSoftware {
-        switch identifier {
-        case .djay: .djay
-        case .rekordbox: .rekordbox
-        case .serato: .serato
-        }
     }
 
     private var commandCapabilities: [DJCapability] {
