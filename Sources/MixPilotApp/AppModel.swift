@@ -18,33 +18,33 @@ final class AppModel: ObservableObject {
         totalTransitions: 0,
         progress: 0,
         incidents: [],
-        statusMessage: "Prêt à préparer un set"
+        statusMessage: AppLocalizedCopy.status("status.initial.ready_prepare")
     )
     @Published var report: SimulationReport?
     @Published var isRunningSimulation = false
-    @Published var midiStatus = "Non testé"
-    @Published var backendStatus = "Choisis ton logiciel DJ"
+    @Published var midiStatus = AppLocalizedCopy.status("status.initial.midi_not_tested")
+    @Published var backendStatus = AppLocalizedCopy.status("status.initial.choose_backend")
     @Published var selectedBackend: DJBackendIdentifier?
     @Published var backendDescriptors: [DJBackendDescriptor] = []
     @Published var backendValidationReport: DJBackendValidationReport?
-    @Published var accessibilityStatus = "Non autorisée"
+    @Published var accessibilityStatus = AppLocalizedCopy.status("status.initial.accessibility_denied")
     @Published var accessibilityGranted = false
-    @Published var audioStatus = "Non testée"
+    @Published var audioStatus = AppLocalizedCopy.status("status.initial.audio_not_tested")
     @Published var audioLevelDB = -160.0
     @Published var libraryRowCount = 0
     @Published var preparedProject: SetProject?
     @Published var playlistWarnings: [PlaylistImportWarning] = []
     @Published var mappingProfile = MIDIMappingProfile.developmentDefault
-    @Published var emergencyStatus = "Aucun fichier sélectionné"
+    @Published var emergencyStatus = AppLocalizedCopy.status("status.initial.emergency_none")
     @Published var emergencyDuration: TimeInterval = 0
-    @Published var runtimeStatus = "Inactif"
+    @Published var runtimeStatus = AppLocalizedCopy.status("status.initial.runtime_inactive")
     @Published var runtimeEvents: [String] = []
     @Published var isLiveRunning = false
     @Published var liveArmed = false
     @Published var connectivityStatus = ConnectivityStatus(
         isAvailable: false,
         isExpensive: false,
-        interfaceDescription: "Initialisation"
+        interfaceDescription: AppLocalizedCopy.status("status.initial.connectivity")
     )
     @Published var powerStatus = PowerStatus(
         connectedToPower: false,
