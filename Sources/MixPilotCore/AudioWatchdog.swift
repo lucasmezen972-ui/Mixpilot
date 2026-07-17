@@ -5,7 +5,6 @@ public struct AudioLevelSample: Codable, Hashable, Sendable {
     public var rmsDB: Double
     public var peakDB: Double
     public var sourceAvailable: Bool
-
     public init(timestamp: TimeInterval, rmsDB: Double, peakDB: Double, sourceAvailable: Bool = true) {
         self.timestamp = timestamp
         self.rmsDB = rmsDB
@@ -20,14 +19,7 @@ public struct AudioWatchdogConfiguration: Codable, Hashable, Sendable {
     public var criticalSilenceDuration: TimeInterval
     public var clippingThresholdDB: Double
     public var clippingSampleCount: Int
-
-    public init(
-        silenceThresholdDB: Double = -48,
-        warningSilenceDuration: TimeInterval = 0.8,
-        criticalSilenceDuration: TimeInterval = 2,
-        clippingThresholdDB: Double = -0.2,
-        clippingSampleCount: Int = 3
-    ) {
+    public init(silenceThresholdDB: Double = -48, warningSilenceDuration: TimeInterval = 0.8, criticalSilenceDuration: TimeInterval = 2, clippingThresholdDB: Double = -0.2, clippingSampleCount: Int = 3) {
         self.silenceThresholdDB = silenceThresholdDB
         self.warningSilenceDuration = max(0, warningSilenceDuration)
         self.criticalSilenceDuration = max(warningSilenceDuration, criticalSilenceDuration)
@@ -81,18 +73,15 @@ public actor AudioWatchdog {
             sourceWasAvailable = false
             return .sourceUnavailable
         }
-
         if !sourceWasAvailable {
             sourceWasAvailable = true
             healthyRecoveryPending = true
             return .sourceRestored
         }
-
         if sample.peakDB >= configuration.clippingThresholdDB {
             clippingSamples += 1
             if clippingSamples >= configuration.clippingSampleCount && !clippingReported {
                 clippingReported = true
-                healthyRecoveryPending = true
                 return .clipping(peakDB: sample.peakDB)
             }
         } else {
@@ -102,29 +91,24 @@ public actor AudioWatchdog {
                 healthyRecoveryPending = true
             }
         }
-
         if sample.rmsDB <= configuration.silenceThresholdDB {
             if silenceStartedAt == nil { silenceStartedAt = sample.timestamp }
             let duration = max(0, sample.timestamp - (silenceStartedAt ?? sample.timestamp))
             if duration >= configuration.criticalSilenceDuration && !criticalSilenceReported {
                 warningSilenceReported = true
                 criticalSilenceReported = true
-                healthyRecoveryPending = true
                 return .criticalSilence(duration: duration)
             }
             if duration >= configuration.warningSilenceDuration && !warningSilenceReported {
                 warningSilenceReported = true
-                healthyRecoveryPending = true
                 return .silenceWarning(duration: duration)
             }
             return nil
         }
-
         let recovered = silenceStartedAt != nil || warningSilenceReported || criticalSilenceReported
         silenceStartedAt = nil
         warningSilenceReported = false
         criticalSilenceReported = false
-
         if recovered || healthyRecoveryPending {
             healthyRecoveryPending = false
             return .healthy(rmsDB: sample.rmsDB)
