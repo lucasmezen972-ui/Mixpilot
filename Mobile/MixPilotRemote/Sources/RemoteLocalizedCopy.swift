@@ -1,7 +1,6 @@
 import Foundation
 import MixPilotHelp
 
-@MainActor
 enum RemoteLocalizedCopy {
     private static let catalog = MixPilotHelpCatalog.shared
 
