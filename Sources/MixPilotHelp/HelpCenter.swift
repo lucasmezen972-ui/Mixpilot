@@ -11,6 +11,26 @@ public enum MixPilotHelpLanguage: String, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum MixPilotLanguagePreference {
+    public static let defaultsKey = "mixpilot.preferred-language"
+
+    public static func current(
+        defaults: UserDefaults = .standard,
+        locale: Locale = .current
+    ) -> MixPilotHelpLanguage {
+        defaults.string(forKey: defaultsKey)
+            .flatMap(MixPilotHelpLanguage.init(rawValue:))
+            ?? .preferred(from: locale)
+    }
+
+    public static func save(
+        _ language: MixPilotHelpLanguage,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(language.rawValue, forKey: defaultsKey)
+    }
+}
+
 public enum MixPilotHelpCategory: String, CaseIterable, Codable, Sendable {
     case start
     case backend
@@ -109,12 +129,26 @@ public struct MixPilotHelpCatalog: Sendable {
         }
     }
 
-    public func localized(_ key: String, language: MixPilotHelpLanguage) -> String {
+    public func localized(
+        _ key: String,
+        language: MixPilotHelpLanguage,
+        table: String? = nil
+    ) -> String {
         guard let path = Bundle.module.path(forResource: language.rawValue, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
             return key
         }
-        return NSLocalizedString(key, bundle: bundle, comment: "")
+        return NSLocalizedString(key, tableName: table, bundle: bundle, comment: "")
+    }
+
+    public func localizedFormat(
+        _ key: String,
+        language: MixPilotHelpLanguage,
+        table: String? = nil,
+        _ arguments: CVarArg...
+    ) -> String {
+        let format = localized(key, language: language, table: table)
+        return String(format: format, locale: Locale(identifier: language.rawValue), arguments: arguments)
     }
 
     public static func categoryTitleKey(_ category: MixPilotHelpCategory) -> String {
