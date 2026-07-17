@@ -17,6 +17,7 @@ final class RecoveryCenterModel: ObservableObject {
     private let checkpointStore = LiveAutopilotCoordinator.makeDefaultCheckpointStore()
     private let projectStore: JSONProjectStore
     private let accessibilityBridge = DJAccessibilityBridge()
+    private let backendSelectionStore = MigratingDJBackendSelectionStore()
 
     init() {
         let root = FileManager.default.urls(
@@ -43,7 +44,9 @@ final class RecoveryCenterModel: ObservableObject {
                     projects.first { $0.id == checkpoint.projectID }
                 }
                 let recordedBackend = loadedCheckpoint?.backend ?? loadedProject?.backend
-                let currentObservation = recordedBackend.map {
+                let activeBackend = await backendSelectionStore.loadSelection()
+                let backendToObserve = activeBackend ?? recordedBackend
+                let currentObservation = backendToObserve.map {
                     accessibilityBridge.observe(
                         backend: $0,
                         maxDepth: 6,
@@ -65,7 +68,7 @@ final class RecoveryCenterModel: ObservableObject {
                     reconciliation = CheckpointReconciler().reconcile(
                         checkpoint: loadedCheckpoint,
                         project: loadedProject,
-                        activeBackend: recordedBackend,
+                        activeBackend: activeBackend,
                         backendRunning: currentObservation?.isRunning == true,
                         observedTrackTitle: observedTitle,
                         audioActive: false
