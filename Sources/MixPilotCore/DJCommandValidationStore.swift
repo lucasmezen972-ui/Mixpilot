@@ -30,6 +30,15 @@ public struct DJCommandValidationKey: Codable, Hashable, Sendable {
             action.rawValue
         ].joined(separator: "|")
     }
+
+    public var isFullyQualifiedForLive: Bool {
+        hasValue(softwareVersion) && hasValue(controllerName) && hasValue(mappingVersion)
+    }
+
+    private func hasValue(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 public enum DJCommandValidationEvidence: String, Codable, Hashable, Sendable {
@@ -61,12 +70,11 @@ public struct DJCommandValidationRecord: Codable, Hashable, Sendable {
     }
 
     public var permitsLiveControl: Bool {
-        guard status == .automatedSuccess else { return false }
+        guard status == .automatedSuccess, key.isFullyQualifiedForLive else { return false }
         if let evidence {
             return evidence == .deviceConfirmed
         }
 
-        // Compatibility with validations written before typed evidence existed.
         return detail == "DEVICE_CONFIRMED"
     }
 }
