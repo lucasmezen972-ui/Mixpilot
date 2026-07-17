@@ -13,7 +13,7 @@ public extension MIDIMappingProfile {
     var liveControlCoverageRatio: Double {
         let required = DJControlAction.automaticPresetCriticalActions
         guard !required.isEmpty else { return 1 }
-        let configured = required.filter { self[$0] != nil }.count
-        return Double(configured) / Double(required.count)
+        let compatible = required.filter { hasRuntimeCompatibleMapping(for: $0) }.count
+        return Double(compatible) / Double(required.count)
     }
 }
