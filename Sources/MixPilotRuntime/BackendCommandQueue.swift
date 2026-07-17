@@ -101,7 +101,7 @@ public actor BackendCommandQueue: DJCommandSending {
         }
 
         if let existing = completed[command.idempotencyKey] {
-            if !requireVerification || isVerified(existing) {
+            if !requireVerification || isStrictlyVerified(existing) {
                 return existing
             }
             throw BackendCommandQueueError.verificationRequired(
@@ -133,12 +133,13 @@ public actor BackendCommandQueue: DJCommandSending {
             }
 
             if let verification,
-               verification.status == .verified || verification.status == .observed {
+               verification.status == .verified,
+               verification.confidence == .validated {
                 status.consecutiveFailures = 0
                 status.lastVerifiedAt = Date()
                 let verified = DJCommandReceipt(
                     commandID: command.id,
-                    status: verification.status,
+                    status: .verified,
                     detail: verification.detail
                 )
                 clearUncertain(command.idempotencyKey)
@@ -146,12 +147,26 @@ public actor BackendCommandQueue: DJCommandSending {
                 return verified
             }
 
+            if let verification,
+               !requireVerification,
+               verification.status == .observed || verification.status == .verified {
+                status.consecutiveFailures = 0
+                let observed = DJCommandReceipt(
+                    commandID: command.id,
+                    status: .observed,
+                    detail: verification.detail
+                )
+                clearUncertain(command.idempotencyKey)
+                remember(observed, key: command.idempotencyKey)
+                return observed
+            }
+
             guard !requireVerification else {
                 remember(receipt, key: command.idempotencyKey)
                 markUncertain(command.idempotencyKey)
                 throw BackendCommandQueueError.verificationRequired(
                     command.action,
-                    "La commande \(humanName(command.action)) n’a pas pu être confirmée. MixPilot suspend cette étape au lieu de continuer à l’aveugle."
+                    "La commande \(humanName(command.action)) n’a pas pu être confirmée par une preuve fiable. MixPilot suspend cette étape au lieu de continuer à l’aveugle."
                 )
             }
 
@@ -242,8 +257,8 @@ public actor BackendCommandQueue: DJCommandSending {
         }
     }
 
-    private func isVerified(_ receipt: DJCommandReceipt) -> Bool {
-        receipt.status == .verified || receipt.status == .observed
+    private func isStrictlyVerified(_ receipt: DJCommandReceipt) -> Bool {
+        receipt.status == .verified
     }
 
     private func remember(_ receipt: DJCommandReceipt, key: String) {
