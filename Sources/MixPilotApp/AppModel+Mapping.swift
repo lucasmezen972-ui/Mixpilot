@@ -27,9 +27,15 @@ extension AppModel {
 
                 let registry = DJBackendRegistry(
                     backends: [
-                        DjayBackend(midi: mapped, validationStore: commandValidationStore),
-                        RekordboxBackend(midi: mapped, validationStore: commandValidationStore),
-                        SeratoBackend(midi: mapped, validationStore: commandValidationStore),
+                        StrictVerificationDJBackend(
+                            DjayBackend(midi: mapped, validationStore: commandValidationStore)
+                        ),
+                        StrictVerificationDJBackend(
+                            RekordboxBackend(midi: mapped, validationStore: commandValidationStore)
+                        ),
+                        StrictVerificationDJBackend(
+                            SeratoBackend(midi: mapped, validationStore: commandValidationStore)
+                        ),
                     ],
                     selectionStore: MigratingDJBackendSelectionStore()
                 )
