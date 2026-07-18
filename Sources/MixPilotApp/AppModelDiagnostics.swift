@@ -25,7 +25,7 @@ extension AppModel {
             backendIdentifier: selectedBackend,
             backendSoftwareVersion: descriptor?.environment.softwareVersion,
             backendRunning: descriptor?.environment.isRunning == true,
-            accessibilityGranted: accessibilityStatus == "Autorisée",
+            accessibilityGranted: accessibilityGranted,
             midiMappingCompletion: mappingProfile.completionRatio,
             audioMonitorRunning: audioMonitor.isRunning,
             internetAvailable: connectivityStatus.isAvailable,
