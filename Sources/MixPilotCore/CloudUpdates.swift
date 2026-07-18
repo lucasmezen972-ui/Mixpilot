@@ -53,6 +53,18 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
         if let releasePageURL, !Self.isAllowedDistributionURL(releasePageURL) {
             return false
         }
+        guard let payload = try? MixPilotPublicationCanonicalizer.appRelease(self) else {
+            return false
+        }
+        do {
+            try MixPilotPublisherVerification.verify(
+                signatureBase64: signature,
+                payload: payload,
+                publicKeyBase64: MixPilotPublisherPublicKeyResolver.configuredPublicKey()
+            )
+        } catch {
+            return false
+        }
         guard rolloutPercentage < 100 else { return true }
         return Self.rolloutBucket(for: installationID) < rolloutPercentage
     }
@@ -74,7 +86,7 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
         guard sha256.count == 64,
               sha256.allSatisfy({ $0.isHexDigit }),
               let signature,
-              signature.count >= 32 else {
+              Data(base64Encoded: signature)?.count == 64 else {
             return false
         }
         return true
