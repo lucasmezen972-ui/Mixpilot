@@ -91,15 +91,31 @@ struct MixPilotCloudSessionEndRow: Encodable {
     enum CodingKeys: String, CodingKey { case endedAt = "ended_at" }
 }
 
-struct MixPilotCloudCommandCompletionRow: Encodable {
-    let status: String
-    let completedAt: Date
-    let result: [String: String]
+struct MixPilotCloudCommandClaimRequest: Encodable {
+    let deviceID: UUID
+    let instanceID: String
+    let limit: Int
 
     enum CodingKeys: String, CodingKey {
-        case status
-        case completedAt = "completed_at"
-        case result
+        case deviceID = "p_device_id"
+        case instanceID = "p_instance_id"
+        case limit = "p_limit"
+    }
+}
+
+struct MixPilotCloudCommandCompletionRequest: Encodable {
+    let commandID: UUID
+    let instanceID: String
+    let succeeded: Bool
+    let result: [String: String]
+    let failureCode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case commandID = "p_command_id"
+        case instanceID = "p_instance_id"
+        case succeeded = "p_succeeded"
+        case result = "p_result"
+        case failureCode = "p_failure_code"
     }
 }
 
