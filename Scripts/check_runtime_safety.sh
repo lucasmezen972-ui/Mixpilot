@@ -76,12 +76,26 @@ require_pattern 'AudioWatchdogEvent\?' Sources/MixPilotCore/AudioWatchdog.swift 
   'watchdog notifications must be edge triggered'
 require_pattern 'audioMonitoringGeneration' Sources/MixPilotApp/AppModel.swift \
   'audio monitoring needs a session generation'
+require_pattern '@Published var accessibilityGranted = false' Sources/MixPilotApp/AppModel.swift \
+  'accessibility decisions need a typed boolean independent from localized copy'
+require_pattern '@Published var audioMonitoringStarting = false' Sources/MixPilotApp/AppModel.swift \
+  'audio startup serialization needs a typed state independent from localized copy'
 require_pattern 'audioMonitoringGeneration == generation' Sources/MixPilotApp/AppModel+Preparation.swift \
   'stale audio callbacks must be ignored'
+require_pattern 'guard !audioMonitor\.isRunning, !audioMonitoringStarting' Sources/MixPilotApp/AppModel+Preparation.swift \
+  'audio startup must be serialized by typed state'
 require_pattern 'sample\.timestamp - self\.lastAudioLevelUIUpdateAt >= 0\.1' Sources/MixPilotApp/AppModel+Preparation.swift \
   'audio level UI updates must be throttled'
 require_pattern 'takeManualControl\(\)' Sources/MixPilotApp/AppModel+Preparation.swift \
   'critical audio incidents must hand control back'
+reject_pattern 'accessibilityStatus[[:space:]]*==[[:space:]]*"Autorisée"' Sources/MixPilotApp/AppModel+Backend.swift \
+  'preflight decisions must never parse localized accessibility text'
+reject_pattern 'accessibilityStatus[[:space:]]*==[[:space:]]*"Autorisée"' Sources/MixPilotApp/AppModel+RemoteBridge.swift \
+  'Remote capability decisions must never parse localized accessibility text'
+reject_pattern 'accessibilityStatus[[:space:]]*==[[:space:]]*"Autorisée"' Sources/MixPilotApp/AppModelDiagnostics.swift \
+  'diagnostics must report typed accessibility state'
+reject_pattern 'audioStatus[[:space:]]*!=[[:space:]]*"Démarrage de la surveillance…"' Sources/MixPilotApp/AppModel+Preparation.swift \
+  'audio startup must never use displayed copy as a lock'
 require_pattern 'operationGeneration' Sources/MixPilotSystem/EmergencyAudioPlayer.swift \
   'stale emergency-player fades must be invalidated'
 require_pattern 'let baseIndex = currentIndex' Sources/MixPilotSystem/EmergencyAudioPlayer.swift \
