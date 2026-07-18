@@ -118,7 +118,7 @@ extension AppModel: MixPilotRemoteStateProvider {
             return nil
         }
         return descriptor.capabilities.applyingRuntimeAvailability(
-            accessibilityGranted: accessibilityStatus == "Autorisée"
+            accessibilityGranted: accessibilityGranted
         )
     }
 
