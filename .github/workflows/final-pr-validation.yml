@@ -129,21 +129,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare scripts
-        run: chmod +x Scripts/*.sh
+        run: |
+          chmod +x Scripts/*.sh
+          mkdir -p static-checks
       - name: Check package manifest
-        run: ./Scripts/check_package_manifest.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_package_manifest.sh 2>&1 | tee static-checks/package-manifest.log
       - name: Check source architecture
-        run: ./Scripts/check_source_architecture.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_source_architecture.sh 2>&1 | tee static-checks/source-architecture.log
       - name: Check runtime safety
-        run: ./Scripts/check_runtime_safety.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_runtime_safety.sh 2>&1 | tee static-checks/runtime-safety.log
       - name: Check documentation consistency
-        run: ./Scripts/check_documentation_consistency.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_documentation_consistency.sh 2>&1 | tee static-checks/documentation-consistency.log
       - name: Check help localizations
-        run: python3 Scripts/check_help_localizations.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 Scripts/check_help_localizations.py 2>&1 | tee static-checks/help-localizations.log
       - name: Check transport reliability
-        run: ./Scripts/check_transport_reliability.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_transport_reliability.sh 2>&1 | tee static-checks/transport-reliability.log
       - name: Check validation context
-        run: ./Scripts/check_validation_context.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_validation_context.sh 2>&1 | tee static-checks/validation-context.log
       - name: Complete Swift test suite
         shell: bash
         run: |
@@ -236,6 +259,7 @@ jobs:
         with:
           name: MixPilot-PR-final-validation
           path: |
+            static-checks
             swift-test.log
             simulation-50-report.json
             simulation-250-report.json
