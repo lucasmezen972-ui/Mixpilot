@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import MixPilotCore
 
-@Test("Matching observed track can resume a live checkpoint")
-func matchingCheckpointResumes() {
+@Test("Matching observed track still requires confirmation before resuming")
+func matchingCheckpointRequiresConfirmation() {
     var project = SetPreparationEngine().prepare(name: "Resume", tracks: SetSimulator().makeTracks(count: 5))
     project.lock()
     let track = project.tracks[2].track
@@ -27,12 +27,12 @@ func matchingCheckpointResumes() {
         seratoRunning: true,
         audioActive: true
     )
-    #expect(result.decision == .resumeAutomatically)
+    #expect(result.decision == .requireManualConfirmation)
     #expect(result.proposedTrackIndex == 2)
 }
 
-@Test("Missing Serato routes an interrupted checkpoint to emergency")
-func missingSeratoUsesEmergency() {
+@Test("Missing backend still requires confirmation before emergency playback")
+func missingSeratoRequiresConfirmation() {
     var project = SetPreparationEngine().prepare(name: "Emergency", tracks: SetSimulator().makeTracks(count: 3))
     project.lock()
     let checkpoint = LiveCheckpoint(
@@ -55,7 +55,7 @@ func missingSeratoUsesEmergency() {
         seratoRunning: false,
         audioActive: false
     )
-    #expect(result.decision == .switchToEmergency)
+    #expect(result.decision == .requireManualConfirmation)
 }
 
 @Test("Checkpoint store round-trips and clears")
