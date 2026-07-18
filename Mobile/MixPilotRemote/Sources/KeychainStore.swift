@@ -47,6 +47,15 @@ final class KeychainStore: @unchecked Sendable {
         return value
     }
 
+    func readOrCreateIdentifier(account: String) throws -> String {
+        if let existing = read(account: account), UUID(uuidString: existing) != nil {
+            return existing
+        }
+        let value = UUID().uuidString
+        try save(value, account: account)
+        return value
+    }
+
     func delete(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
