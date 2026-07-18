@@ -1,10 +1,4 @@
-#if canImport(CryptoKit)
-import CryptoKit
-#elseif canImport(Crypto)
 import Crypto
-#else
-#error("MixPilotCore requires CryptoKit or the Swift Crypto package")
-#endif
 import Foundation
 
 public enum MixPilotPublisherVerificationError: Error, LocalizedError, Equatable {
