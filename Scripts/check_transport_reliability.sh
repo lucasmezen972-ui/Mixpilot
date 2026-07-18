@@ -32,7 +32,7 @@ require 'le Live local reste actif' "$bridge" 'Mac listener exhaustion must pres
 require 'RemoteTransportRetryPolicy' "$iphone" 'iPhone reconnection is not bounded'
 require 'transportGeneration' "$iphone" 'stale iPhone transport callbacks are not invalidated'
 require 'lastSequence: lastSequence' "$iphone" 'iPhone reconnection does not resume snapshot sequencing'
-require 'La reconnexion automatique a échoué' "$iphone" 'iPhone retry exhaustion is not explicit'
+require 'remote\.error\.reconnect_failed' "$iphone" 'iPhone retry exhaustion is not explicit through localized copy'
 reject 'pendingCommand|queuedCommand|replayCommand' "$iphone" 'iPhone commands must never be queued for replay'
 
 echo 'Transport reliability consistency: OK'
