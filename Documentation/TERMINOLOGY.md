@@ -78,9 +78,7 @@ Exemple :
 - Feasibility Lab ;
 - Compatibility Lab ;
 - backend expérimental ;
-- Serato principal ;
-- deuxième backend ;
-- troisième backend ;
+- toute hiérarchie entre djay Pro, rekordbox et Serato DJ Pro ;
 - Supabase ;
 - CoreMIDI ;
 - AXUIElement ;
