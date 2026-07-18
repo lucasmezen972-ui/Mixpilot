@@ -70,6 +70,13 @@ struct MixPilotAutopilotApp: App {
                 }
                 .keyboardShortcut("3", modifiers: [.command])
 
+                Button("Lancer le Live automatiquement") {
+                    mainSurface = .workspace
+                    model.startLiveAutomatically()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(model.isLiveRunning)
+
                 Button("Avancé") {
                     model.selectedSection = .feasibility
                     mainSurface = .workspace
@@ -125,10 +132,10 @@ struct MixPilotAutopilotApp: App {
         }
         .defaultSize(width: 1_100, height: 760)
 
-        Window("Préparer un set rapidement", id: "quick-set") {
+        Window("Lancer un Live automatiquement", id: "quick-set") {
             QuickSetView(model: model)
         }
-        .defaultSize(width: 650, height: 380)
+        .defaultSize(width: 760, height: 570)
 
         Window("Bibliothèque Spotify", id: "spotify-library") {
             SpotifyLibraryView(appModel: model)
@@ -239,7 +246,7 @@ private struct MixPilotWindowCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
 
-            Button("Préparer un set rapidement") {
+            Button("Lancer un Live automatiquement") {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
