@@ -109,10 +109,14 @@ public enum RekordboxActionSafetyPolicy {
 
 @MainActor
 public final class RekordboxAccessibilityActionBridge {
-    public init() {}
+    private let backend: DJBackendIdentifier
+
+    public init(backend: DJBackendIdentifier = .rekordbox) {
+        self.backend = backend
+    }
 
     public func inspect(maxDepth: Int = 12, maximumElements: Int = 700) throws -> [RekordboxActionableElement] {
-        guard DJSoftwareSelectionStore.current == .rekordbox else {
+        guard backend == .rekordbox else {
             throw RekordboxAccessibilityActionError.wrongBackend
         }
         guard AXIsProcessTrusted() else {
@@ -141,7 +145,7 @@ public final class RekordboxAccessibilityActionBridge {
         action: String,
         allowPotentiallyDestructive: Bool = false
     ) throws {
-        guard DJSoftwareSelectionStore.current == .rekordbox else {
+        guard backend == .rekordbox else {
             throw RekordboxAccessibilityActionError.wrongBackend
         }
         guard AXIsProcessTrusted() else {
