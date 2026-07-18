@@ -25,6 +25,7 @@ BRANDING_DIR="$ROOT/Branding"
 VERSION="${MIXPILOT_VERSION:-0.1.0}"
 VERSION="${VERSION#v}"
 PUBLISHER="${MIXPILOT_PUBLISHER:-TRADIKOM BY LUCAS MEZEN}"
+SPOTIFY_CLIENT_ID="${MIXPILOT_SPOTIFY_CLIENT_ID:-}"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
@@ -108,6 +109,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.mixpilot.autopilot.spotify</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>mixpilot-spotify</string></array>
+    </dict>
+  </array>
+  <key>MixPilotSpotifyClientID</key><string>$SPOTIFY_CLIENT_ID</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
