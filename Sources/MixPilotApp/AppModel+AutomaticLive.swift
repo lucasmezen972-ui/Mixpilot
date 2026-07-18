@@ -8,7 +8,6 @@ import MixPilotSystem
 private enum AutomaticLiveStartError: Error, LocalizedError {
     case noDJSoftware
     case launchFailed(DJBackendIdentifier)
-    case noProject
     case mappingUnavailable
     case audioMonitoringUnavailable
     case alreadyStarting
@@ -19,8 +18,6 @@ private enum AutomaticLiveStartError: Error, LocalizedError {
             "Aucun logiciel DJ compatible n’est installé. Installe Rekordbox, Serato DJ Pro ou djay Pro."
         case .launchFailed(let backend):
             "MixPilot n’a pas réussi à lancer \(backend.displayName). Ouvre-le une fois manuellement, puis relance le mode automatique."
-        case .noProject:
-            "Aucune playlist exploitable n’est prête. Ouvre une playlist contenant au moins deux titres dans le logiciel DJ ou prépare-la depuis Spotify."
         case .mappingUnavailable:
             "Le contrôleur MIDI MixPilot ou son mapping n’est pas prêt. Relance MixPilot puis réessaie."
         case .audioMonitoringUnavailable:
@@ -33,11 +30,12 @@ private enum AutomaticLiveStartError: Error, LocalizedError {
 
 @MainActor
 extension AppModel {
-    /// One-click path for the normal user flow.
+    /// One-click Spotify-only path for the normal user flow.
     ///
-    /// MixPilot chooses or launches the DJ application, associates and locks the
-    /// prepared set, starts the audio watchdog, builds a supervised direct-MIDI
-    /// backend and starts the runtime without requiring the separate Arm step.
+    /// MixPilot chooses or launches the DJ application, rebuilds the set from
+    /// the last selected Spotify playlist, supplements it from Liked Songs only
+    /// when fewer than two playable tracks remain, locks the plan, starts the
+    /// audio watchdog and launches the runtime without a separate Arm step.
     func startLiveAutomatically() {
         guard !isLiveRunning, liveTask == nil else {
             runtimeStatus = isLiveRunning ? "Le Live automatique est déjà en cours." : "Le lancement automatique est déjà en cours."
@@ -45,7 +43,9 @@ extension AppModel {
             return
         }
 
-        runtimeStatus = "Préparation automatique du Live…"
+        runtimeEvents = []
+        runtimeStatus = "Synchronisation Spotify et préparation automatique du Live…"
+        snapshot.statusMessage = "Préparation Spotify 100 %"
         selectedSection = .live
 
         Task { @MainActor in
@@ -66,21 +66,21 @@ extension AppModel {
                     throw AutomaticLiveStartError.mappingUnavailable
                 }
 
-                if preparedProject == nil {
-                    capturePlaylist()
-                }
-                guard var project = preparedProject, project.tracks.count >= 2 else {
-                    throw AutomaticLiveStartError.noProject
-                }
-
-                if project.backend != backendIdentifier {
-                    project.selectBackend(backendIdentifier)
-                }
+                let spotify = SpotifyLibraryCoordinator()
+                var project = try await spotify.makeAutomaticSpotifyProject(
+                    backend: backendIdentifier,
+                    maximumTrackCount: 25
+                )
                 if !project.locked {
                     project.lock()
                 }
                 preparedProject = project
+                playlistWarnings = []
+                updateSnapshotForProject()
                 try await projectStore.save(project)
+                appendAutomaticLiveEvent(
+                    "Set Spotify prêt : \(project.name) • \(project.tracks.count) titres • aucun fichier local."
+                )
 
                 try await ensureAutomaticAudioMonitoring()
 
@@ -113,9 +113,8 @@ extension AppModel {
                 }
 
                 isLiveRunning = true
-                runtimeEvents = []
-                runtimeStatus = "Live automatique supervisé • \(backendIdentifier.displayName)"
-                snapshot.statusMessage = "Initialisation automatique"
+                runtimeStatus = "Live Spotify automatique supervisé • \(backendIdentifier.displayName)"
+                snapshot.statusMessage = "Initialisation du set Spotify"
                 await backendRegistry?.setLiveActive(true)
 
                 let automaticConfiguration = LiveRuntimeConfiguration(
@@ -155,7 +154,7 @@ extension AppModel {
                 isLiveRunning = false
                 runtimeStatus = humanMessage(for: error)
                 snapshot.statusMessage = runtimeStatus
-                selectedSection = preparedProject == nil ? .studio : .live
+                selectedSection = .studio
                 await backendRegistry?.setLiveActive(false)
                 sleepAssertion.release()
             }
