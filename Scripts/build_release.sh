@@ -14,10 +14,25 @@ BRANDING_DIR="$ROOT/Branding"
 VERSION="${MIXPILOT_VERSION:-0.1.0}"
 VERSION="${VERSION#v}"
 PUBLISHER="${MIXPILOT_PUBLISHER:-TRADIKOM BY LUCAS MEZEN}"
+PUBLISHER_PUBLIC_KEY="${MIXPILOT_PUBLISHER_PUBLIC_KEY_BASE64:-}"
+REQUIRE_PUBLISHER_KEY="${MIXPILOT_REQUIRE_PUBLISHER_KEY:-0}"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
 ICON_SOURCE="$BUILD_DIR/MixPilotAppIcon.jpg"
+
+if [[ "$REQUIRE_PUBLISHER_KEY" == "1" && -z "$PUBLISHER_PUBLIC_KEY" ]]; then
+  echo "A stable release requires MIXPILOT_PUBLISHER_PUBLIC_KEY_BASE64." >&2
+  exit 1
+fi
+
+if [[ -n "$PUBLISHER_PUBLIC_KEY" ]]; then
+  decoded_key_size="$(printf '%s' "$PUBLISHER_PUBLIC_KEY" | /usr/bin/base64 -D 2>/dev/null | wc -c | tr -d ' ')"
+  if [[ "$decoded_key_size" != "32" ]]; then
+    echo "MIXPILOT_PUBLISHER_PUBLIC_KEY_BASE64 must contain a 32-byte Ed25519 public key." >&2
+    exit 1
+  fi
+fi
 
 cd "$ROOT"
 swift test
@@ -60,6 +75,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>MixPilotPublisherPublicKey</key><string>$PUBLISHER_PUBLIC_KEY</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
