@@ -89,6 +89,7 @@ public actor MixPilotRemoteMappingService {
             controllerName: controllerName,
             installationID: installationID
         ) {
+            try MixPilotPublisherTrust.verify(release)
             try await verifyImmutableProvenance(
                 for: release,
                 accessToken: authSession.accessToken
