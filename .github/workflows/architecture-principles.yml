@@ -1,65 +1,90 @@
 name: Architecture Principles
 
 on:
-  pull_request:
-    branches:
-      - main
+  push:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: mixpilot-architecture-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  architecture-principles:
-    name: Product architecture and Remote safety
+  source-architecture:
+    name: Source architecture
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Prepare checks
-        run: |
-          chmod +x Scripts/*.sh
-          mkdir -p architecture-checks
-
       - name: Check source architecture
         shell: bash
         run: |
           set -euo pipefail
-          ./Scripts/check_source_architecture.sh 2>&1 | tee architecture-checks/source-architecture.log
+          chmod +x Scripts/check_source_architecture.sh
+          ./Scripts/check_source_architecture.sh
 
+  remote-mapping-architecture:
+    name: Remote mapping architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
       - name: Check Remote mapping architecture
         shell: bash
         run: |
           set -euo pipefail
-          ./Scripts/check_remote_mapping_architecture.sh 2>&1 | tee architecture-checks/remote-mapping-architecture.log
+          chmod +x Scripts/check_remote_mapping_architecture.sh
+          ./Scripts/check_remote_mapping_architecture.sh
 
+  runtime-safety:
+    name: Runtime safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
       - name: Check runtime safety
         shell: bash
         run: |
           set -euo pipefail
-          ./Scripts/check_runtime_safety.sh 2>&1 | tee architecture-checks/runtime-safety.log
+          chmod +x Scripts/check_runtime_safety.sh
+          ./Scripts/check_runtime_safety.sh
 
+  transport-reliability:
+    name: Remote transport reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
       - name: Check transport reliability and P0 containment
         shell: bash
         run: |
           set -euo pipefail
-          ./Scripts/check_transport_reliability.sh 2>&1 | tee architecture-checks/transport-reliability.log
+          chmod +x Scripts/check_transport_reliability.sh
+          ./Scripts/check_transport_reliability.sh
 
+  terminology-documentation:
+    name: Terminology and documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
       - name: Check terminology and documentation
         shell: bash
         run: |
           set -euo pipefail
-          ./Scripts/check_documentation_consistency.sh 2>&1 | tee architecture-checks/documentation-consistency.log
+          chmod +x Scripts/check_documentation_consistency.sh
+          ./Scripts/check_documentation_consistency.sh
 
-      - name: Upload architecture reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: architecture-principles
-          path: architecture-checks
-          if-no-files-found: error
+  runner-availability-macos:
+    name: Runner availability (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify hosted macOS runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          uname -a
+          xcodebuild -version
+          swift --version
+          df -h
