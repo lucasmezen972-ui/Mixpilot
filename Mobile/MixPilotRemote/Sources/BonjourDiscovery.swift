@@ -36,6 +36,10 @@ final class BonjourDiscovery: NSObject, ObservableObject {
             endpoints.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
     }
+
+    private func matches(_ service: NetService, domain: String, type: String, name: String) -> Bool {
+        service.domain == domain && service.type == type && service.name == name
+    }
 }
 
 extension BonjourDiscovery: NetServiceBrowserDelegate {
@@ -59,10 +63,21 @@ extension BonjourDiscovery: NetServiceBrowserDelegate {
         didFind service: NetService,
         moreComing: Bool
     ) {
+        // NetService predates Swift concurrency and is not Sendable. Capture only
+        // its immutable identity, then create the resolver on the main actor.
+        let domain = service.domain
+        let type = service.type
+        let name = service.name
+
         Task { @MainActor in
-            service.delegate = self
-            self.services.append(service)
-            service.resolve(withTimeout: 5)
+            guard !self.services.contains(where: {
+                self.matches($0, domain: domain, type: type, name: name)
+            }) else { return }
+
+            let resolver = NetService(domain: domain, type: type, name: name)
+            resolver.delegate = self
+            self.services.append(resolver)
+            resolver.resolve(withTimeout: 5)
         }
     }
 
@@ -71,9 +86,19 @@ extension BonjourDiscovery: NetServiceBrowserDelegate {
         didRemove service: NetService,
         moreComing: Bool
     ) {
+        let domain = service.domain
+        let type = service.type
+        let name = service.name
+
         Task { @MainActor in
-            self.services.removeAll { $0 === service }
-            self.endpoints.removeAll { $0.name == service.name }
+            let removed = self.services.filter {
+                self.matches($0, domain: domain, type: type, name: name)
+            }
+            removed.forEach { $0.stop() }
+            self.services.removeAll {
+                self.matches($0, domain: domain, type: type, name: name)
+            }
+            self.endpoints.removeAll { $0.name == name }
         }
     }
 }
