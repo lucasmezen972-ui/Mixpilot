@@ -27,14 +27,14 @@ struct RekordboxCompatibilityExport: Codable {
 @MainActor
 final class RekordboxCompatibilityLabModel: ObservableObject {
     @Published private(set) var environment: RekordboxEnvironmentStatus?
-    @Published private(set) var observation: SeratoWindowObservation?
-    @Published private(set) var rows: [SeratoLibraryRow] = []
+    @Published private(set) var observation: DJWindowObservation?
+    @Published private(set) var rows: [DJLibraryRow] = []
     @Published private(set) var actionableElements: [RekordboxActionableElement] = []
     @Published private(set) var status = "Aucune inspection effectuée"
     @Published private(set) var isInspecting = false
 
     private let environmentProbe = RekordboxEnvironmentProbe()
-    private let accessibilityBridge = SeratoAccessibilityBridge()
+    private let accessibilityBridge = DJAccessibilityBridge()
     private let actionBridge = RekordboxAccessibilityActionBridge()
 
     func inspect() {
@@ -53,7 +53,7 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
         }
 
         let observation = accessibilityBridge.observe(
-            software: .rekordbox,
+            backend: .rekordbox,
             maxDepth: 8,
             maximumStrings: 1_000
         )
@@ -66,7 +66,7 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
             return
         }
 
-        rows = accessibilityBridge.libraryRows(software: .rekordbox, maxRows: 1_500)
+        rows = accessibilityBridge.libraryRows(backend: .rekordbox, maxRows: 1_500)
         do {
             actionableElements = try actionBridge.inspect()
             status = "\(rows.count) ligne(s) et \(actionableElements.count) contrôle(s) actionnable(s) détectés."
@@ -82,7 +82,11 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
     }
 
     func activateRekordbox() {
-        _ = accessibilityBridge.activate(.rekordbox)
+        do {
+            try accessibilityBridge.activate(.rekordbox)
+        } catch {
+            status = error.localizedDescription
+        }
     }
 
     func perform(element: RekordboxActionableElement, action: String) {

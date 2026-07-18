@@ -5,8 +5,8 @@ public enum MixPilotRemoteTransportSecurityPolicy {
 
     /// The current WebSocket transport is intentionally unavailable unless an
     /// explicit development-only process environment override is supplied.
-    /// Distributed builds therefore remain fail-closed until TLS and device
-    /// identity pinning are implemented.
+    /// Release builds always fail closed, even if the environment variable is
+    /// injected, until TLS and device identity pinning are implemented.
     public static var allowsCurrentDevelopmentTransport: Bool {
         allowsCurrentDevelopmentTransport(environment: ProcessInfo.processInfo.environment)
     }
@@ -14,6 +14,10 @@ public enum MixPilotRemoteTransportSecurityPolicy {
     public static func allowsCurrentDevelopmentTransport(
         environment: [String: String]
     ) -> Bool {
+#if DEBUG
         environment[developmentOverrideKey] == "1"
+#else
+        false
+#endif
     }
 }

@@ -158,7 +158,13 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
     }
 
     public static var developmentDefault: MIDIMappingProfile {
-        var profile = MIDIMappingProfile(name: "MixPilot Development Default")
+        let stableDate = Date(timeIntervalSince1970: 1_700_000_000)
+        var profile = MIDIMappingProfile(
+            id: UUID(uuidString: "D13C83D0-4EA7-4A21-9839-9B531466D10F")!,
+            name: "MixPilot Development Default",
+            createdAt: stableDate,
+            updatedAt: stableDate
+        )
 
         let notes: [(DJControlAction, UInt8)] = [
             (.playA, 60), (.playB, 61), (.pauseA, 62), (.pauseB, 63),
@@ -189,6 +195,9 @@ public struct MIDIMappingProfile: Identifiable, Codable, Hashable, Sendable {
                 maximumRawValue: maximum
             )
         }
+        // Mapping assignments intentionally update the profile timestamp. Restore
+        // the built-in fixture's stable publication timestamp before hashing it.
+        profile.updatedAt = stableDate
         return profile
     }
 }

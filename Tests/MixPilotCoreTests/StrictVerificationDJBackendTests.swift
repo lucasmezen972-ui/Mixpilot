@@ -6,7 +6,15 @@ private struct VerificationFixtureBackend: DJBackend {
     let identifier: DJBackendIdentifier = .serato
     let displayName = "Fixture"
     let result: DJCommandVerification
-    let state: DJBackendState = DJBackendState(isReliable: false)
+    let state: DJBackendState
+
+    init(
+        result: DJCommandVerification,
+        state: DJBackendState = DJBackendState(isReliable: false)
+    ) {
+        self.result = result
+        self.state = state
+    }
 
     func detectEnvironment() async -> DJBackendEnvironment {
         DJBackendEnvironment(identifier: identifier, isInstalled: true, isRunning: true)

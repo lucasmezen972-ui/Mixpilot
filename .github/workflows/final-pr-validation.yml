@@ -129,18 +129,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare scripts
-        run: chmod +x Scripts/*.sh
-      - name: Static consistency checks
+        run: |
+          chmod +x Scripts/*.sh
+          mkdir -p static-checks
+      - name: Check package manifest
         shell: bash
         run: |
-          set -euo pipefail
-          ./Scripts/check_package_manifest.sh
-          ./Scripts/check_source_architecture.sh
-          ./Scripts/check_runtime_safety.sh
-          ./Scripts/check_documentation_consistency.sh
-          python3 Scripts/check_help_localizations.py
-          ./Scripts/check_transport_reliability.sh
-          ./Scripts/check_validation_context.sh
+          set -o pipefail
+          ./Scripts/check_package_manifest.sh 2>&1 | tee static-checks/package-manifest.log
+      - name: Check source architecture
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_source_architecture.sh 2>&1 | tee static-checks/source-architecture.log
+      - name: Check runtime safety
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_runtime_safety.sh 2>&1 | tee static-checks/runtime-safety.log
+      - name: Check documentation consistency
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_documentation_consistency.sh 2>&1 | tee static-checks/documentation-consistency.log
+      - name: Check help localizations
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 Scripts/check_help_localizations.py 2>&1 | tee static-checks/help-localizations.log
+      - name: Check transport reliability
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_transport_reliability.sh 2>&1 | tee static-checks/transport-reliability.log
+      - name: Check validation context
+        shell: bash
+        run: |
+          set -o pipefail
+          ./Scripts/check_validation_context.sh 2>&1 | tee static-checks/validation-context.log
       - name: Complete Swift test suite
         shell: bash
         run: |
@@ -233,6 +259,7 @@ jobs:
         with:
           name: MixPilot-PR-final-validation
           path: |
+            static-checks
             swift-test.log
             simulation-50-report.json
             simulation-250-report.json

@@ -20,7 +20,7 @@ func simulationBlocksStateBlindBackends() {
 
     #expect(results.count == 3)
     #expect(results.allSatisfy { $0.expectedDecision == .blockBeforeLive })
-    #expect(results.allSatisfy(\.passed))
+    #expect(results.allSatisfy { $0.passed })
 }
 
 @Test("Internet and iPhone loss remain local non-blocking scenarios")
@@ -63,7 +63,7 @@ func backendLossRequiresManualControl() {
     #expect(results.allSatisfy { $0.expectedDecision == .manualControl })
     #expect(results.allSatisfy { $0.plannedTransitions == 0 })
     #expect(results.allSatisfy { $0.blockedTransitions > 0 })
-    #expect(results.allSatisfy(\.passed))
+    #expect(results.allSatisfy { $0.passed })
 }
 
 @Test("Unconfirmed critical commands cannot enter a Live plan")
@@ -91,5 +91,5 @@ func softwareVersionChangeRequiresRevalidation() {
     #expect(results.count == 3)
     #expect(results.allSatisfy { $0.expectedDecision == .requireRevalidation })
     #expect(results.allSatisfy { $0.plannedTransitions == 0 })
-    #expect(results.allSatisfy(\.passed))
+    #expect(results.allSatisfy { $0.passed })
 }

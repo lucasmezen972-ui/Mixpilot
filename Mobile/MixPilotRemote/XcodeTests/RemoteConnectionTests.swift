@@ -37,7 +37,10 @@ final class RemoteConnectionTests: XCTestCase {
 
         XCTAssertTrue(connection.isDemo)
         XCTAssertEqual(connection.lastAcknowledgement?.accepted, true)
-        XCTAssertEqual(connection.lastAcknowledgement?.message, "Commande simulée")
+        XCTAssertEqual(
+            connection.lastAcknowledgement?.message,
+            RemoteLocalizedCopy.text("remote.demo.command_simulated")
+        )
         XCTAssertEqual(connection.snapshot?.mode, .paused)
     }
 }

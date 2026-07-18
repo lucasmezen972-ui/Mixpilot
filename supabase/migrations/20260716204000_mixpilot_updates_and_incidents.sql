@@ -114,7 +114,11 @@ order by channel, build desc;
 
 grant select on public.mixpilot_latest_releases to authenticated;
 
-create or replace view public.mixpilot_device_health
+-- The observability bootstrap created an earlier version of this view. PostgreSQL
+-- does not allow CREATE OR REPLACE VIEW to reorder or rename existing columns, so
+-- rebuild it explicitly when the schema gains app_build and update_channel.
+drop view if exists public.mixpilot_device_health;
+create view public.mixpilot_device_health
 with (security_invoker = true)
 as
 select
@@ -135,6 +139,8 @@ select
 from public.mixpilot_devices d
 left join public.mixpilot_events e on e.device_id = d.id
 group by d.owner_id, d.id;
+
+grant select on public.mixpilot_device_health to authenticated;
 
 create or replace function mixpilot_private.aggregate_event_incident()
 returns trigger

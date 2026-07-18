@@ -122,7 +122,9 @@ struct RemoteMappingMultiBackendTests {
 
     @Test func legacyRekordboxVersionKeysRemainDecodable() throws {
         let profileHash = try MixPilotRemoteMappingValidator.profileSHA256(.developmentDefault)
-        let profileData = try JSONEncoder().encode(MIDIMappingProfile.developmentDefault)
+        let profileEncoder = JSONEncoder()
+        profileEncoder.dateEncodingStrategy = .iso8601
+        let profileData = try profileEncoder.encode(MIDIMappingProfile.developmentDefault)
         let profileObject = try #require(
             JSONSerialization.jsonObject(with: profileData) as? [String: Any]
         )
@@ -171,7 +173,8 @@ struct RemoteMappingMultiBackendTests {
         controllerName: String = "MixPilot Virtual Controller",
         generatedArtifactSHA256: String?
     ) throws -> MixPilotRemoteMappingRelease {
-        MixPilotRemoteMappingRelease(
+        let profile = MIDIMappingProfile.developmentDefault
+        return MixPilotRemoteMappingRelease(
             id: UUID(),
             channel: "stable",
             backend: backend,
@@ -180,8 +183,8 @@ struct RemoteMappingMultiBackendTests {
             minimumAppBuild: 1,
             minimumSoftwareVersion: nil,
             maximumSoftwareVersion: nil,
-            profile: .developmentDefault,
-            profileSHA256: try MixPilotRemoteMappingValidator.profileSHA256(.developmentDefault),
+            profile: profile,
+            profileSHA256: try MixPilotRemoteMappingValidator.profileSHA256(profile),
             generatedPresetSHA256: generatedArtifactSHA256,
             publisherSignature: nil,
             applyMode: .notify,

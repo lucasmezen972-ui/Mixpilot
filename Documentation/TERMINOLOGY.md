@@ -9,15 +9,16 @@ Ce document est la référence éditoriale pour le code visible, l’application
 - langage direct et rassurant ;
 - expliquer le problème, son impact et l’action possible ;
 - ne jamais afficher une erreur technique brute dans le parcours normal ;
-- réserver les identifiants, JSON, chemins et statuts internes à l’espace Avancé et aux exports.
+- réserver les identifiants, JSON, chemins et statuts internes à l’espace Avancé et aux exports ;
+- ne jamais présenter une fonction non chiffrée, simulée ou non validée physiquement comme prête pour un Live réel.
 
 ## Noms officiels
 
-| Concept | Terme officiel |
+| Concept | Terme officiel visible |
 |---|---|
 | Produit | MixPilot |
-| Logiciel piloté | Backend DJ |
-| Backends officiels | djay Pro, rekordbox, Serato DJ Pro |
+| Logiciel piloté | Logiciel DJ |
+| Logiciels DJ officiels | djay Pro, rekordbox, Serato DJ Pro |
 | Exécution automatique | Autopilote |
 | Session en cours | Live |
 | Démarrer une session | Lancer le Live |
@@ -28,8 +29,22 @@ Ce document est la référence éditoriale pour le code visible, l’application
 | Télémétrie | Diagnostics en ligne |
 | Cloud utilisateur | Services en ligne |
 | Mapping téléchargé | Correctif de compatibilité |
+| Télécommande mobile | Télécommande iPhone |
 | Section technique | Avancé |
 | Logiciel non capable | Non disponible dans cette configuration |
+
+Les termes `backend DJ`, `Remote`, `WebSocket`, `ws`, `wss`, `TLS`, `listener` et `transport` sont des termes internes. Ils peuvent apparaître dans le code, Avancé, les diagnostics et la documentation développeur, mais pas comme libellés principaux du parcours utilisateur.
+
+## Principe multi-backend
+
+MixPilot ne possède aucun logiciel DJ « principal », « secondaire » ou « expérimental ».
+
+La documentation et l’interface doivent toujours :
+
+- citer djay Pro, rekordbox et Serato DJ Pro sans hiérarchie éditoriale ;
+- décrire les différences comme des capacités disponibles ou non disponibles ;
+- distinguer compatibilité théorique, simulation, test automatisé et validation physique ;
+- éviter qu’un nom de logiciel DJ devienne une abstraction d’architecture dans le code générique.
 
 ## Statuts visibles
 
@@ -42,6 +57,7 @@ Utiliser :
 - Partiellement disponible ;
 - Non disponible dans cette configuration ;
 - Bloqué pour ta sécurité ;
+- Télécommande indisponible pour sécurité ;
 - Logiciel non installé ;
 - Version non validée ;
 - Contrôle manuel uniquement ;
@@ -73,14 +89,32 @@ Exemple :
 
 > Le filtre du deck B n’a pas encore été testé. Certaines transitions utiliseront uniquement les volumes et les EQ. Lance le test du filtre maintenant ou continue avec les transitions compatibles.
 
+## Sécurité de la télécommande iPhone
+
+Tant que le canal iPhone–Mac n’utilise pas TLS avec authentification de l’identité du Mac et de l’iPhone :
+
+- la télécommande réseau reste désactivée dans les builds Release ;
+- un éventuel mode `ws` reste réservé à un build Debug explicitement autorisé sur un réseau isolé ;
+- le produit affiche « Télécommande indisponible pour sécurité » plutôt que « erreur réseau » ;
+- le mode démo reste disponible sans connexion au Mac ;
+- aucune documentation utilisateur ne doit employer « sécurisé », « prêt », « disponible » ou « production » pour ce canal ;
+- aucune réussite simulée ne doit être présentée comme une validation réelle.
+
+Le terme « connexion locale » décrit la portée réseau, pas le niveau de sécurité.
+
 ## Termes à retirer du parcours normal
 
 - Feasibility Lab ;
 - Compatibility Lab ;
 - backend expérimental ;
-- Serato principal ;
-- deuxième backend ;
-- troisième backend ;
+- backend DJ ;
+- Remote ;
+- WebSocket ;
+- `ws` ou `wss` ;
+- TLS ;
+- listener ;
+- transport réseau ;
+- toute hiérarchie entre djay Pro, rekordbox et Serato DJ Pro ;
 - Supabase ;
 - CoreMIDI ;
 - AXUIElement ;
@@ -94,7 +128,7 @@ Exemple :
 
 Ces termes peuvent rester dans Avancé, les diagnostics et la documentation développeur.
 
-## Commandes Remote visibles
+## Commandes de la télécommande visibles
 
 | Commande interne | Libellé utilisateur |
 |---|---|

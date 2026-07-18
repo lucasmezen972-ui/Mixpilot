@@ -9,15 +9,16 @@ func fiftyTrackSetCompletes() async throws {
     #expect(report.succeeded)
 }
 
-@Test("Injected incidents are recovered")
+@Test("Injected incidents recover or hand control back safely")
 func incidentsRecover() async throws {
     let report = try await SetSimulator().run(
         trackCount: 20,
         injectedIncidents: [5: .slowLoad, 20: .internetLoss, 40: .audioSilence]
     )
-    #expect(report.finalState == .completed)
+    #expect(report.finalState == .manualControl)
     #expect(report.incidentCount == 3)
     #expect(report.recoveredIncidentCount == 3)
+    #expect(report.safeManualHandoff)
     #expect(report.succeeded)
 }
 
