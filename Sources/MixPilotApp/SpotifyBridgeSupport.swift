@@ -75,6 +75,7 @@ struct SpotifyTokenStore: @unchecked Sendable {
 
 enum SpotifyBridgeError: Error, LocalizedError {
     case missingClientID
+    case notConnected
     case invalidAuthorizationURL
     case authorizationCancelled
     case invalidCallback
@@ -88,12 +89,15 @@ enum SpotifyBridgeError: Error, LocalizedError {
     case noRefreshToken
     case noPlaylistSelected
     case emptyPlaylist
+    case notEnoughPlayableTracks
     case backendNotSelected
 
     var errorDescription: String? {
         switch self {
         case .missingClientID:
             "Renseigne l’identifiant Client ID de l’application Spotify MixPilot. Aucun Client Secret n’est nécessaire."
+        case .notConnected:
+            "Spotify doit être connecté une première fois dans MixPilot. Ouvre la Bibliothèque Spotify avec ⇧⌘S, puis connecte ton compte."
         case .invalidAuthorizationURL:
             "L’URL de connexion Spotify n’a pas pu être créée."
         case .authorizationCancelled:
@@ -119,7 +123,9 @@ enum SpotifyBridgeError: Error, LocalizedError {
         case .noPlaylistSelected:
             "Choisis d’abord une playlist Spotify."
         case .emptyPlaylist:
-            "Cette playlist ne contient aucun morceau exploitable dans MixPilot."
+            "Cette playlist ne contient aucun morceau Spotify exploitable dans MixPilot."
+        case .notEnoughPlayableTracks:
+            "MixPilot n’a trouvé ni dans la playlist choisie ni dans les Titres likés au moins deux morceaux Spotify lisibles."
         case .backendNotSelected:
             "Choisis Rekordbox, Serato ou djay avant de vérifier ce que le logiciel affiche."
         }
