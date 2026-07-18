@@ -89,7 +89,9 @@ public struct SetSimulator: Sendable {
         }
 
         let manualHandoffKinds: Set<IncidentKind> = [
+            .audioSilence,
             .audioSourceLost,
+            .audioClipping,
             .midiUnavailable,
             .backendUnavailable,
             .checkpointMismatch,
