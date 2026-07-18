@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Toolchain
         run: |
           xcodebuild -version
@@ -45,7 +45,7 @@ jobs:
           exit $status
       - name: Upload unit-test log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: unit-test-log
           path: unit-test.log
@@ -69,9 +69,9 @@ jobs:
           import os
           from pathlib import Path
           Path("cloud-self-test-status.json").write_text(json.dumps({
-              "required_for_local_build": False,
-              "outcome": os.environ.get("CLOUD_PROBE_OUTCOME", "unknown"),
-              "reason": "Online services are optional and must not block local Live, tests, builds, or packaging.",
+            "required_for_local_build": False,
+            "outcome": os.environ.get("CLOUD_PROBE_OUTCOME", "unknown"),
+            "reason": "Online services are optional and must not block local Live, tests, builds, or packaging.",
           }, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
           PY
       - name: Generate remote mapping candidate
@@ -108,7 +108,7 @@ jobs:
           shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
       - name: Upload validation reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MixPilot-Validation-Reports
           path: |
@@ -121,7 +121,7 @@ jobs:
             unit-test.log
           if-no-files-found: warn
       - name: Upload installable DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MixPilot-Autopilot-development
           path: |
