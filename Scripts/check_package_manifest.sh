@@ -105,11 +105,14 @@ mac_products = {
     "MixPilotHardwareProbeCLI",
 }
 
+# These filenames are the current safety-critical runtime suite. Keep this list
+# aligned with check_runtime_safety.sh so renamed or removed tests cannot make the
+# package graph check fail for stale historical names.
 runtime_test_sources = {
-    "BackendCommandQueueTests.swift",
-    "BackendCommandUncertainOutcomeTests.swift",
-    "LiveBackendValidationTests.swift",
-    "ManualControlHandoffTests.swift",
+    "BackendCommandQueueSafetyTests.swift",
+    "BackendCommandCadenceTests.swift",
+    "TransitionTriggerVerificationTests.swift",
+    "TransitionFrameCoalescingTests.swift",
 }
 
 if host == "Darwin":
@@ -126,7 +129,7 @@ if host == "Darwin":
     missing_runtime_tests = runtime_test_sources - present_runtime_tests
     if missing_runtime_tests:
         raise SystemExit(
-            "MixPilotRuntimeTests is missing expected multi-backend/runtime sources: "
+            "MixPilotRuntimeTests is missing expected runtime safety sources: "
             f"{sorted(missing_runtime_tests)}"
         )
 
