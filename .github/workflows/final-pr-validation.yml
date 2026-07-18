@@ -47,7 +47,7 @@ jobs:
           docker info
 
   fresh-supabase:
-    name: Fresh Supabase migrations
+    name: Fresh Supabase migrations and RLS tests
     needs: runner-smoke-ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -73,6 +73,12 @@ jobs:
           npx supabase start 2>&1 | tee supabase-start.log
           npx supabase db reset 2>&1 | tee supabase-reset.log
           npx supabase migration list --local 2>&1 | tee supabase-migrations.log
+      - name: Run two-user RLS and atomic-command tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          npx supabase test db 2>&1 | tee supabase-tests.log
       - name: Database diagnostics after failure
         if: failure()
         shell: bash
@@ -89,6 +95,7 @@ jobs:
             supabase-start.log
             supabase-reset.log
             supabase-migrations.log
+            supabase-tests.log
             supabase-status.log
             docker-ps.log
             docker-disk.log
