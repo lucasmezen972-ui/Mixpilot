@@ -53,9 +53,8 @@ rm -rf "$APP_DIR" "$ICONSET_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$RESOURCES_DIR" "$ICONSET_DIR"
 cp "$SWIFTPM_BIN_DIR/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
 
-# SwiftPM compiles target resources into sibling .bundle directories. Its
-# generated Bundle.module accessor resolves those bundles from the root of the
-# enclosing application bundle when the executable is packaged manually.
+# SwiftPM emits resource bundles beside the release executable. Embed them in
+# Contents/Resources, the standard sealed location for a signed macOS app.
 shopt -s nullglob
 resource_bundles=("$SWIFTPM_BIN_DIR"/*.bundle)
 shopt -u nullglob
@@ -68,10 +67,10 @@ fi
 for resource_bundle in "${resource_bundles[@]}"; do
   bundle_name="$(basename "$resource_bundle")"
   echo "Embedding SwiftPM resource bundle: $bundle_name"
-  /usr/bin/ditto "$resource_bundle" "$APP_DIR/$bundle_name"
+  /usr/bin/ditto "$resource_bundle" "$RESOURCES_DIR/$bundle_name"
 done
 
-if [[ ! -d "$APP_DIR/MixPilot_MixPilotHelp.bundle" ]]; then
+if [[ ! -d "$RESOURCES_DIR/MixPilot_MixPilotHelp.bundle" ]]; then
   echo "MixPilotHelp resources are missing from the packaged application." >&2
   exit 1
 fi
