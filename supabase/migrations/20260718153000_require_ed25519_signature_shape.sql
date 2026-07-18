@@ -42,8 +42,11 @@ begin
            or new.source_manifest_sha256 is null then
             raise exception 'Published mappings require trusted immutable GitHub provenance';
         end if;
-        if new.generated_preset_sha256 is null then
-            raise exception 'Published mappings require the generated preset digest';
+        if new.software = 'rekordbox' and new.generated_preset_sha256 is null then
+            raise exception 'Published rekordbox mappings require the generated preset digest';
+        end if;
+        if new.software in ('djay', 'serato') and new.generated_preset_sha256 is not null then
+            raise exception 'Profile-only mappings must not invent a generated preset digest';
         end if;
         if coalesce(new.validation_summary->>'unit_tests', '') <> 'passed'
            or coalesce(new.validation_summary->>'release_build', '') <> 'passed'
