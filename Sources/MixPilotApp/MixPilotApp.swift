@@ -81,8 +81,8 @@ struct MixPilotAutopilotApp: App {
                 Button(remoteBridge.isRunning
                        ? "Désactiver la télécommande iPhone"
                        : insecureRemoteDevelopmentOverrideEnabled
-                           ? "Activer la télécommande iPhone (développement)"
-                           : "Télécommande iPhone indisponible (sécurité)") {
+                            ? "Activer la télécommande iPhone (développement)"
+                            : "Télécommande iPhone indisponible (sécurité)") {
                     if remoteBridge.isRunning {
                         remoteBridge.stop()
                     } else if insecureRemoteDevelopmentOverrideEnabled {
@@ -129,6 +129,11 @@ struct MixPilotAutopilotApp: App {
             QuickSetView(model: model)
         }
         .defaultSize(width: 650, height: 380)
+
+        Window("Bibliothèque Spotify", id: "spotify-library") {
+            SpotifyLibraryView(appModel: model)
+        }
+        .defaultSize(width: 1_360, height: 900)
 
         // Backend-specific tools remain registered for the contextual card in
         // the Advanced workspace. They are intentionally absent from the global
@@ -238,6 +243,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Ouvrir la bibliothèque Spotify") {
+                openWindow(id: "spotify-library")
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
         }
 
         CommandGroup(replacing: .help) {
