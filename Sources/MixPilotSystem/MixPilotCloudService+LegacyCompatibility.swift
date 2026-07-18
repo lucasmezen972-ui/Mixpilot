@@ -9,11 +9,10 @@ public extension MixPilotCloudService {
         rekordboxVersion: String?,
         liveMode: Bool
     ) async throws -> MixPilotCloudContext {
-        let backend = legacySelectedBackendContext(rekordboxVersion: rekordboxVersion)
         return try await connect(
             appVersion: appVersion,
             appBuild: appBuild,
-            backend: backend,
+            backend: legacyRekordboxContext(rekordboxVersion: rekordboxVersion),
             liveMode: liveMode,
             telemetryEnabled: MixPilotOnlineDiagnosticsPreferences().isEnabled
         )
@@ -29,23 +28,21 @@ public extension MixPilotCloudService {
         try await heartbeat(
             appVersion: appVersion,
             appBuild: appBuild,
-            backend: legacySelectedBackendContext(rekordboxVersion: rekordboxVersion),
+            backend: legacyRekordboxContext(rekordboxVersion: rekordboxVersion),
             liveMode: liveMode,
             telemetryEnabled: MixPilotOnlineDiagnosticsPreferences().isEnabled
         )
     }
 
-    private func legacySelectedBackendContext(
+    /// This overload predates multi-backend support and only exposes a
+    /// `rekordboxVersion` argument. Preserve source compatibility without reading
+    /// any hidden global selection state; new callers must pass an explicit context.
+    private func legacyRekordboxContext(
         rekordboxVersion: String?
     ) -> MixPilotCloudBackendContext {
-        let identifier: DJBackendIdentifier = switch DJSoftwareSelectionStore.current {
-        case .djay: .djay
-        case .rekordbox: .rekordbox
-        case .serato: .serato
-        }
-        return MixPilotCloudBackendContext(
-            identifier: identifier,
-            softwareVersion: identifier == .rekordbox ? rekordboxVersion : nil,
+        MixPilotCloudBackendContext(
+            identifier: .rekordbox,
+            softwareVersion: rekordboxVersion,
             controllerName: "MixPilot Virtual Controller"
         )
     }
