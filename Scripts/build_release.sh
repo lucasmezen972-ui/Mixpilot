@@ -7,6 +7,17 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The final-validation workflow already uploads static-checks on failure. Mirror
+# the complete release-build output there so packaging errors remain available
+# even when no DMG can be produced.
+if [[ -d "$ROOT/static-checks" && "${MIXPILOT_BUILD_LOG_CAPTURED:-0}" != "1" ]]; then
+  export MIXPILOT_BUILD_LOG_CAPTURED=1
+  exec > >(/usr/bin/tee "$ROOT/static-checks/build-release.log") 2>&1
+fi
+
+trap 'status=$?; echo "Release build failed at line ${LINENO}: ${BASH_COMMAND} (exit ${status})" >&2; exit "$status"' ERR
+
 APP_NAME="MixPilot Autopilot"
 EXECUTABLE="MixPilotAutopilot"
 BUILD_DIR="$ROOT/build"
