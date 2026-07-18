@@ -60,6 +60,14 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.mixpilot.autopilot.auth</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>mixpilot-autopilot</string></array>
+    </dict>
+  </array>
   <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
