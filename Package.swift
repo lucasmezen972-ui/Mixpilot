@@ -2,12 +2,12 @@
 import PackageDescription
 
 // Keep the cross-platform test graph independent from macOS-only cloud and
-// hardware dependencies. Swift Crypto provides the Crypto module on Linux;
-// Apple platforms continue to use CryptoKit from the SDK.
+// hardware dependencies. Swift Crypto provides the portable Crypto module on
+// every supported build platform.
 var dependencies: [Package.Dependency] = [
     .package(
         url: "https://github.com/apple/swift-crypto.git",
-        from: "3.0.0"
+        exact: "3.15.1"
     ),
 ]
 
