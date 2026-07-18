@@ -1,0 +1,65 @@
+name: Architecture Principles
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixpilot-architecture-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  architecture-principles:
+    name: Product architecture and Remote safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare checks
+        run: |
+          chmod +x Scripts/*.sh
+          mkdir -p architecture-checks
+
+      - name: Check source architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_source_architecture.sh 2>&1 | tee architecture-checks/source-architecture.log
+
+      - name: Check Remote mapping architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_remote_mapping_architecture.sh 2>&1 | tee architecture-checks/remote-mapping-architecture.log
+
+      - name: Check runtime safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_runtime_safety.sh 2>&1 | tee architecture-checks/runtime-safety.log
+
+      - name: Check transport reliability and P0 containment
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_transport_reliability.sh 2>&1 | tee architecture-checks/transport-reliability.log
+
+      - name: Check terminology and documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Scripts/check_documentation_consistency.sh 2>&1 | tee architecture-checks/documentation-consistency.log
+
+      - name: Upload architecture reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-principles
+          path: architecture-checks
+          if-no-files-found: error
