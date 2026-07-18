@@ -104,10 +104,6 @@ struct MixPilotAutopilotApp: App {
 
                 Divider()
 
-                Button("Compte MixPilot…") {
-                    NSApp.sendAction(#selector(MixPilotAccountWindowOpener.openAccountWindow), to: nil, from: nil)
-                }
-
                 Button("Vérifier les mises à jour") {
                     cloud.checkNow()
                 }
@@ -230,11 +226,6 @@ struct MixPilotAutopilotApp: App {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
-}
-
-@MainActor
-private final class MixPilotAccountWindowOpener: NSObject {
-    @objc func openAccountWindow() {}
 }
 
 private struct MixPilotWindowCommands: Commands {
