@@ -28,6 +28,9 @@ struct MixPilotAutopilotApp: App {
                     publishCloudBackendContext()
                     cloud.start(liveMode: model.isLiveRunning)
                 }
+                .onOpenURL { url in
+                    cloud.handleAuthenticationCallback(url)
+                }
                 .onChange(of: model.isLiveRunning) { _, isLiveRunning in
                     publishCloudBackendContext()
                     cloud.setLiveMode(isLiveRunning)
@@ -81,8 +84,8 @@ struct MixPilotAutopilotApp: App {
                 Button(remoteBridge.isRunning
                        ? "Désactiver la télécommande iPhone"
                        : insecureRemoteDevelopmentOverrideEnabled
-                           ? "Activer la télécommande iPhone (développement)"
-                           : "Télécommande iPhone indisponible (sécurité)") {
+                            ? "Activer la télécommande iPhone (développement)"
+                            : "Télécommande iPhone indisponible (sécurité)") {
                     if remoteBridge.isRunning {
                         remoteBridge.stop()
                     } else if insecureRemoteDevelopmentOverrideEnabled {
@@ -100,6 +103,10 @@ struct MixPilotAutopilotApp: App {
                 .disabled(!remoteBridge.isRunning || !insecureRemoteDevelopmentOverrideEnabled)
 
                 Divider()
+
+                Button("Compte MixPilot…") {
+                    NSApp.sendAction(#selector(MixPilotAccountWindowOpener.openAccountWindow), to: nil, from: nil)
+                }
 
                 Button("Vérifier les mises à jour") {
                     cloud.checkNow()
@@ -119,6 +126,11 @@ struct MixPilotAutopilotApp: App {
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
+
+        Window("Compte MixPilot", id: "cloud-account") {
+            MixPilotCloudAccountView(cloud: cloud)
+        }
+        .defaultSize(width: 560, height: 420)
 
         Window("Choisir le logiciel DJ", id: "dj-software") {
             DJSoftwareSettingsView(model: model)
@@ -220,6 +232,11 @@ struct MixPilotAutopilotApp: App {
     }
 }
 
+@MainActor
+private final class MixPilotAccountWindowOpener: NSObject {
+    @objc func openAccountWindow() {}
+}
+
 private struct MixPilotWindowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var cloud: MixPilotCloudCoordinator
@@ -238,6 +255,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Compte MixPilot") {
+                openWindow(id: "cloud-account")
+            }
+            .keyboardShortcut(",", modifiers: [.command, .option])
         }
 
         CommandGroup(replacing: .help) {
@@ -263,6 +285,9 @@ private struct MixPilotWindowCommands: Commands {
 
             Divider()
 
+            Button("Compte MixPilot") {
+                openWindow(id: "cloud-account")
+            }
             Button("Vérifier les services en ligne") {
                 cloud.checkNow()
             }
