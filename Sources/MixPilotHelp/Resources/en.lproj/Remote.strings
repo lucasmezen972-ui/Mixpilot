@@ -17,6 +17,7 @@
 "remote.error.protocol_incompatible" = "Incompatible protocol version. Update MixPilot on the Mac and iPhone.";
 "remote.error.pairing_incomplete" = "Incomplete pairing response.";
 "remote.error.unknown" = "Unknown remote error.";
+"remote.error.connection_generic" = "The local connection could not be established.";
 "remote.error.unknown_message" = "Unknown remote message: %@";
 "remote.demo.command_simulated" = "Simulated command";
 "remote.demo.status_name" = "Demo mode";
