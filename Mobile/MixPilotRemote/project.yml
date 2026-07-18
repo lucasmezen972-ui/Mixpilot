@@ -32,7 +32,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote
-        PRODUCT_NAME: MixPilot Remote
+        PRODUCT_NAME: MixPilotRemote
         PRODUCT_MODULE_NAME: MixPilotRemote
         DEFINES_MODULE: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
@@ -51,7 +51,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lucasmezen.mixpilot.remote.tests
-        PRODUCT_NAME: MixPilot Remote Tests
+        PRODUCT_NAME: MixPilotRemoteTests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGNING_ALLOWED: NO
 schemes:
