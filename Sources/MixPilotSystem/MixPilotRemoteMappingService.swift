@@ -25,7 +25,16 @@ public actor MixPilotRemoteMappingService {
         self.urlSession = urlSession
         self.supabase = SupabaseClient(
             supabaseURL: MixPilotCloudService.projectURL,
-            supabaseKey: MixPilotCloudService.publishableKey
+            supabaseKey: MixPilotCloudService.publishableKey,
+            options: SupabaseClientOptions(
+                auth: .init(
+                    redirectToURL: MixPilotCloudIdentityPolicy.callbackURL,
+                    storageKey: MixPilotCloudService.authenticationStorageKey,
+                    flowType: .pkce,
+                    emitLocalSessionAsInitialSession: true
+                ),
+                global: .init(session: urlSession)
+            )
         )
         self.installationID = Self.loadInstallationID()
 
@@ -228,11 +237,10 @@ public actor MixPilotRemoteMappingService {
     }
 
     private func authenticatedSession() async throws -> Session {
-        do {
-            return try await supabase.auth.session
-        } catch {
-            return try await supabase.auth.signInAnonymously()
+        guard supabase.auth.currentSession != nil else {
+            throw MixPilotCloudIdentityError.signedOut
         }
+        return try await supabase.auth.session
     }
 
     private func performRequest<Response: Decodable>(
