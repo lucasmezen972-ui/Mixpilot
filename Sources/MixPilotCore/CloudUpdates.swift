@@ -46,6 +46,18 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
     }
 
     public func isAvailable(currentBuild: Int, installationID: UUID) -> Bool {
+        isAvailable(
+            currentBuild: currentBuild,
+            installationID: installationID,
+            trustedPublicKeyBase64: MixPilotPublisherPublicKeyResolver.configuredPublicKey()
+        )
+    }
+
+    public func isAvailable(
+        currentBuild: Int,
+        installationID: UUID,
+        trustedPublicKeyBase64: String?
+    ) -> Bool {
         guard build > currentBuild else { return false }
         guard rolloutPercentage > 0 else { return false }
         guard hasRequiredPublisherMetadata else { return false }
@@ -60,7 +72,7 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
             try MixPilotPublisherVerification.verify(
                 signatureBase64: signature,
                 payload: payload,
-                publicKeyBase64: MixPilotPublisherPublicKeyResolver.configuredPublicKey()
+                publicKeyBase64: trustedPublicKeyBase64
             )
         } catch {
             return false
