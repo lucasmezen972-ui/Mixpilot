@@ -67,7 +67,7 @@ final class RehearsalWorkspaceModel: ObservableObject {
         Task {
             do {
                 let controller = try CoreMIDIController()
-                let sender = MappedSeratoController(controller: controller, profile: mappingProfile)
+                let sender = MappedMIDIController(controller: controller, profile: mappingProfile)
                 let executor = TransitionExecutor(sender: sender)
                 try capture.start(maximumDuration: max(30, expectedDuration(selectedVariant.plan) + 15))
                 let summary = try await executor.execute(
