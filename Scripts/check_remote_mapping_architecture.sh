@@ -21,8 +21,20 @@ if grep -n 'value: "eq\.rekordbox"' "$service"; then
   exit 1
 fi
 
-if grep -n 'backend\.identifier == \.rekordbox' "$coordinator"; then
-  echo 'Remote mapping architecture check failed: the cloud coordinator still excludes djay or Serato' >&2
+# Backend-specific formatting and artifact handling are legitimate. What is
+# forbidden is using rekordbox as an admission gate that returns early or makes
+# the cloud mapping path unavailable to djay Pro or Serato DJ Pro.
+if grep -nE \
+  'guard[[:space:]].*backend\.identifier[[:space:]]*==[[:space:]]*\.rekordbox|backend\.identifier[[:space:]]*!=[[:space:]]*\.rekordbox' \
+  "$coordinator"; then
+  echo 'Remote mapping architecture check failed: the cloud coordinator still gates the generic path on rekordbox' >&2
+  exit 1
+fi
+
+if grep -nE \
+  'guard[[:space:]].*backend[[:space:]]*==[[:space:]]*\.rekordbox|backend[[:space:]]*!=[[:space:]]*\.rekordbox' \
+  "$service"; then
+  echo 'Remote mapping architecture check failed: the service still gates the generic path on rekordbox' >&2
   exit 1
 fi
 
@@ -78,6 +90,16 @@ test -f Tests/MixPilotCoreTests/RemoteMappingMultiBackendTests.swift || {
 
 grep -q 'djayProfileDoesNotInventGeneratedArtifact' Tests/MixPilotCoreTests/RemoteMappingMultiBackendTests.swift || {
   echo 'Remote mapping architecture check failed: profile-only backend behavior is not tested' >&2
+  exit 1
+}
+
+grep -q 'seratoProfileDoesNotInventGeneratedArtifact' Tests/MixPilotCoreTests/RemoteMappingMultiBackendTests.swift || {
+  echo 'Remote mapping architecture check failed: Serato profile-only behavior is not tested' >&2
+  exit 1
+}
+
+grep -q 'rekordboxReleaseRecompilesAndVerifiesCSV' Tests/MixPilotCoreTests/RemoteMappingMultiBackendTests.swift || {
+  echo 'Remote mapping architecture check failed: rekordbox generated-artifact behavior is not tested' >&2
   exit 1
 }
 
