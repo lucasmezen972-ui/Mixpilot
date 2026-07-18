@@ -14,7 +14,11 @@ public enum MappedMIDIControllerError: Error, LocalizedError {
 }
 
 public actor MappedMIDIController: DJCommandSending {
-    private static let momentaryPulseDuration: Duration = .milliseconds(12)
+    // Some DJ applications sample virtual MIDI inputs on their UI/run-loop
+    // cadence. A 12 ms press could be emitted and released between two samples,
+    // especially while a streaming browser is refreshing. Keep a real button
+    // pulse without making the control feel sluggish.
+    private static let momentaryPulseDuration: Duration = .milliseconds(80)
 
     private let controller: CoreMIDIController
     private var profile: MIDIMappingProfile
