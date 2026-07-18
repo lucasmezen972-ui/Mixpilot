@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import MixPilotRemoteProtocol
 
 enum MixPilotRemoteMessageGateResult: Sendable {
     case accepted(MixPilotRemoteClientMessage)
@@ -25,7 +26,7 @@ struct MixPilotRemoteMessageGate: Sendable {
             return .rejected(.simple("error", message: "Message JSON invalide."))
         }
 
-        guard message.version == 1 else {
+        guard MixPilotRemoteProtocolVersion.supports(message.version) else {
             return .rejected(.simple("error", message: "Version du protocole non compatible."))
         }
 
