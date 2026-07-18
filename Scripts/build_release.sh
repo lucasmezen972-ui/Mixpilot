@@ -27,6 +27,27 @@ rm -rf "$APP_DIR" "$ICONSET_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$RESOURCES_DIR" "$ICONSET_DIR"
 cp ".build/release/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
 
+# SwiftPM compiles target resources into sibling .bundle directories. Its
+# generated Bundle.module accessor resolves those bundles from the root of the
+# enclosing application bundle when the executable is packaged manually.
+shopt -s nullglob
+resource_bundles=("$ROOT"/.build/release/*.bundle)
+shopt -u nullglob
+
+if (( ${#resource_bundles[@]} == 0 )); then
+  echo "No SwiftPM resource bundles were produced for the release application." >&2
+  exit 1
+fi
+
+for resource_bundle in "${resource_bundles[@]}"; do
+  /usr/bin/ditto "$resource_bundle" "$APP_DIR/$(basename "$resource_bundle")"
+done
+
+if [[ ! -d "$APP_DIR/MixPilot_MixPilotHelp.bundle" ]]; then
+  echo "MixPilotHelp resources are missing from the packaged application." >&2
+  exit 1
+fi
+
 if [[ ! -f "$BRANDING_DIR/MixPilotLogo.jpg.base64" || ! -f "$BRANDING_DIR/MixPilotAppIcon.jpg.base64" ]]; then
   echo "Branding assets are missing." >&2
   exit 1
