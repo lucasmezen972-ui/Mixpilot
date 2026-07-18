@@ -99,6 +99,10 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     @Published public private(set) var pairingCode = "------"
     @Published public private(set) var connectedClientCount = 0
 
+    private static let maximumConcurrentSessions = 4
+    private static let maximumMessageSize = 64 * 1_024
+    private static let authenticationTimeout: Duration = .seconds(15)
+
     private weak var provider: (any MixPilotRemoteStateProvider)?
     private var listener: NWListener?
     private var sessions: [UUID: MixPilotRemoteClientSession] = [:]
@@ -139,6 +143,18 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     public func start(provider: any MixPilotRemoteStateProvider) {
+        guard MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport else {
+            wantsRemote = false
+            isRunning = false
+            pairingCode = "------"
+            status = "Télécommande bloquée : le transport TLS authentifié n’est pas encore disponible"
+            listener?.cancel()
+            listener = nil
+            closeAllSessions()
+            self.provider = nil
+            return
+        }
+
         self.provider = provider
 
         if wantsRemote {
@@ -175,17 +191,30 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     public func rotatePairingCode() {
+        guard MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport else {
+            pairingCode = "------"
+            status = "Appairage bloqué : transport sécurisé requis"
+            return
+        }
         pairingCode = pairingAuthority.rotatePairingCode()
     }
 
     private func startListener() {
+        guard MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport else {
+            wantsRemote = false
+            isRunning = false
+            pairingCode = "------"
+            status = "Télécommande bloquée : transport sécurisé requis"
+            provider = nil
+            return
+        }
         guard wantsRemote, provider != nil, listener == nil else { return }
 
         do {
             let parameters = NWParameters.tcp
             let webSocketOptions = NWProtocolWebSocket.Options()
             webSocketOptions.autoReplyPing = true
-            webSocketOptions.maximumMessageSize = 64 * 1_024
+            webSocketOptions.maximumMessageSize = Self.maximumMessageSize
             parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
 
             let listener = try NWListener(using: parameters, on: .any)
@@ -204,7 +233,7 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             self.listener = listener
             listener.start(queue: networkQueue)
             isRunning = true
-            status = "Démarrage de la télécommande…"
+            status = "Démarrage de la télécommande de développement…"
         } catch {
             isRunning = false
             scheduleRestart(reason: error.localizedDescription)
@@ -221,9 +250,9 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
             restartPolicy.markReady()
             isRunning = true
             if let port = listener?.port {
-                status = "Télécommande active • port \(port.rawValue)"
+                status = "Télécommande de développement active • port \(port.rawValue)"
             } else {
-                status = "Télécommande active"
+                status = "Télécommande de développement active"
             }
 
         case .failed(let error):
@@ -245,6 +274,11 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     private func scheduleRestart(reason: String) {
+        guard MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport else {
+            wantsRemote = false
+            status = "Télécommande bloquée : transport sécurisé requis • le Live local reste actif"
+            return
+        }
         guard wantsRemote, provider != nil, restartTask == nil else { return }
         guard let delay = restartPolicy.nextDelay() else {
             status = "Télécommande indisponible après plusieurs tentatives • le Live local reste actif"
@@ -276,10 +310,14 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     private func accept(_ connection: NWConnection) {
-        guard wantsRemote, isRunning else {
+        guard MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport,
+              wantsRemote,
+              isRunning,
+              sessions.count < Self.maximumConcurrentSessions else {
             connection.cancel()
             return
         }
+
         let session = MixPilotRemoteClientSession(connection: connection)
         sessions[session.id] = session
         connectedClientCount = sessions.count
@@ -304,6 +342,19 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
                 }
             }
         )
+
+        let sessionID = session.id
+        Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.authenticationTimeout)
+            } catch {
+                return
+            }
+            guard let self,
+                  let pending = self.sessions[sessionID],
+                  !pending.authenticated else { return }
+            self.remove(pending)
+        }
     }
 
     private func remove(_ session: MixPilotRemoteClientSession) {
@@ -313,6 +364,12 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     }
 
     private func handle(_ data: Data, from session: MixPilotRemoteClientSession) async {
+        guard data.count <= Self.maximumMessageSize else {
+            send(.simple("error", message: "Message trop volumineux."), to: session)
+            remove(session)
+            return
+        }
+
         let message: MixPilotRemoteClientMessage
         do {
             message = try decoder.decode(MixPilotRemoteClientMessage.self, from: data)
@@ -480,6 +537,11 @@ public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
                 acknowledgement: message.acknowledgement
             )
             let data = try encoder.encode(compatibleMessage)
+            guard data.count <= Self.maximumMessageSize else {
+                status = "Message distant refusé : taille excessive"
+                remove(session)
+                return
+            }
             session.send(data) { [weak self, weak session] error in
                 guard error != nil else { return }
                 Task { @MainActor in
