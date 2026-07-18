@@ -12,7 +12,7 @@ private final class SecurityMemoryTokenStore: MixPilotRemoteTokenStoring, @unche
 
 @MainActor
 final class RemoteSecurityPolicyTests: XCTestCase {
-    func testCurrentInsecureTransportIsDisabledUnlessExplicitlyOverridden() {
+    func testCurrentInsecureTransportIsDisabledUnlessExplicitlyOverriddenInDebug() {
         XCTAssertFalse(
             MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(environment: [:])
         )
@@ -21,11 +21,19 @@ final class RemoteSecurityPolicyTests: XCTestCase {
                 environment: [MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey: "0"]
             )
         )
+#if DEBUG
         XCTAssertTrue(
             MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(
                 environment: [MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey: "1"]
             )
         )
+#else
+        XCTAssertFalse(
+            MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport(
+                environment: [MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey: "1"]
+            )
+        )
+#endif
     }
 
     func testCorrectIncorrectAndExpiredCodes() throws {
