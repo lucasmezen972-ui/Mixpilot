@@ -26,7 +26,7 @@ bridge=Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift
 iphone=Mobile/MixPilotRemote/Sources/RemoteConnection.swift
 
 require 'struct RemoteTransportRetryPolicy' "$policy" 'shared bounded transport policy is missing'
-require 'RemoteListenerRestartPolicy' "$bridge" 'Mac listener does not use the retry policy'
+require 'Remote(ListenerRestart|TransportRetry)Policy' "$bridge" 'Mac listener does not use the retry policy'
 require 'scheduleRestart\(reason:' "$bridge" 'Mac listener failures do not schedule recovery'
 require 'le Live local reste actif' "$bridge" 'Mac listener exhaustion must preserve the local Live'
 require 'RemoteTransportRetryPolicy' "$iphone" 'iPhone reconnection is not bounded'
