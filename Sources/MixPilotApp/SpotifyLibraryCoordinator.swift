@@ -12,6 +12,7 @@ import SwiftUI
 final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     static let redirectURI = "mixpilot-spotify://callback"
     private static let clientIDDefaultsKey = "MixPilotSpotifyClientID"
+    private static let selectedPlaylistDefaultsKey = "MixPilotSpotifySelectedPlaylistID"
     private static let scopes = [
         "playlist-read-private",
         "playlist-read-collaborative",
@@ -26,7 +27,20 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
     @Published var userDisplayName: String?
     @Published var playlists: [SpotifyLibraryPlaylist] = []
     @Published var tracks: [SpotifyLibraryTrack] = []
-    @Published var selectedPlaylistID: String?
+    @Published var selectedPlaylistID: String? {
+        didSet {
+            if let selectedPlaylistID, !selectedPlaylistID.isEmpty {
+                UserDefaults.standard.set(
+                    selectedPlaylistID,
+                    forKey: Self.selectedPlaylistDefaultsKey
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey: Self.selectedPlaylistDefaultsKey
+                )
+            }
+        }
+    }
     @Published var visibility: SpotifyDJVisibilityResult?
 
     let tokenStore = SpotifyTokenStore()
@@ -45,6 +59,9 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
             ?? bundledClientID.flatMap { $0.isEmpty ? nil : $0 }
             ?? savedClientID.flatMap { $0.isEmpty ? nil : $0 }
             ?? ""
+        selectedPlaylistID = UserDefaults.standard.string(
+            forKey: Self.selectedPlaylistDefaultsKey
+        )
         super.init()
         restoreSession()
     }
@@ -263,9 +280,12 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
             status = SpotifyBridgeError.noPlaylistSelected.localizedDescription
             return
         }
-        let usableTracks = tracks.filter { !$0.isLocal && $0.duration > 0 }
-        guard !usableTracks.isEmpty else {
-            status = SpotifyBridgeError.emptyPlaylist.localizedDescription
+        let usableTracks = SpotifyAutomaticSetSelector().select(
+            primary: tracks,
+            maximumCount: 25
+        ).tracks
+        guard usableTracks.count >= 2 else {
+            status = SpotifyBridgeError.notEnoughPlayableTracks.localizedDescription
             return
         }
         appModel.preparedProject = SetPreparationEngine().prepare(
@@ -277,7 +297,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
         appModel.updateSnapshotForProject()
         appModel.evaluatePreflight()
         appModel.selectedSection = .studio
-        status = "Playlist préparée dans MixPilot • charge ensuite le titre dans le logiciel DJ avant PLAY"
+        status = "Playlist Spotify préparée dans MixPilot • \(usableTracks.count) titres, aucun fichier local"
     }
 
     func activateSelectedBackend(appModel: AppModel) {
