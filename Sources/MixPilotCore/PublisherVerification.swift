@@ -30,6 +30,32 @@ public enum MixPilotPublisherVerificationError: Error, LocalizedError, Equatable
     }
 }
 
+public enum MixPilotPublisherPublicKeyResolver {
+    public static let bundleKey = "MixPilotPublisherPublicKey"
+    public static let developmentEnvironmentKey = "MIXPILOT_PUBLISHER_PUBLIC_KEY_BASE64"
+
+    public static func configuredPublicKey(
+        bundle: Bundle = .main,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        if let bundled = bundle.object(forInfoDictionaryKey: bundleKey) as? String,
+           isValidRawPublicKey(bundled) {
+            return bundled
+        }
+#if DEBUG
+        if let development = environment[developmentEnvironmentKey],
+           isValidRawPublicKey(development) {
+            return development
+        }
+#endif
+        return nil
+    }
+
+    private static func isValidRawPublicKey(_ value: String) -> Bool {
+        Data(base64Encoded: value)?.count == 32
+    }
+}
+
 public enum MixPilotPublisherVerification {
     public static func verify(
         signatureBase64: String?,
