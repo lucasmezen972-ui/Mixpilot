@@ -40,7 +40,10 @@ var targets: [Target] = [
     ),
     .executableTarget(
         name: "MixPilotMappingPublisherCLI",
-        dependencies: ["MixPilotCore"]
+        dependencies: [
+            "MixPilotCore",
+            .product(name: "Crypto", package: "swift-crypto"),
+        ]
     ),
     .testTarget(
         name: "MixPilotCoreTests",
