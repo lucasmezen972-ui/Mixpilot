@@ -11,6 +11,9 @@ final class RemoteConnection: ObservableObject {
     @Published var pairingRequired = false
     @Published private(set) var isDemo = false
 
+    private static let deviceIDAccount = "mixpilot.remote.device-id"
+    private static let maximumMessageSize = 64 * 1_024
+
     private var endpoint: RemoteEndpoint?
     private var socket: URLSessionWebSocketTask?
     private var receiverTask: Task<Void, Never>?
@@ -33,14 +36,15 @@ final class RemoteConnection: ObservableObject {
         return decoder
     }()
 
-    private var deviceID: String {
-        let key = "mixpilot.remote.device-id"
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
+    private var deviceID: String? {
+        do {
+            return try KeychainStore.shared.readOrCreateIdentifier(account: Self.deviceIDAccount)
+        } catch {
+            shouldReconnect = false
+            lastError = error.localizedDescription
+            status = .failed(RemoteLocalizedCopy.text("remote.error.connection_generic"))
+            return nil
         }
-        let value = UUID().uuidString
-        UserDefaults.standard.set(value, forKey: key)
-        return value
     }
 
     func connect(to endpoint: RemoteEndpoint) {
@@ -50,6 +54,17 @@ final class RemoteConnection: ObservableObject {
         lastError = nil
         lastAcknowledgement = nil
         pairingRequired = false
+
+        guard MixPilotRemoteProtocol.MixPilotRemoteTransportSecurityPolicy
+            .allowsInsecureDevelopmentTransport else {
+            self.endpoint = nil
+            shouldReconnect = false
+            lastError = "La connexion locale non chiffrée est désactivée. Une version TLS de MixPilot Remote est requise."
+            status = .failed("Télécommande indisponible pour des raisons de sécurité")
+            return
+        }
+
+        guard deviceID != nil else { return }
         self.endpoint = endpoint
         shouldReconnect = true
         reconnectPolicy.reset()
@@ -57,7 +72,7 @@ final class RemoteConnection: ObservableObject {
     }
 
     func pair(using pin: String) {
-        guard let endpoint else { return }
+        guard let endpoint, let deviceID else { return }
         let normalized = pin.filter { $0.isNumber }
         guard normalized.count == 6 else {
             lastError = RemoteLocalizedCopy.text("remote.error.code_six_digits")
@@ -69,7 +84,7 @@ final class RemoteConnection: ObservableObject {
             guard let self else { return }
             await self.send(
                 .pair(
-                    deviceID: self.deviceID,
+                    deviceID: deviceID,
                     deviceName: UIDevice.current.name,
                     pin: normalized
                 ),
@@ -120,6 +135,16 @@ final class RemoteConnection: ObservableObject {
 
     private func beginConnection() {
         guard shouldReconnect, let endpoint else { return }
+        guard MixPilotRemoteProtocol.MixPilotRemoteTransportSecurityPolicy
+            .allowsInsecureDevelopmentTransport else {
+            shouldReconnect = false
+            closeSocketTransport()
+            lastError = "La connexion locale non chiffrée a été bloquée."
+            status = .failed("Télécommande indisponible pour des raisons de sécurité")
+            return
+        }
+        guard let deviceID else { return }
+
         closeSocketTransport()
         transportGeneration &+= 1
         let generation = transportGeneration
@@ -169,13 +194,13 @@ final class RemoteConnection: ObservableObject {
         Task { [weak self] in
             guard let self, generation == self.transportGeneration else { return }
             await self.send(
-                .hello(deviceID: self.deviceID, deviceName: UIDevice.current.name),
+                .hello(deviceID: deviceID, deviceName: UIDevice.current.name),
                 generation: generation
             )
             guard generation == self.transportGeneration else { return }
             if let token = KeychainStore.shared.read(account: endpoint.id) {
                 await self.send(
-                    .authenticate(deviceID: self.deviceID, token: token),
+                    .authenticate(deviceID: deviceID, token: token),
                     generation: generation
                 )
             }
@@ -207,6 +232,12 @@ final class RemoteConnection: ObservableObject {
         guard generation == transportGeneration, let socket else { return }
         do {
             let data = try encoder.encode(message)
+            guard data.count <= Self.maximumMessageSize else {
+                shouldReconnect = false
+                lastError = RemoteLocalizedCopy.text("remote.error.unknown")
+                closeSocketTransport()
+                return
+            }
             try await socket.send(.data(data))
         } catch {
             handleTransportFailure(error.localizedDescription, generation: generation)
@@ -228,6 +259,14 @@ final class RemoteConnection: ObservableObject {
                     data = Data(value.utf8)
                 @unknown default:
                     continue
+                }
+
+                guard data.count <= Self.maximumMessageSize else {
+                    shouldReconnect = false
+                    lastError = "Le Mac a envoyé un message trop volumineux. La connexion a été fermée."
+                    closeSocketTransport()
+                    status = .failed("Message distant refusé")
+                    return
                 }
 
                 let serverMessage = try decoder.decode(RemoteServerMessage.self, from: data)
@@ -385,14 +424,14 @@ final class RemoteConnection: ObservableObject {
                 canPause: true,
                 canResume: false,
                 canSkipTransition: false,
-                canSafeFade: true,
+                canSafeFade: false,
                 canTakeManualControl: true
             )
         case .safeFade:
-            snapshot = copy(
-                current,
-                mode: .recovery,
-                alert: RemoteLocalizedCopy.text("remote.demo.safe_fade_alert")
+            lastAcknowledgement = RemoteCommandAcknowledgement(
+                commandID: UUID(),
+                accepted: false,
+                message: "La transition de secours distante reste désactivée."
             )
         case .takeManualControl:
             snapshot = copy(
@@ -422,7 +461,7 @@ final class RemoteConnection: ObservableObject {
             canPause: mode == .live,
             canResume: mode == .paused,
             canSkipTransition: mode == .live,
-            canSafeFade: mode != .manualControl,
+            canSafeFade: false,
             canTakeManualControl: mode != .manualControl
         )
     }
