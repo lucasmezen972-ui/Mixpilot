@@ -92,6 +92,10 @@ final class RemoteMessageGateTests: XCTestCase {
 @MainActor
 final class RemoteBridgeLifecycleTests: XCTestCase {
     func testListenerStartAndStopNeverInvokeBusinessCommands() async throws {
+#if DEBUG
+        setenv(MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey, "1", 1)
+        defer { unsetenv(MixPilotRemoteTransportSecurityPolicy.developmentOverrideKey) }
+
         let provider = LifecycleStateProvider()
         let bridge = MixPilotRemoteBridge()
         bridge.start(provider: provider)
@@ -108,6 +112,9 @@ final class RemoteBridgeLifecycleTests: XCTestCase {
         XCTAssertFalse(bridge.isRunning)
         XCTAssertEqual(bridge.connectedClientCount, 0)
         XCTAssertEqual(provider.commandCount, 0, "L’arrêt réseau ne doit jamais modifier le Live Mac")
+#else
+        throw XCTSkip("Le transport WebSocket de développement est volontairement indisponible en Release.")
+#endif
     }
 }
 #endif
