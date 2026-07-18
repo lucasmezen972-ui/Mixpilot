@@ -23,24 +23,41 @@ cd "$ROOT"
 swift test
 swift build -c release --product "$EXECUTABLE"
 
+# Ask SwiftPM for the real architecture-specific release directory instead of
+# assuming that the legacy `.build/release` convenience path exists.
+SWIFTPM_BIN_DIR="$(swift build -c release --show-bin-path | tail -n 1)"
+if [[ ! -d "$SWIFTPM_BIN_DIR" ]]; then
+  echo "SwiftPM release directory does not exist: $SWIFTPM_BIN_DIR" >&2
+  exit 1
+fi
+if [[ ! -x "$SWIFTPM_BIN_DIR/$EXECUTABLE" ]]; then
+  echo "Release executable is missing: $SWIFTPM_BIN_DIR/$EXECUTABLE" >&2
+  exit 1
+fi
+
+echo "SwiftPM release directory: $SWIFTPM_BIN_DIR"
+/usr/bin/find "$SWIFTPM_BIN_DIR" -maxdepth 1 -mindepth 1 -print | /usr/bin/sort
+
 rm -rf "$APP_DIR" "$ICONSET_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$RESOURCES_DIR" "$ICONSET_DIR"
-cp ".build/release/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
+cp "$SWIFTPM_BIN_DIR/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
 
 # SwiftPM compiles target resources into sibling .bundle directories. Its
 # generated Bundle.module accessor resolves those bundles from the root of the
 # enclosing application bundle when the executable is packaged manually.
 shopt -s nullglob
-resource_bundles=("$ROOT"/.build/release/*.bundle)
+resource_bundles=("$SWIFTPM_BIN_DIR"/*.bundle)
 shopt -u nullglob
 
 if (( ${#resource_bundles[@]} == 0 )); then
-  echo "No SwiftPM resource bundles were produced for the release application." >&2
+  echo "No SwiftPM resource bundles were produced in: $SWIFTPM_BIN_DIR" >&2
   exit 1
 fi
 
 for resource_bundle in "${resource_bundles[@]}"; do
-  /usr/bin/ditto "$resource_bundle" "$APP_DIR/$(basename "$resource_bundle")"
+  bundle_name="$(basename "$resource_bundle")"
+  echo "Embedding SwiftPM resource bundle: $bundle_name"
+  /usr/bin/ditto "$resource_bundle" "$APP_DIR/$bundle_name"
 done
 
 if [[ ! -d "$APP_DIR/MixPilot_MixPilotHelp.bundle" ]]; then
