@@ -20,14 +20,14 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
     ].joined(separator: " ")
 
     @Published var clientID: String
-    @Published private(set) var isConnected = false
-    @Published private(set) var isWorking = false
-    @Published private(set) var status = "Spotify n’est pas encore connecté"
-    @Published private(set) var userDisplayName: String?
-    @Published private(set) var playlists: [SpotifyLibraryPlaylist] = []
-    @Published private(set) var tracks: [SpotifyLibraryTrack] = []
+    @Published var isConnected = false
+    @Published var isWorking = false
+    @Published var status = "Spotify n’est pas encore connecté"
+    @Published var userDisplayName: String?
+    @Published var playlists: [SpotifyLibraryPlaylist] = []
+    @Published var tracks: [SpotifyLibraryTrack] = []
     @Published var selectedPlaylistID: String?
-    @Published private(set) var visibility: SpotifyDJVisibilityResult?
+    @Published var visibility: SpotifyDJVisibilityResult?
 
     let tokenStore = SpotifyTokenStore()
     let matcher = SpotifyDJVisibilityMatcher()
@@ -274,8 +274,10 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
             backend: appModel.selectedBackend
         )
         appModel.playlistWarnings = []
+        appModel.updateSnapshotForProject()
+        appModel.evaluatePreflight()
         appModel.selectedSection = .studio
-        status = "Playlist préparée dans MixPilot • BPM à confirmer depuis le logiciel DJ"
+        status = "Playlist préparée dans MixPilot • charge ensuite le titre dans le logiciel DJ avant PLAY"
     }
 
     func activateSelectedBackend(appModel: AppModel) {
@@ -295,7 +297,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject, ASWebAuthenti
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("\(track.title) \(track.artistText)", forType: .string)
         activateSelectedBackend(appModel: appModel)
-        status = "Recherche copiée : \(track.title) — colle-la dans le champ de recherche du logiciel DJ."
+        status = "Recherche copiée : \(track.title) — colle-la dans la recherche, puis charge le titre sur un deck."
     }
 
     var selectedPlaylist: SpotifyLibraryPlaylist? {
