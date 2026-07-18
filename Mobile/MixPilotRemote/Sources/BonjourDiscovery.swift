@@ -1,4 +1,5 @@
 import Foundation
+import MixPilotRemoteProtocol
 
 @MainActor
 final class BonjourDiscovery: NSObject, ObservableObject {
@@ -17,6 +18,13 @@ final class BonjourDiscovery: NSObject, ObservableObject {
         guard !isSearching else { return }
         endpoints = []
         services = []
+
+        guard MixPilotRemoteProtocol.MixPilotRemoteTransportSecurityPolicy
+            .allowsInsecureDevelopmentTransport else {
+            isSearching = false
+            return
+        }
+
         isSearching = true
         browser.searchForServices(ofType: "_mixpilot._tcp.", inDomain: "local.")
     }
@@ -63,13 +71,13 @@ extension BonjourDiscovery: NetServiceBrowserDelegate {
         didFind service: NetService,
         moreComing: Bool
     ) {
-        // NetService predates Swift concurrency and is not Sendable. Capture only
-        // its immutable identity, then create the resolver on the main actor.
         let domain = service.domain
         let type = service.type
         let name = service.name
 
         Task { @MainActor in
+            guard MixPilotRemoteProtocol.MixPilotRemoteTransportSecurityPolicy
+                .allowsInsecureDevelopmentTransport else { return }
             guard !self.services.contains(where: {
                 self.matches($0, domain: domain, type: type, name: name)
             }) else { return }
@@ -108,6 +116,10 @@ extension BonjourDiscovery: NetServiceDelegate {
         guard let rawHost = sender.hostName, sender.port > 0 else { return }
         let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
         let endpoint = RemoteEndpoint(name: sender.name, host: host, port: sender.port)
-        Task { @MainActor in self.upsert(endpoint) }
+        Task { @MainActor in
+            guard MixPilotRemoteProtocol.MixPilotRemoteTransportSecurityPolicy
+                .allowsInsecureDevelopmentTransport else { return }
+            self.upsert(endpoint)
+        }
     }
 }
