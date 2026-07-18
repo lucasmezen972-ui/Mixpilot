@@ -44,7 +44,10 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "MixPilotCoreTests",
-        dependencies: ["MixPilotCore"],
+        dependencies: [
+            "MixPilotCore",
+            .product(name: "Crypto", package: "swift-crypto"),
+        ],
         path: "Tests/MixPilotCoreTests"
     ),
     .testTarget(
