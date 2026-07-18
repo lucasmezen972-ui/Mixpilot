@@ -93,7 +93,7 @@ require_pattern 'decision: \.requireManualConfirmation' Sources/MixPilotCore/Liv
 reject_pattern 'decision: \.resumeAutomatically' Sources/MixPilotCore/LiveCheckpoint.swift \
   'crash recovery must never restart the Live automatically'
 
-require_pattern 'RemoteListenerRestartPolicy' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
+require_pattern 'Remote(ListenerRestart|TransportRetry)Policy' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
   'the Remote listener needs a bounded restart policy'
 require_pattern 'scheduleRestart\(reason:' Sources/MixPilotRemoteBridge/MixPilotRemoteBridge.swift \
   'listener failures must schedule a bounded restart instead of stopping the Live'
