@@ -6,6 +6,7 @@ import MixPilotSystem
 @MainActor
 final class MixPilotCloudCoordinator: ObservableObject {
     @Published private(set) var connectionState: MixPilotCloudConnectionState = .idle
+    @Published private(set) var identityState: MixPilotCloudIdentityState = .checking
     @Published private(set) var availableUpdate: MixPilotCloudRelease?
     @Published private(set) var availableMapping: MixPilotRemoteMappingRelease?
     @Published private(set) var activeCompatibilityOverride: MixPilotCompatibilityOverride?
@@ -73,13 +74,74 @@ final class MixPilotCloudCoordinator: ObservableObject {
                     name: value ? "live_started" : "live_stopped"
                 )
             )
-            if !value {
+            if !value, identityState.isSignedIn {
                 await refreshRemoteCompatibility(showNoUpdateMessage: false)
             }
         }
     }
 
+    func refreshIdentity() {
+        Task { [weak self] in
+            guard let self else { return }
+            await updateIdentityFromStoredSession()
+        }
+    }
+
+    func requestMagicLink(email: String) {
+        identityState = .checking
+        statusDetail = "Envoi du lien de connexion…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let normalized = try await service.requestMagicLink(email: email)
+                identityState = .linkSent(email: normalized)
+                statusDetail = "Un lien de connexion a été envoyé à \(normalized). Ouvre-le sur ce Mac."
+            } catch {
+                identityState = .failed(message: humanIdentityMessage(error))
+                statusDetail = humanIdentityMessage(error)
+            }
+        }
+    }
+
+    func handleAuthenticationCallback(_ url: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let account = try await service.handleAuthenticationCallback(url)
+                identityState = .signedIn(account)
+                statusDetail = account.email.map { "Compte connecté • \($0)" } ?? "Compte MixPilot connecté."
+                restartLoopAfterIdentityChange()
+            } catch {
+                identityState = .failed(message: humanIdentityMessage(error))
+                statusDetail = humanIdentityMessage(error)
+            }
+        }
+    }
+
+    func signOut() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await service.signOut()
+            } catch {
+                // The SDK clears the local session before best-effort server logout.
+            }
+            identityState = .signedOut
+            connectionState = .idle
+            statusDetail = "Compte déconnecté • le Live local reste disponible."
+            availableUpdate = nil
+            availableMapping = nil
+            activeCompatibilityOverride = nil
+            lastHeartbeatAt = nil
+            restartLoopAfterIdentityChange()
+        }
+    }
+
     func checkNow() {
+        guard identityState.isSignedIn else {
+            statusDetail = "Connecte ton compte MixPilot pour vérifier les mises à jour en ligne."
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
             await checkForUpdate(showNoUpdateMessage: true)
@@ -176,10 +238,45 @@ final class MixPilotCloudCoordinator: ObservableObject {
         Task { await service.closeSession() }
     }
 
+    private func updateIdentityFromStoredSession() async {
+        do {
+            if let account = try await service.accountIfAvailable() {
+                identityState = .signedIn(account)
+            } else if case .linkSent = identityState {
+                // Preserve the useful confirmation while the user opens the email.
+            } else {
+                identityState = .signedOut
+            }
+        } catch {
+            identityState = .failed(message: humanIdentityMessage(error))
+        }
+    }
+
+    private func restartLoopAfterIdentityChange() {
+        loopTask?.cancel()
+        loopTask = nil
+        heartbeatCounter = 0
+        start(liveMode: liveMode)
+    }
+
     private func runLoop() async {
         var connected = false
         while !Task.isCancelled {
             do {
+                guard let account = try await service.accountIfAvailable() else {
+                    if case .linkSent = identityState {
+                        // Keep link-sent state until the callback or a new request.
+                    } else {
+                        identityState = .signedOut
+                    }
+                    connectionState = .idle
+                    statusDetail = "Connecte ton compte MixPilot pour activer les services en ligne facultatifs."
+                    connected = false
+                    try await Task.sleep(for: .seconds(30))
+                    continue
+                }
+
+                identityState = .signedIn(account)
                 let backend = await backendContextProvider()
                 let diagnosticsEnabled = diagnosticsPreferences.isEnabled
                 onlineDiagnosticsEnabled = diagnosticsEnabled
@@ -223,6 +320,16 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 try await Task.sleep(for: .seconds(30))
             } catch is CancellationError {
                 break
+            } catch let error as MixPilotCloudIdentityError where error == .signedOut {
+                identityState = .signedOut
+                connectionState = .idle
+                statusDetail = error.localizedDescription
+                connected = false
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                } catch {
+                    break
+                }
             } catch {
                 connectionState = .offline("Services en ligne indisponibles")
                 statusDetail = "Les services en ligne sont temporairement indisponibles. Le Live local peut continuer normalement."
@@ -237,6 +344,7 @@ final class MixPilotCloudCoordinator: ObservableObject {
     }
 
     private func checkForUpdate(showNoUpdateMessage: Bool) async {
+        guard identityState.isSignedIn else { return }
         do {
             availableUpdate = try await service.checkForUpdate(currentBuild: appBuild)
             if let release = availableUpdate {
@@ -252,6 +360,7 @@ final class MixPilotCloudCoordinator: ObservableObject {
     }
 
     private func refreshRemoteCompatibility(showNoUpdateMessage: Bool) async {
+        guard identityState.isSignedIn else { return }
         guard let backend = await backendContextProvider() else {
             availableMapping = nil
             activeCompatibilityOverride = nil
@@ -387,6 +496,7 @@ final class MixPilotCloudCoordinator: ObservableObject {
     }
 
     private func processRemoteCommands() async {
+        guard identityState.isSignedIn else { return }
         do {
             for command in try await service.pendingCommands() {
                 let result: [String: String]
@@ -429,6 +539,15 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 payload: ["error_type": String(describing: type(of: error))]
             ))
         }
+    }
+
+    private func humanIdentityMessage(_ error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let message = localized.errorDescription,
+           !message.isEmpty {
+            return message
+        }
+        return "La connexion au compte MixPilot n’a pas pu être terminée. Le Live local reste disponible."
     }
 }
 #endif
