@@ -14,6 +14,7 @@ private struct HardwareProbeReport: Codable {
     var accessibilityGranted: Bool
     var windowTitle: String?
     var visibleTextCount: Int
+    var visibleText: [String]?
     var libraryRowCount: Int
     var virtualMIDIPortCreated: Bool
     var midiPublication: MIDIPublicationDiagnostic?
@@ -125,6 +126,9 @@ struct MixPilotHardwareProbeCLI {
             accessibilityGranted: observation.accessibilityGranted,
             windowTitle: observation.windowTitle,
             visibleTextCount: observation.visibleText.count,
+            visibleText: CommandLine.arguments.contains("--include-visible-text")
+                ? observation.visibleText
+                : nil,
             libraryRowCount: rows.count,
             virtualMIDIPortCreated: midiCreated,
             midiPublication: midiPublication,

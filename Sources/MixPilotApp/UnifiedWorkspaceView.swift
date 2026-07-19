@@ -5,6 +5,7 @@ import SwiftUI
 struct UnifiedWorkspaceView: View {
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @State private var pendingCommandValidation: DJControlAction?
 
     var body: some View {
         ZStack {
@@ -138,6 +139,8 @@ struct UnifiedWorkspaceView: View {
                     .buttonStyle(MixPilotSecondaryButtonStyle())
             }
 
+            criticalCommandTester
+
             VStack(spacing: 10) {
                 ForEach(model.preflightReport.items) { item in
                     preflightRow(item)
@@ -151,6 +154,52 @@ struct UnifiedWorkspaceView: View {
                     .disabled(!model.preflightReport.canStartLive)
             }
         }
+    }
+
+    private var criticalCommandTester: some View {
+        MixPilotGlassCard(accent: pendingCommandValidation == nil ? .blue : .orange) {
+            VStack(alignment: .leading, spacing: 13) {
+                MixPilotPanelTitle(
+                    title: "Tests réels des commandes critiques",
+                    symbol: "button.programmable",
+                    subtitle: "Envoie une commande, observe le logiciel DJ, puis enregistre uniquement le résultat réellement constaté.",
+                    accent: pendingCommandValidation == nil ? .blue : .orange
+                )
+                HStack(spacing: 10) {
+                    commandTestButton("Tester Load", action: .loadA)
+                    commandTestButton("Tester Play / Pause", action: .playA)
+                    commandTestButton("Tester le volume", action: .volumeA)
+                }
+                if let action = pendingCommandValidation {
+                    MixPilotNotice(
+                        title: "Réaction à confirmer",
+                        message: "Commande \(action.rawValue) envoyée. Vérifie le deck 1 dans \(model.selectedBackend?.displayName ?? "le logiciel DJ").",
+                        kind: .warning
+                    )
+                    HStack(spacing: 10) {
+                        Button("RÉACTION VALIDÉE") {
+                            model.recordMappingValidation(action, succeeded: true)
+                            pendingCommandValidation = nil
+                        }
+                        .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
+                        Button("ÉCHEC") {
+                            model.recordMappingValidation(action, succeeded: false)
+                            pendingCommandValidation = nil
+                        }
+                        .buttonStyle(MixPilotDangerButtonStyle())
+                    }
+                }
+            }
+        }
+    }
+
+    private func commandTestButton(_ title: String, action: DJControlAction) -> some View {
+        Button(title) {
+            model.testMapping(action)
+            pendingCommandValidation = action
+        }
+        .buttonStyle(MixPilotSecondaryButtonStyle())
+        .disabled(model.selectedBackend == nil || pendingCommandValidation != nil)
     }
 
     private var liveView: some View {

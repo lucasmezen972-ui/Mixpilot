@@ -193,8 +193,11 @@ final class AutomaticSeratoMappingSession: ObservableObject {
 
     private func runningSeratoApplication() -> NSRunningApplication? {
         NSWorkspace.shared.runningApplications.first { application in
-            let name = application.localizedName?.lowercased() ?? ""
-            return name.contains("serato dj pro") || name == "serato dj"
+            SeratoApplicationMatcher.matches(
+                name: application.localizedName,
+                bundleIdentifier: application.bundleIdentifier,
+                bundleURL: application.bundleURL
+            )
         }
     }
 

@@ -95,6 +95,7 @@ targets.append(
             .linkedFramework("AppKit"),
             .linkedFramework("ApplicationServices"),
             .linkedFramework("AVFoundation"),
+            .linkedFramework("Vision"),
             .linkedFramework("Network"),
             .linkedFramework("IOKit"),
             .linkedFramework("Security"),

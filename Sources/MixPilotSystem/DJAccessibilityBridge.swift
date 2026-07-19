@@ -153,46 +153,56 @@ public final class DJAccessibilityBridge {
         backend: DJBackendIdentifier,
         maxRows: Int = 500
     ) -> [DJLibraryRow] {
-        guard AXIsProcessTrusted(),
-              let application = application(for: backend) else {
+        guard let application = application(for: backend) else {
             return []
         }
-        let appElement = AXUIElementCreateApplication(application.processIdentifier)
-        guard let window = preferredWindow(for: appElement) else { return [] }
-
-        var rowElements: [AXUIElement] = []
-        collectRows(
-            from: window,
-            depth: 0,
-            maxDepth: 12,
-            maxRows: max(1, maxRows),
-            into: &rowElements
-        )
-        return rowElements.enumerated().compactMap { index, element in
-            var strings: [String] = []
-            collectStrings(
-                from: element,
-                depth: 0,
-                maxDepth: 5,
-                maximumStrings: 30,
-                into: &strings
-            )
-            let fields = normalizedStrings(strings)
-            return fields.isEmpty ? nil : DJLibraryRow(index: index, fields: fields)
+        var accessibilityRows: [DJLibraryRow] = []
+        if AXIsProcessTrusted() {
+            let appElement = AXUIElementCreateApplication(application.processIdentifier)
+            if let window = preferredWindow(for: appElement) {
+                var rowElements: [AXUIElement] = []
+                collectRows(
+                    from: window,
+                    depth: 0,
+                    maxDepth: 12,
+                    maxRows: max(1, maxRows),
+                    into: &rowElements
+                )
+                accessibilityRows = rowElements.enumerated().compactMap { index, element in
+                    var strings: [String] = []
+                    collectStrings(
+                        from: element,
+                        depth: 0,
+                        maxDepth: 5,
+                        maximumStrings: 30,
+                        into: &strings
+                    )
+                    let fields = normalizedStrings(strings)
+                    return fields.isEmpty ? nil : DJLibraryRow(index: index, fields: fields)
+                }
+            }
         }
+        if !accessibilityRows.isEmpty || backend != .rekordbox {
+            return accessibilityRows
+        }
+        return RekordboxPlaylistOCRReader().rows(
+            processIdentifier: application.processIdentifier,
+            maxRows: maxRows
+        )
     }
 
     private func application(
         for backend: DJBackendIdentifier
     ) -> NSRunningApplication? {
         NSWorkspace.shared.runningApplications.first { application in
-            let name = application.localizedName?.lowercased() ?? ""
             let bundle = application.bundleIdentifier?.lowercased() ?? ""
             switch backend {
             case .serato:
-                return name.contains("serato dj pro") ||
-                    name == "serato dj" ||
-                    bundle.contains("serato")
+                return SeratoApplicationMatcher.matches(
+                    name: application.localizedName,
+                    bundleIdentifier: application.bundleIdentifier,
+                    bundleURL: application.bundleURL
+                )
             case .djay:
                 return DjayApplicationMatcher.matches(name: application.localizedName) ||
                     bundle.contains("algoriddim.djay")

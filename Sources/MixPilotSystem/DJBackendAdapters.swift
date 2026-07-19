@@ -4,6 +4,25 @@ import Foundation
 import MixPilotCore
 import MixPilotMIDI
 
+public enum SeratoApplicationMatcher {
+    public static func matches(
+        name: String?,
+        bundleIdentifier: String?,
+        bundleURL: URL? = nil
+    ) -> Bool {
+        let normalizedBundle = bundleIdentifier?.lowercased() ?? ""
+        if normalizedBundle == "com.serato.seratodj" || normalizedBundle == "com.serato.seratodjpro" {
+            return true
+        }
+
+        let normalizedName = name?.lowercased() ?? ""
+        guard normalizedName == "serato dj pro" || normalizedName == "serato dj" else { return false }
+        guard let bundleURL else { return true }
+        let applicationName = bundleURL.lastPathComponent.lowercased()
+        return applicationName == "serato dj pro.app" || applicationName == "serato dj.app"
+    }
+}
+
 public struct DJApplicationEnvironmentDetector: Sendable {
     public init() {}
 
@@ -29,11 +48,14 @@ public struct DJApplicationEnvironmentDetector: Sendable {
 
     @MainActor
     private func matches(_ application: NSRunningApplication, identifier: DJBackendIdentifier) -> Bool {
-        let name = application.localizedName?.lowercased() ?? ""
         let bundle = application.bundleIdentifier?.lowercased() ?? ""
         switch identifier {
         case .serato:
-            return name.contains("serato dj pro") || name == "serato dj" || bundle.contains("serato")
+            return SeratoApplicationMatcher.matches(
+                name: application.localizedName,
+                bundleIdentifier: application.bundleIdentifier,
+                bundleURL: application.bundleURL
+            )
         case .djay:
             return DjayApplicationMatcher.matches(name: application.localizedName) || bundle.contains("algoriddim.djay")
         case .rekordbox:
@@ -50,7 +72,7 @@ public struct DJApplicationEnvironmentDetector: Sendable {
         switch identifier {
         case .serato: names = ["Serato DJ Pro.app", "Serato DJ.app"]
         case .djay: names = ["djay Pro.app", "djay Pro AI.app", "djay.app"]
-        case .rekordbox: names = ["rekordbox.app"]
+        case .rekordbox: names = ["rekordbox.app", "rekordbox 7/rekordbox.app", "rekordbox 6/rekordbox.app"]
         }
 
         let roots = [
