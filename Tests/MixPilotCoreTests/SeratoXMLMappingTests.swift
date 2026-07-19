@@ -28,13 +28,12 @@ func generatedSeratoPresetIsWellFormed() throws {
     #expect(parser.parserError == nil)
 }
 
-@Test("Serato preset starts directly with the MIDI root")
-func seratoPresetStartsDirectlyWithMIDIRoot() {
+@Test("Serato preset retains the XML declaration validated on the target Mac")
+func seratoPresetRetainsXMLDeclaration() {
     let preset = SeratoXMLPresetGenerator().generate(profile: .developmentDefault)
 
-    #expect(preset.version == "1.0.1")
-    #expect(preset.xml.hasPrefix("<midi "))
-    #expect(!preset.xml.hasPrefix("<?xml"))
+    #expect(preset.version == "1.0.2")
+    #expect(preset.xml.hasPrefix("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<midi "))
 }
 
 @Test("Unsupported Serato commands remain explicit instead of being guessed")

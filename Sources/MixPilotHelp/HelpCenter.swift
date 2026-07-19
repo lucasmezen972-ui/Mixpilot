@@ -134,8 +134,11 @@ public struct MixPilotHelpCatalog: Sendable {
         language: MixPilotHelpLanguage,
         table: String? = nil
     ) -> String {
-        guard let path = Bundle.module.path(forResource: language.rawValue, ofType: "lproj"),
-              let bundle = Bundle(path: path) else {
+        guard let path = Self.resourceBundle().path(
+            forResource: language.rawValue,
+            ofType: "lproj"
+        ),
+        let bundle = Bundle(path: path) else {
             return key
         }
         return NSLocalizedString(key, tableName: table, bundle: bundle, comment: "")
@@ -157,6 +160,16 @@ public struct MixPilotHelpCatalog: Sendable {
 
     public static func languageNameKey(_ language: MixPilotHelpLanguage) -> String {
         "help.language.\(language.rawValue)"
+    }
+
+    private static func resourceBundle() -> Bundle {
+        if let resourcesURL = Bundle.main.resourceURL,
+           let packagedBundle = Bundle(
+               url: resourcesURL.appendingPathComponent("MixPilot_MixPilotHelp.bundle")
+           ) {
+            return packagedBundle
+        }
+        return .module
     }
 
     private static func article(

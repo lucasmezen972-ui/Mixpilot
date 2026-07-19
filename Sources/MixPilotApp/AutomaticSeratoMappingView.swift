@@ -16,7 +16,7 @@ struct AutomaticSeratoMappingView: View {
                     MixPilotSectionHero(
                         eyebrow: "Installation guidée",
                         title: "Mapping Serato automatique",
-                        subtitle: "Sauvegarde l’existant, installe le preset MixPilot, vérifie les fichiers et prépare la relance de Serato dans un parcours réversible.",
+                        subtitle: "Sauvegarde l’existant, installe le preset MixPilot et prépare l’activation unique exigée par Serato dans un parcours réversible.",
                         symbol: "wand.and.stars",
                         accent: stateColor
                     ) {
@@ -111,7 +111,7 @@ struct AutomaticSeratoMappingView: View {
                                 MixPilotSectionDivider(accent: .cyan)
                                 installationStep("Crée le dossier MIDI XML si nécessaire", "folder.badge.plus")
                                 installationStep("Sauvegarde AUTO_SAVE.xml et les anciens presets", "externaldrive.badge.timemachine")
-                                installationStep("Installe le preset MixPilot et son chargement automatique", "doc.badge.gearshape")
+                                installationStep("Installe le preset MixPilot et sa copie AUTO_SAVE", "doc.badge.gearshape")
                                 installationStep("Compare les fichiers et valide la structure XML", "checkmark.shield.fill")
                                 installationStep("Prépare la relance de Serato", "arrow.clockwise")
                             }
@@ -139,6 +139,27 @@ struct AutomaticSeratoMappingView: View {
                         }
                     }
 
+                    MixPilotGlassCard(accent: .orange, elevation: .elevated) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            MixPilotPanelTitle(
+                                title: "Activation unique dans Serato",
+                                symbol: "hand.tap.fill",
+                                subtitle: "Serato 4 ne charge pas un preset tiers uniquement parce que le fichier est présent.",
+                                accent: .orange
+                            )
+                            MixPilotSectionDivider(accent: .orange)
+                            activationStep(1, "Ouvre la roue dentée Réglages dans Serato.")
+                            activationStep(2, "Ouvre l’onglet MIDI.")
+                            activationStep(3, "Sélectionne MixPilot Virtual Controller et active le périphérique MIDI.")
+                            activationStep(4, "Sélectionne le preset MixPilot Autopilot puis clique sur Load.")
+                            MixPilotNotice(
+                                title: "Validation obligatoire",
+                                message: "Reviens ensuite dans Vérifier et confirme Load, Play / Pause et Volume uniquement après avoir vu chaque réaction dans Serato.",
+                                kind: .warning
+                            )
+                        }
+                    }
+
                     if let result = session.lastResult {
                         MixPilotGlassCard(accent: .green, elevation: .elevated) {
                             VStack(alignment: .leading, spacing: 14) {
@@ -150,7 +171,7 @@ struct AutomaticSeratoMappingView: View {
                                 )
                                 MixPilotSectionDivider(accent: .green)
                                 resultRow("Preset", result.presetPath)
-                                resultRow("Chargement automatique", result.autoSavePath)
+                                resultRow("Copie AUTO_SAVE", result.autoSavePath)
                                 resultRow("Commandes installées", "\(result.supportedActionCount)")
                                 resultRow("Fonctions non devinées", result.unsupportedActions.map(\.rawValue).joined(separator: ", "))
                                 if let backupPath = result.backupPath {
@@ -244,6 +265,21 @@ struct AutomaticSeratoMappingView: View {
                 .foregroundStyle(accent)
         }
         .padding(.vertical, 3)
+    }
+
+    private func activationStep(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Text("\(number)")
+                .font(.caption.bold().monospacedDigit())
+                .foregroundStyle(.orange)
+                .frame(width: 25, height: 25)
+                .background(.orange.opacity(0.12), in: Circle())
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(MixPilotPalette.textSecondary)
+                .padding(.top, 3)
+            Spacer()
+        }
     }
 
     private func resultRow(_ name: String, _ value: String) -> some View {

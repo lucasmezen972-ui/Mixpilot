@@ -8,7 +8,7 @@ import MixPilotSystem
 @MainActor
 final class AutomaticSeratoMappingSession: ObservableObject {
     @Published private(set) var status = "Vérification du preset Serato…"
-    @Published private(set) var detail = "Aucune action manuelle commande par commande n’est nécessaire."
+    @Published private(set) var detail = "Après l’installation, active une seule fois le contrôleur et le preset dans Serato → Réglages → MIDI."
     @Published private(set) var isWorking = false
     @Published private(set) var installationState: SeratoMappingInstallationState = .notInstalled
     @Published private(set) var lastResult: SeratoMappingInstallationResult?
@@ -38,12 +38,12 @@ final class AutomaticSeratoMappingSession: ObservableObject {
         case .notInstalled:
             status = "Mapping automatique non installé"
             detail = midiDiagnostic?.isReadyForSerato == true
-                ? "Un clic suffit : MixPilot ferme Serato, sauvegarde l’existant, installe le preset et relance Serato."
+                ? "MixPilot installe et vérifie les fichiers. Serato demande ensuite une activation unique dans Réglages → MIDI."
                 : "Le preset est prêt, mais le contrôleur CoreMIDI doit d’abord être publié correctement."
         case .installed(let version, _):
             status = "Preset MixPilot \(version) installé"
             detail = midiDiagnostic?.isReadyForSerato == true
-                ? "Fichiers vérifiés et contrôleur CoreMIDI publié. Détection réelle par Serato : REQUIRES_SERATO_VALIDATION."
+                ? "Fichiers vérifiés et contrôleur CoreMIDI publié. Dans Serato → Réglages → MIDI, active MixPilot Virtual Controller puis charge MixPilot Autopilot."
                 : "Fichiers vérifiés, mais le contrôleur CoreMIDI n’est pas complètement publié."
         case .updateAvailable(let installedVersion, let expectedVersion):
             status = "Mise à jour du mapping disponible"
@@ -124,9 +124,9 @@ final class AutomaticSeratoMappingSession: ObservableObject {
                 } else if !seratoRelaunched {
                     detail = "Preset installé et contrôleur publié, mais la relance de Serato n’a pas été confirmée."
                 } else if unsupported.isEmpty {
-                    detail = "Preset installé, contrôleur publié et Serato relancé. Validation réelle encore requise."
+                    detail = "Preset installé, contrôleur publié et Serato relancé. Active maintenant le contrôleur et charge le preset dans Réglages → MIDI, puis valide les commandes réelles."
                 } else {
-                    detail = "Preset installé, contrôleur publié et Serato relancé. Fonctions volontairement non devinées : \(unsupported). Les transitions utilisent les volumes comme solution de secours."
+                    detail = "Preset installé et Serato relancé. Active-le dans Réglages → MIDI. Fonctions volontairement non devinées : \(unsupported). Les transitions utilisent les volumes comme solution de secours."
                 }
                 refresh(profile: profile)
             } catch {

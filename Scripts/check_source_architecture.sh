@@ -241,6 +241,26 @@ grep -q '_mixpilot\._tcp' Scripts/build_release.sh || {
   exit 1
 }
 
+grep -Fq -- '--requirements=' Scripts/build_release.sh || {
+  echo 'Architecture check failed: local release signatures must keep a stable designated requirement for macOS permissions' >&2
+  exit 1
+}
+
+grep -Fq 'designated => identifier "com.mixpilot.autopilot"' Scripts/build_release.sh || {
+  echo 'Architecture check failed: the stable local designated requirement must match the MixPilot bundle identifier' >&2
+  exit 1
+}
+
+grep -Fq 'MixPilot_MixPilotHelp.bundle' Scripts/build_release.sh || {
+  echo 'Architecture check failed: the packaged Mac app must embed the offline help resource bundle' >&2
+  exit 1
+}
+
+grep -Fq 'resourcesURL.appendingPathComponent("MixPilot_MixPilotHelp.bundle")' Sources/MixPilotHelp/HelpCenter.swift || {
+  echo 'Architecture check failed: packaged help must resolve from Contents/Resources' >&2
+  exit 1
+}
+
 grep -q '^  MixPilotRemoteTests:$' Mobile/MixPilotRemote/project.yml || {
   echo 'Architecture check failed: the iPhone project must include the application unit-test target' >&2
   exit 1

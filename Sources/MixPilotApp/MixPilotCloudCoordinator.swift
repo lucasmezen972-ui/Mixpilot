@@ -223,6 +223,10 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 try await Task.sleep(for: .seconds(30))
             } catch is CancellationError {
                 break
+            } catch MixPilotCloudError.authenticationUnavailable {
+                connectionState = .offline("Services en ligne désactivés")
+                statusDetail = "L’authentification en ligne est désactivée côté service. Le Live et les mappings locaux restent disponibles."
+                break
             } catch {
                 connectionState = .offline("Services en ligne indisponibles")
                 statusDetail = "Les services en ligne sont temporairement indisponibles. Le Live local peut continuer normalement."

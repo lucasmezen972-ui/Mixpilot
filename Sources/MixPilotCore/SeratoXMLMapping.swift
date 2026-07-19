@@ -29,7 +29,7 @@ public struct SeratoXMLPreset: Hashable, Sendable {
 
 public struct SeratoXMLPresetGenerator: Sendable {
     public static let presetName = "MixPilot Autopilot"
-    public static let presetVersion = "1.0.1"
+    public static let presetVersion = "1.0.2"
 
     public init() {}
 
@@ -65,6 +65,7 @@ public struct SeratoXMLPresetGenerator: Sendable {
             """
 
         let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
         <midi app="\(escapeAttribute(seratoApplicationVersion))">
         \(sourceNotice)
         \(controls.joined(separator: "\n"))

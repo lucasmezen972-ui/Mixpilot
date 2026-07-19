@@ -20,6 +20,7 @@ public actor MixPilotRemoteMappingService {
     private let decoder: JSONDecoder
     private let installationID: UUID
     private let provenanceVerifier = MixPilotMappingProvenanceVerifier()
+    private var anonymousAuthenticationUnavailable = false
 
     public init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -231,7 +232,18 @@ public actor MixPilotRemoteMappingService {
         do {
             return try await supabase.auth.session
         } catch {
-            return try await supabase.auth.signInAnonymously()
+            guard !anonymousAuthenticationUnavailable else {
+                throw MixPilotCloudError.authenticationUnavailable
+            }
+            do {
+                return try await supabase.auth.signInAnonymously()
+            } catch {
+                if (error as? AuthError)?.errorCode == .anonymousProviderDisabled {
+                    anonymousAuthenticationUnavailable = true
+                    throw MixPilotCloudError.authenticationUnavailable
+                }
+                throw error
+            }
         }
     }
 

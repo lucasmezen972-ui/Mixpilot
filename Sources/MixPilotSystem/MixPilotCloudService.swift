@@ -80,6 +80,7 @@ public enum MixPilotCloudError: Error, LocalizedError {
     case invalidResponse
     case emptyResponse
     case rejected(statusCode: Int)
+    case authenticationUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -87,6 +88,8 @@ public enum MixPilotCloudError: Error, LocalizedError {
             "Les services en ligne n’ont pas répondu correctement. Le Live local reste disponible."
         case .rejected:
             "Les services en ligne ont refusé la demande. Réessaie plus tard ; le Live local n’est pas affecté."
+        case .authenticationUnavailable:
+            "L’authentification anonyme des services en ligne est désactivée. Le Live local reste entièrement disponible."
         }
     }
 }
@@ -105,6 +108,7 @@ public actor MixPilotCloudService {
     private var telemetry: SupabaseTelemetryClient?
     private var telemetryEnabled = false
     private var backendContext: MixPilotCloudBackendContext?
+    private var anonymousAuthenticationUnavailable = false
 
     public init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -360,7 +364,20 @@ public actor MixPilotCloudService {
 
     private func authenticatedSession() async throws -> Session {
         do { return try await supabase.auth.session }
-        catch { return try await supabase.auth.signInAnonymously() }
+        catch {
+            guard !anonymousAuthenticationUnavailable else {
+                throw MixPilotCloudError.authenticationUnavailable
+            }
+            do {
+                return try await supabase.auth.signInAnonymously()
+            } catch {
+                if (error as? AuthError)?.errorCode == .anonymousProviderDisabled {
+                    anonymousAuthenticationUnavailable = true
+                    throw MixPilotCloudError.authenticationUnavailable
+                }
+                throw error
+            }
+        }
     }
 
     private func performRequest<Response: Decodable>(
