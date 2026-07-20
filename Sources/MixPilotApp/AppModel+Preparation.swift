@@ -56,12 +56,25 @@ extension AppModel {
             runtimeStatus = "Choisis le logiciel DJ avant de verrouiller le plan."
             return
         }
+
         project.selectBackend(selectedBackend)
         project.lock()
-        preparedProject = project
-        Task { try? await projectStore.save(project) }
-        runtimeStatus = "Plan verrouillé pour \(selectedBackend.displayName) • prêt pour la vérification"
-        evaluatePreflight()
+        runtimeStatus = "Verrouillage et sauvegarde du plan…"
+
+        Task {
+            do {
+                _ = try await projectStore.save(project)
+                preparedProject = project
+                liveArmed = false
+                runtimeStatus = "Plan verrouillé pour \(selectedBackend.displayName) • prêt pour la vérification"
+                updateSnapshotForProject()
+                evaluatePreflight()
+            } catch {
+                liveArmed = false
+                runtimeStatus = "Le plan n’a pas pu être sauvegardé. Il reste déverrouillé et le Live ne peut pas être armé."
+                evaluatePreflight()
+            }
+        }
     }
 
     func selectEmergencyAudio() {
