@@ -11,6 +11,9 @@ struct AutomaticRekordboxMappingView: View {
     @State private var preset: RekordboxAdvancedMIDIPreset?
     @State private var status = "Aucun preset généré"
     @State private var exportedURL: URL?
+    @State private var isExporting = false
+
+    private let fileWriter = RekordboxMappingFileWriter()
 
     var body: some View {
         ZStack {
@@ -59,8 +62,11 @@ struct AutomaticRekordboxMappingView: View {
                             }
 
                             HStack(spacing: 10) {
-                                Button("GÉNÉRER LE PRESET AVANCÉ") { exportPreset() }
-                                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .blue))
+                                Button(isExporting ? "EXPORT EN COURS…" : "GÉNÉRER LE PRESET AVANCÉ") {
+                                    Task { await exportPreset() }
+                                }
+                                .buttonStyle(MixPilotPrimaryButtonStyle(accent: .blue))
+                                .disabled(isExporting)
 
                                 if let exportedURL {
                                     Button("AFFICHER DANS LE FINDER") {
@@ -165,7 +171,10 @@ struct AutomaticRekordboxMappingView: View {
         .mixPilotWindowSurface(minWidth: 960, minHeight: 740)
     }
 
-    private func exportPreset() {
+    @MainActor
+    private func exportPreset() async {
+        guard !isExporting else { return }
+
         do {
             let generated = try RekordboxAdvancedMIDIPresetGenerator().generate(profile: model.mappingProfile)
             let panel = NSSavePanel()
@@ -177,16 +186,21 @@ struct AutomaticRekordboxMappingView: View {
                 return
             }
 
+            isExporting = true
+            status = "Écriture et vérification du preset…"
+            defer { isExporting = false }
+
             let data = Data(generated.csv.utf8)
-            try data.write(to: url, options: .atomic)
-            guard try Data(contentsOf: url) == data else {
-                throw RekordboxMappingExportError.verificationFailed
-            }
+            try await fileWriter.writeAndVerify(data, to: url)
 
             preset = generated
             exportedURL = url
             status = "Preset avancé validé et exporté : \(url.lastPathComponent)"
             NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch is CancellationError {
+            preset = nil
+            exportedURL = nil
+            status = "Export annulé"
         } catch {
             preset = nil
             exportedURL = nil
@@ -245,6 +259,15 @@ struct AutomaticRekordboxMappingView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(.white.opacity(0.075), lineWidth: 1)
+        }
+    }
+}
+
+private actor RekordboxMappingFileWriter {
+    func writeAndVerify(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        guard try Data(contentsOf: url) == data else {
+            throw RekordboxMappingExportError.verificationFailed
         }
     }
 }
