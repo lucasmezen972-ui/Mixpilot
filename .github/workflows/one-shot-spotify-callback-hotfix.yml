@@ -1,0 +1,257 @@
+name: One-shot Spotify callback isolation hotfix
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - ops/spotify-auth-callback-hotfix
+    paths:
+      - .github/spotify-auth-callback-hotfix.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-package:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout consolidation branch
+        uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+
+      - name: Patch off-main Spotify completion callback crash
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Sources/MixPilotApp/SpotifyLibraryCoordinator.swift')
+          source = path.read_text()
+
+          old_session = '''            let session = ASWebAuthenticationSession(
+              url: authorizationURL,
+              callbackURLScheme: Self.callbackURL.scheme
+          ) { [weak self] callbackURL, error in
+              Task { @MainActor [weak self] in
+                  guard let self else { return }
+                  self.webAuthenticationSession = nil
+                  if error != nil {
+                      self.pendingVerifier = nil
+                      self.pendingState = nil
+                      self.present(SpotifyBridgeError.authorizationCancelled)
+                      return
+                  }
+                  guard let callbackURL else {
+                      self.present(SpotifyBridgeError.invalidCallback)
+                      return
+                  }
+                  await self.completeAuthorization(callbackURL)
+              }
+          }
+          '''
+          new_session = '''            let session = ASWebAuthenticationSession(
+              url: authorizationURL,
+              callbackURLScheme: Self.callbackURL.scheme,
+              completionHandler: Self.makeAuthenticationCallback(for: self)
+          )
+          '''
+
+          if source.count(old_session) != 1:
+              raise SystemExit(
+                  f'Expected one inline actor-isolated Spotify callback, found {source.count(old_session)}.'
+              )
+          source = source.replace(old_session, new_session, 1)
+
+          disconnect_anchor = '''    func disconnect() {
+          '''
+          callback_helpers = '''    nonisolated static func makeAuthenticationCallback(
+              for coordinator: SpotifyLibraryCoordinator
+          ) -> (URL?, Error?) -> Void {
+              { [weak coordinator] callbackURL, error in
+                  let callbackURLString = callbackURL?.absoluteString
+                  let didFail = error != nil
+                  Task { @MainActor [weak coordinator] in
+                      guard let coordinator else { return }
+                      await coordinator.handleAuthenticationCallback(
+                          callbackURLString: callbackURLString,
+                          didFail: didFail
+                      )
+                  }
+              }
+          }
+
+          private func handleAuthenticationCallback(
+              callbackURLString: String?,
+              didFail: Bool
+          ) async {
+              webAuthenticationSession = nil
+              if didFail {
+                  pendingVerifier = nil
+                  pendingState = nil
+                  present(SpotifyBridgeError.authorizationCancelled)
+                  return
+              }
+              guard let callbackURLString,
+                    let callbackURL = URL(string: callbackURLString) else {
+                  pendingVerifier = nil
+                  pendingState = nil
+                  present(SpotifyBridgeError.invalidCallback)
+                  return
+              }
+              await completeAuthorization(callbackURL)
+          }
+
+          func disconnect() {
+          '''
+
+          if source.count(disconnect_anchor) != 1:
+              raise SystemExit(
+                  f'Expected one disconnect insertion point, found {source.count(disconnect_anchor)}.'
+              )
+          source = source.replace(disconnect_anchor, callback_helpers, 1)
+          path.write_text(source)
+
+          assert 'completionHandler: Self.makeAuthenticationCallback(for: self)' in source
+          assert 'nonisolated static func makeAuthenticationCallback' in source
+          assert 'Task { @MainActor [weak coordinator] in' in source
+          assert ') { [weak self] callbackURL, error in' not in source
+          PY
+
+      - name: Add callback isolation regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > Tests/MixPilotSystemTests/SpotifyAuthenticationPresentationTests.swift <<'SWIFT'
+          #if os(macOS)
+          import Foundation
+          import XCTest
+
+          final class SpotifyAuthenticationPresentationTests: XCTestCase {
+              private func coordinatorSource() throws -> String {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = root.appendingPathComponent(
+                      "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
+                  )
+                  return try String(contentsOf: sourceURL, encoding: .utf8)
+              }
+
+              func testPresentationAnchorMarshalsToMainQueueBeforeAssumingMainActor() throws {
+                  let source = try coordinatorSource()
+
+                  XCTAssertTrue(source.contains("if Thread.isMainThread"))
+                  XCTAssertTrue(source.contains("DispatchQueue.main.sync"))
+                  XCTAssertTrue(source.contains("MainActor.assumeIsolated"))
+                  XCTAssertFalse(source.contains(
+                      "-> ASPresentationAnchor {\n        MainActor.assumeIsolated"
+                  ))
+              }
+
+              func testAuthenticationCompletionHandlerIsCreatedOutsideMainActor() throws {
+                  let source = try coordinatorSource()
+
+                  XCTAssertTrue(source.contains(
+                      "completionHandler: Self.makeAuthenticationCallback(for: self)"
+                  ))
+                  XCTAssertTrue(source.contains(
+                      "nonisolated static func makeAuthenticationCallback"
+                  ))
+                  XCTAssertTrue(source.contains("callbackURL?.absoluteString"))
+                  XCTAssertTrue(source.contains("Task { @MainActor [weak coordinator] in"))
+                  XCTAssertFalse(source.contains(
+                      ") { [weak self] callbackURL, error in"
+                  ))
+              }
+          }
+          #endif
+          SWIFT
+
+      - name: Verify focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'completionHandler: Self.makeAuthenticationCallback(for: self)' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          grep -q 'nonisolated static func makeAuthenticationCallback' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          grep -q 'Task { @MainActor \[weak coordinator\] in' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          ! grep -q ') { \[weak self\] callbackURL, error in' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+
+      - name: Create callback sequence diagram
+        shell: bash
+        run: |
+          cat > spotify-callback-flow.mmd <<'MERMAID'
+          sequenceDiagram
+              actor User
+              participant Spotify as Spotify / AuthenticationServices
+              participant Callback as nonisolated callback factory
+              participant Main as MainActor coordinator
+              participant API as Spotify token API
+
+              User->>Spotify: Authorize account
+              Spotify-->>Callback: URL or cancellation on arbitrary queue
+              Note over Callback: Convert URL to String and error to Bool
+              Callback->>Main: Task { @MainActor }
+              Main->>Main: Clear ASWebAuthenticationSession
+              alt cancelled or invalid callback
+                  Main-->>User: Show controlled error, app stays open
+              else valid callback
+                  Main->>API: Exchange authorization code with PKCE
+                  API-->>Main: Access and refresh tokens
+                  Main-->>User: Connected and library synchronization starts
+              end
+          MERMAID
+
+      - name: Run Swift tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee spotify-callback-hotfix-swift-test.log
+
+      - name: Build macOS release product
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift build -c release --product MixPilotAutopilot
+
+      - name: Build corrected app and DMG
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.2-spotify-callback-hotfix
+          CODE_SIGN_IDENTITY: '-'
+        run: |
+          set -euo pipefail
+          chmod +x Scripts/*.sh
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+          codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+
+      - name: Commit validated source fix without starting full CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'MixPilot Hotfix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            Sources/MixPilotApp/SpotifyLibraryCoordinator.swift \
+            Tests/MixPilotSystemTests/SpotifyAuthenticationPresentationTests.swift
+          git commit -m 'fix: isolate Spotify authentication callback entry [skip ci]'
+          git push origin HEAD:consolidation/security-cloud-trust
+
+      - name: Upload corrected DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-0.4.2-spotify-callback-hotfix
+          path: |
+            spotify-callback-hotfix-swift-test.log
+            spotify-callback-flow.mmd
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: error
