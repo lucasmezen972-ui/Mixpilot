@@ -1,0 +1,71 @@
+name: One-shot stacked validation patch
+
+on:
+  push:
+    branches:
+      - consolidation/rekordbox-spotify-readiness
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidation/rekordbox-spotify-readiness
+          fetch-depth: 0
+
+      - name: Patch final validation safely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/final-pr-validation.yml')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  '    branches:\n      - main\n',
+                  '    branches:\n      - main\n      - consolidation/rekordbox-spotify-readiness\n',
+                  1,
+              ),
+              (
+                  '          npx supabase db reset 2>&1 | tee supabase-reset.log\n          npx supabase migration list --local 2>&1 | tee supabase-migrations.log\n',
+                  '          npx supabase db reset 2>&1 | tee supabase-reset.log\n          npx supabase test db 2>&1 | tee supabase-tests.log\n          npx supabase migration list --local 2>&1 | tee supabase-migrations.log\n',
+                  1,
+              ),
+              (
+                  '            supabase-reset.log\n            supabase-migrations.log\n',
+                  '            supabase-reset.log\n            supabase-tests.log\n            supabase-migrations.log\n',
+                  1,
+              ),
+          ]
+
+          for old, new, expected in replacements:
+              count = text.count(old)
+              if count == 0 and text.count(new) == expected:
+                  continue
+              if count != expected:
+                  raise SystemExit(f'unsafe validation patch state: expected {expected}, found {count} for {old!r}')
+              text = text.replace(old, new)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          rm .github/workflows/patch-stacked-validation.yml
+          git diff --check
+
+      - name: Commit workflow patch and remove one-shot helper
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/final-pr-validation.yml .github/workflows/patch-stacked-validation.yml
+          git commit -m "Run pgTAP tests for stacked security PRs"
+          git push origin HEAD:consolidation/rekordbox-spotify-readiness
