@@ -5,11 +5,14 @@ import MixPilotMIDI
 
 public enum MixPilotRemoteMappingInstallerError: Error, LocalizedError {
     case persistenceVerificationFailed
+    case automaticRollbackFailed(installation: String, recovery: String)
 
     public var errorDescription: String? {
         switch self {
         case .persistenceVerificationFailed:
             "Le correctif distant écrit sur le disque n’a pas pu être vérifié."
+        case .automaticRollbackFailed(let installation, let recovery):
+            "L’installation a échoué (\(installation)) et la restauration automatique est incomplète (\(recovery))."
         }
     }
 }
@@ -84,39 +87,69 @@ public actor MixPilotRemoteMappingInstaller {
             controllerName: controllerName,
             installationID: installationID
         )
-        let currentProfile = (try? await mappingStore.load()) ?? .developmentDefault
+        let currentProfile = try await mappingStore.load()
         let previousHash = try MixPilotRemoteMappingValidator.profileSHA256(currentProfile)
 
         try createDirectories()
         try saveBackup(profile: currentProfile, hash: previousHash)
-        _ = try await mappingStore.save(release.profile)
 
-        let artifact = try persistArtifact(
-            validated: validated,
-            mappingVersion: release.mappingVersion
-        )
-        let state = MixPilotRemoteMappingLocalState(
-            releaseID: release.id,
-            mappingVersion: release.mappingVersion,
-            backend: backend,
-            profileSHA256: validated.profileSHA256,
-            artifactKind: validated.artifactKind,
-            generatedArtifactSHA256: artifact.sha256,
-            generatedArtifactURL: artifact.url,
-            stagedAt: Date()
-        )
-        try encode(state, to: rootDirectory.appendingPathComponent("state.json"))
+        var generatedArtifactURL: URL?
+        do {
+            _ = try await mappingStore.save(release.profile)
 
-        return MixPilotRemoteMappingInstallResult(
-            releaseID: release.id,
-            mappingVersion: release.mappingVersion,
-            backend: backend,
-            previousProfileSHA256: previousHash,
-            appliedProfileSHA256: validated.profileSHA256,
-            artifactKind: validated.artifactKind,
-            generatedArtifactSHA256: artifact.sha256,
-            generatedArtifactURL: artifact.url
-        )
+            let artifact = try persistArtifact(
+                validated: validated,
+                mappingVersion: release.mappingVersion
+            )
+            generatedArtifactURL = artifact.url
+            let state = MixPilotRemoteMappingLocalState(
+                releaseID: release.id,
+                mappingVersion: release.mappingVersion,
+                backend: backend,
+                profileSHA256: validated.profileSHA256,
+                artifactKind: validated.artifactKind,
+                generatedArtifactSHA256: artifact.sha256,
+                generatedArtifactURL: artifact.url,
+                stagedAt: Date()
+            )
+            try encode(state, to: rootDirectory.appendingPathComponent("state.json"))
+
+            return MixPilotRemoteMappingInstallResult(
+                releaseID: release.id,
+                mappingVersion: release.mappingVersion,
+                backend: backend,
+                previousProfileSHA256: previousHash,
+                appliedProfileSHA256: validated.profileSHA256,
+                artifactKind: validated.artifactKind,
+                generatedArtifactSHA256: artifact.sha256,
+                generatedArtifactURL: artifact.url
+            )
+        } catch let installationError {
+            var recoveryFailures: [String] = []
+
+            do {
+                _ = try await mappingStore.save(currentProfile)
+            } catch {
+                recoveryFailures.append("profil local : \(error.localizedDescription)")
+            }
+
+            if let generatedArtifactURL,
+               FileManager.default.fileExists(atPath: generatedArtifactURL.path) {
+                do {
+                    try FileManager.default.removeItem(at: generatedArtifactURL)
+                } catch {
+                    recoveryFailures.append("artefact généré : \(error.localizedDescription)")
+                }
+            }
+
+            if recoveryFailures.isEmpty {
+                throw installationError
+            }
+            throw MixPilotRemoteMappingInstallerError.automaticRollbackFailed(
+                installation: installationError.localizedDescription,
+                recovery: recoveryFailures.joined(separator: " ; ")
+            )
+        }
     }
 
     @available(*, deprecated, message: "Pass the active backend and software version explicitly")
@@ -141,7 +174,13 @@ public actor MixPilotRemoteMappingInstaller {
     ) async throws -> MixPilotRemoteMappingInstallResult {
         let backupURL = rootDirectory.appendingPathComponent("backup.json")
         let backup: MixPilotRemoteMappingBackup = try decode(from: backupURL)
-        _ = try await mappingStore.save(backup.profile)
+        let stateURL = rootDirectory.appendingPathComponent("state.json")
+        let currentState: MixPilotRemoteMappingLocalState?
+        if FileManager.default.fileExists(atPath: stateURL.path) {
+            currentState = try loadState()
+        } else {
+            currentState = nil
+        }
 
         let artifact: (kind: MixPilotRemoteMappingArtifactKind, sha256: String?, url: URL?)
         switch backend {
@@ -164,8 +203,25 @@ public actor MixPilotRemoteMappingInstaller {
             artifact = (.profile, nil, nil)
         }
 
-        let currentState = try? loadState()
-        try? FileManager.default.removeItem(at: rootDirectory.appendingPathComponent("state.json"))
+        if FileManager.default.fileExists(atPath: stateURL.path) {
+            try FileManager.default.removeItem(at: stateURL)
+        }
+
+        do {
+            _ = try await mappingStore.save(backup.profile)
+        } catch let rollbackError {
+            if let currentState {
+                do {
+                    try encode(currentState, to: stateURL)
+                } catch let stateRecoveryError {
+                    throw MixPilotRemoteMappingInstallerError.automaticRollbackFailed(
+                        installation: rollbackError.localizedDescription,
+                        recovery: "état distant : \(stateRecoveryError.localizedDescription)"
+                    )
+                }
+            }
+            throw rollbackError
+        }
 
         return MixPilotRemoteMappingInstallResult(
             releaseID: currentState?.releaseID ?? UUID(),
