@@ -2,6 +2,7 @@
 import AppKit
 import AuthenticationServices
 import Combine
+import Dispatch
 import Foundation
 import MixPilotCore
 import MixPilotSystem
@@ -700,12 +701,20 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
 
 extension SpotifyLibraryCoordinator: ASWebAuthenticationPresentationContextProviding {
     nonisolated func presentationAnchor(
-        for session: ASWebAuthenticationSession
-    ) -> ASPresentationAnchor {
+    for session: ASWebAuthenticationSession
+) -> ASPresentationAnchor {
+    if Thread.isMainThread {
+        return MainActor.assumeIsolated {
+            NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+        }
+    }
+
+    return DispatchQueue.main.sync {
         MainActor.assumeIsolated {
             NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
         }
     }
+}
 }
 
 private struct RekordboxSpotifyDiagnostic: Codable {
