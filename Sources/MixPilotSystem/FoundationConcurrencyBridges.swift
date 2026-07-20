@@ -1,8 +1,8 @@
 #if os(macOS)
 import Foundation
 
-// UserDefaults is documented and implemented as a thread-safe shared preference
-// store. The macOS SDK used by this project does not expose that guarantee as an
-// available Sendable conformance, so bridge it explicitly for Swift 6 checking.
+// SAFETY: UserDefaults serializes access to its shared preference store. This
+// bridge exposes that thread-safe behavior to Swift 6 without adding mutable
+// wrapper state or permitting unsynchronized access to another object.
 extension UserDefaults: @retroactive @unchecked Sendable {}
 #endif
