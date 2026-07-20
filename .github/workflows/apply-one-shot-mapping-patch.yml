@@ -1,18 +1,19 @@
 name: Apply one-shot async mapping patch
 
-# This second commit intentionally re-arms the workflow after it already exists
-# in the branch parent. The job itself only accepts the exact commit message below.
 on:
   push:
     branches:
       - consolidation/rekordbox-spotify-readiness
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'ci: add one-shot async mapping patch'
+    if: github.head_ref == 'consolidation/rekordbox-spotify-readiness' || github.ref_name == 'consolidation/rekordbox-spotify-readiness'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +21,7 @@ jobs:
           ref: consolidation/rekordbox-spotify-readiness
           fetch-depth: 0
 
-      - name: Apply exact async send-result patches
+      - name: Apply exact idempotent async send-result patches
         shell: bash
         run: |
           python3 - <<'PY'
@@ -63,19 +64,27 @@ jobs:
 
           for path, (old, new) in replacements.items():
               text = path.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
-              path.write_text(text.replace(old, new, 1))
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  path.write_text(text.replace(old, new, 1))
+              elif old_count == 0 and new_count == 1:
+                  continue
+              else:
+                  raise SystemExit(
+                      f'{path}: unsafe patch state old={old_count} new={new_count}'
+                  )
           PY
 
           git diff --check
-          grep -R "appModel.testMapping(action)" -n Sources/MixPilotApp/RekordboxCompatibilityLabView.swift Sources/MixPilotApp/RekordboxHubView.swift || true
-          grep -n -A8 -B2 'ENVOYER LE TEST' Sources/MixPilotApp/RekordboxDeviceValidationView.swift
 
-      - name: Commit focused source patch
+      - name: Commit focused source patch when needed
         shell: bash
         run: |
+          if git diff --quiet; then
+            echo 'Source callers already corrected.'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Sources/MixPilotApp/RekordboxCompatibilityLabView.swift \
