@@ -1,0 +1,34 @@
+name: Ultimate Repository Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+      - consolidation/rekordbox-spotify-readiness
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixpilot-ultimate-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Line-by-line repository audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate audit script syntax
+        run: python3 -m py_compile Scripts/ultimate_repository_audit.py
+      - name: Scan every tracked text file
+        run: python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+      - name: Upload complete audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-ultimate-repository-audit
+          path: ultimate-audit
+          if-no-files-found: error
