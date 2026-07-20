@@ -76,7 +76,7 @@ public struct MacPermissionCoordinator {
     public func request(_ kind: MacPermissionKind) async -> MacPermissionSnapshot {
         switch kind {
         case .accessibility:
-            let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+            let promptKey = "AXTrustedCheckOptionPrompt"
             _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
         case .screenRecording:
             _ = CGRequestScreenCaptureAccess()
