@@ -147,3 +147,5 @@ jobs:
           git diff --cached --check
           git commit -m "security: route cloud commands through atomic RPCs"
           git push origin HEAD:consolidation/security-cloud-trust
+
+# rearm: 2026-07-20T12:30Z
