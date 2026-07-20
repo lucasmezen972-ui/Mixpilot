@@ -94,6 +94,16 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>MixPilot</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>${GITHUB_RUN_NUMBER:-1}</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.mixpilot.autopilot.spotify</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>mixpilot-spotify</string>
+      </array>
+    </dict>
+  </array>
   <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -107,6 +117,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+/usr/bin/plutil -lint "$APP_DIR/Contents/Info.plist"
+registered_spotify_scheme="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$APP_DIR/Contents/Info.plist")"
+if [[ "$registered_spotify_scheme" != "mixpilot-spotify" ]]; then
+  echo "Spotify OAuth callback scheme is missing from the packaged application." >&2
+  exit 1
+fi
 
 if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
   # Keep macOS Accessibility/Screen Recording grants stable across local builds.
