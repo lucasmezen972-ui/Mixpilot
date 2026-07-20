@@ -99,6 +99,8 @@ public struct MIDIPublicationDiagnostic: Codable, Hashable, Sendable {
     }
 }
 
+// SAFETY: CoreMIDI handles are immutable after initialization. Every packet send
+// is serialized by sendLock, and disposal only occurs once when the final owner dies.
 private final class SharedMIDIEndpoint: @unchecked Sendable {
     let client: MIDIClientRef
     let source: MIDIEndpointRef
@@ -199,11 +201,17 @@ private final class SharedMIDIEndpoint: @unchecked Sendable {
     }
 }
 
-private enum SharedMIDIEndpointRegistry {
-    static let creationLock = NSLock()
-    nonisolated(unsafe) static var endpoint: SharedMIDIEndpoint?
+// SAFETY: endpoint is only read or written while creationLock is held. The shared
+// endpoint is created once, retained for process lifetime, and never replaced.
+private final class SharedMIDIEndpointRegistry: @unchecked Sendable {
+    static let shared = SharedMIDIEndpointRegistry()
 
-    static func resolve(sourceName: String, destinationName: String) throws -> SharedMIDIEndpoint {
+    private let creationLock = NSLock()
+    private var endpoint: SharedMIDIEndpoint?
+
+    private init() {}
+
+    func resolve(sourceName: String, destinationName: String) throws -> SharedMIDIEndpoint {
         creationLock.lock()
         defer { creationLock.unlock() }
         if let endpoint { return endpoint }
@@ -213,6 +221,8 @@ private enum SharedMIDIEndpointRegistry {
     }
 }
 
+// SAFETY: CoreMIDIController only holds an immutable reference to the internally
+// synchronized SharedMIDIEndpoint. Public methods do not mutate controller state.
 public final class CoreMIDIController: @unchecked Sendable {
     public static let virtualPortName = "MixPilot Virtual Controller"
     public static let virtualOutputPortName = "MixPilot Virtual Controller Output"
@@ -222,7 +232,7 @@ public final class CoreMIDIController: @unchecked Sendable {
     private let endpoint: SharedMIDIEndpoint
 
     public init() throws {
-        endpoint = try SharedMIDIEndpointRegistry.resolve(
+        endpoint = try SharedMIDIEndpointRegistry.shared.resolve(
             sourceName: Self.virtualPortName,
             destinationName: Self.virtualOutputPortName
         )
