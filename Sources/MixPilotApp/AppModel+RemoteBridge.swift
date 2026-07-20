@@ -94,11 +94,21 @@ extension AppModel: MixPilotRemoteStateProvider {
             return "La surveillance audio n’est plus active. Réactive-la sur le Mac avant de reprendre l’autopilote."
         }
 
-        guard let backendRegistry,
-              let backend = try? await backendRegistry.activeBackend(),
-              backend.identifier == activeIdentifier,
-              let currentState = try? await backend.readState(),
-              currentState.isReliable else {
+        guard let backendRegistry else {
+            return "Le registre des logiciels DJ n’est plus disponible. La reprise distante reste refusée."
+        }
+
+        do {
+            let backend = try await backendRegistry.activeBackend()
+            guard backend.identifier == activeIdentifier else {
+                return "Le logiciel DJ actif ne correspond plus à la session Live. La reprise distante reste refusée."
+            }
+            let currentState = try await backend.readState()
+            guard currentState.isReliable else {
+                return "MixPilot ne peut pas confirmer l’état réel des decks. La reprise distante reste refusée ; vérifie le logiciel DJ depuis le Mac."
+            }
+        } catch {
+            runtimeStatus = humanMessage(for: error)
             return "MixPilot ne peut pas confirmer l’état réel des decks. La reprise distante reste refusée ; vérifie le logiciel DJ depuis le Mac."
         }
 
