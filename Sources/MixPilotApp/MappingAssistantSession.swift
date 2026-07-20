@@ -58,9 +58,11 @@ final class MappingAssistantSession: ObservableObject {
     }
 
     private func persist() {
-        let confirmations = Dictionary(uniqueKeysWithValues: state.steps.compactMap { step in
-            step.testSucceeded.map { (step.action.rawValue, $0) }
-        })
+        var confirmations: [String: Bool] = [:]
+        for step in state.steps {
+            guard let succeeded = step.testSucceeded else { continue }
+            confirmations[step.action.rawValue] = succeeded
+        }
         defaults.set(confirmations, forKey: storageKey)
     }
 
