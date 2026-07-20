@@ -1,4 +1,5 @@
 name: One-shot atomic cloud command client wiring
+# armed: atomic-rpc-client
 
 on:
   push:
