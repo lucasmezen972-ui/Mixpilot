@@ -66,6 +66,7 @@ public struct RekordboxLibraryObservation: Sendable, Equatable {
     }
 
     public var isCurrent: Bool { source.isCurrentObservation }
+
     public var cacheAge: TimeInterval? {
         guard case .cachedOCR(let generatedAt) = source else { return nil }
         return max(0, collectedAt.timeIntervalSince(generatedAt))
@@ -271,8 +272,7 @@ struct RekordboxPlaylistOCRParser: Sendable {
     }
 }
 
-@MainActor
-final class RekordboxPlaylistOCRReader {
+actor RekordboxPlaylistOCRReader {
     private struct Cache: Codable {
         var generatedAt: Date
         var fields: [[String]]
@@ -286,8 +286,8 @@ final class RekordboxPlaylistOCRReader {
         var errors: [String]
     }
 
-    private static var activeProcessIdentifiers = Set<pid_t>()
-    private static var lastAttemptByProcessIdentifier: [pid_t: Date] = [:]
+    private var activeProcessIdentifiers = Set<pid_t>()
+    private var lastAttemptByProcessIdentifier: [pid_t: Date] = [:]
     private static let minimumRefreshInterval: TimeInterval = 0.75
     static let cacheLifetime: TimeInterval = 30 * 60
 
@@ -314,21 +314,21 @@ final class RekordboxPlaylistOCRReader {
                 : nil
         }
 
-        if Self.activeProcessIdentifiers.contains(processIdentifier) {
+        if activeProcessIdentifiers.contains(processIdentifier) {
             return allowCache
                 ? cachedObservation(maxRows: maxRows, errors: ["ocrAlreadyRunning"])
                 : nil
         }
-        if let previousAttempt = Self.lastAttemptByProcessIdentifier[processIdentifier],
+        if let previousAttempt = lastAttemptByProcessIdentifier[processIdentifier],
            startedAt.timeIntervalSince(previousAttempt) < Self.minimumRefreshInterval {
             return allowCache
                 ? cachedObservation(maxRows: maxRows, errors: ["ocrRefreshThrottled"])
                 : nil
         }
 
-        Self.lastAttemptByProcessIdentifier[processIdentifier] = startedAt
-        Self.activeProcessIdentifiers.insert(processIdentifier)
-        defer { Self.activeProcessIdentifiers.remove(processIdentifier) }
+        lastAttemptByProcessIdentifier[processIdentifier] = startedAt
+        activeProcessIdentifiers.insert(processIdentifier)
+        defer { activeProcessIdentifiers.remove(processIdentifier) }
 
         let images = windowImages(processIdentifier: processIdentifier)
         var bestResult: RecognitionResult?
@@ -348,12 +348,14 @@ final class RekordboxPlaylistOCRReader {
 
         if let bestResult {
             let observedAt = Date()
-            saveCache(
+            if let cacheError = saveCache(
                 bestResult.parseResult.rows,
                 confidence: bestResult.parseResult.confidence,
                 fragmentCount: bestResult.fragmentCount,
                 generatedAt: observedAt
-            )
+            ) {
+                partialErrors.append(cacheError)
+            }
             return RekordboxLibraryObservation(
                 rows: bestResult.parseResult.rows,
                 source: .freshOCR(observedAt: observedAt),
@@ -378,22 +380,30 @@ final class RekordboxPlaylistOCRReader {
         now: Date = Date(),
         errors: [String] = []
     ) -> RekordboxLibraryObservation? {
-        guard let data = try? Data(contentsOf: cacheURL),
-              let cache = try? JSONDecoder().decode(Cache.self, from: data),
-              now.timeIntervalSince(cache.generatedAt) <= Self.cacheLifetime else {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
+
+        do {
+            let data = try Data(contentsOf: cacheURL)
+            let cache = try JSONDecoder().decode(Cache.self, from: data)
+            guard now.timeIntervalSince(cache.generatedAt) <= Self.cacheLifetime else {
+                try? FileManager.default.removeItem(at: cacheURL)
+                return nil
+            }
+            let rows = cache.fields.prefix(max(1, maxRows)).enumerated().map {
+                DJLibraryRow(index: $0.offset, fields: $0.element)
+            }
+            return RekordboxLibraryObservation(
+                rows: rows,
+                source: .cachedOCR(observedAt: cache.generatedAt),
+                collectedAt: now,
+                fragmentCount: cache.fragmentCount,
+                confidence: cache.confidence,
+                partialErrors: errors
+            )
+        } catch {
+            quarantineCorruptedCache()
             return nil
         }
-        let rows = cache.fields.prefix(max(1, maxRows)).enumerated().map {
-            DJLibraryRow(index: $0.offset, fields: $0.element)
-        }
-        return RekordboxLibraryObservation(
-            rows: rows,
-            source: .cachedOCR(observedAt: cache.generatedAt),
-            collectedAt: now,
-            fragmentCount: cache.fragmentCount,
-            confidence: cache.confidence,
-            partialErrors: errors
-        )
     }
 
     private func recognize(in image: CGImage, maxRows: Int) -> RecognitionResult {
@@ -412,7 +422,7 @@ final class RekordboxPlaylistOCRReader {
                     usedGeometricFallback: false
                 ),
                 fragmentCount: 0,
-                errors: ["visionRequestFailed:\(String(describing: error))"]
+                errors: ["visionRequestFailed:\(String(describing: type(of: error)))"]
             )
         }
         let fragments = (request.results ?? []).compactMap { observation -> RekordboxOCRFragment? in
@@ -460,24 +470,44 @@ final class RekordboxPlaylistOCRReader {
         confidence: Double,
         fragmentCount: Int,
         generatedAt: Date
-    ) {
+    ) -> String? {
         let cache = Cache(
             generatedAt: generatedAt,
             fields: rows.map(\.fields),
             confidence: confidence,
             fragmentCount: fragmentCount
         )
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        let directory = cacheURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        try? data.write(to: cacheURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(cache)
+            try FileManager.default.createDirectory(
+                at: cacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: cacheURL, options: .atomic)
+            return nil
+        } catch {
+            return "ocrCacheWriteFailed:\(String(describing: type(of: error)))"
+        }
+    }
+
+    private func quarantineCorruptedCache() {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return }
+        let quarantineURL = cacheURL
+            .deletingPathExtension()
+            .appendingPathExtension("corrupt-\(UUID().uuidString).json")
+        do {
+            try FileManager.default.moveItem(at: cacheURL, to: quarantineURL)
+        } catch {
+            try? FileManager.default.removeItem(at: cacheURL)
+        }
     }
 
     private var cacheURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let supportRoot = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.homeDirectoryForCurrentUser
+        return supportRoot
             .appendingPathComponent("MixPilot", isDirectory: true)
             .appendingPathComponent("rekordbox-visible-playlist.json")
     }
