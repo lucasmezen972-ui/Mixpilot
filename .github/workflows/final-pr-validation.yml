@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - consolidation/rekordbox-spotify-readiness
   workflow_dispatch:
     inputs:
       version:
@@ -72,6 +73,7 @@ jobs:
           set -o pipefail
           npx supabase start 2>&1 | tee supabase-start.log
           npx supabase db reset 2>&1 | tee supabase-reset.log
+          npx supabase test db 2>&1 | tee supabase-tests.log
           npx supabase migration list --local 2>&1 | tee supabase-migrations.log
       - name: Database diagnostics after failure
         if: failure()
@@ -88,6 +90,7 @@ jobs:
           path: |
             supabase-start.log
             supabase-reset.log
+            supabase-tests.log
             supabase-migrations.log
             supabase-status.log
             docker-ps.log
