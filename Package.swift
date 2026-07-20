@@ -139,6 +139,9 @@ targets.append(
         linkerSettings: [
             .linkedFramework("SwiftUI"),
             .linkedFramework("AppKit"),
+            .linkedFramework("AuthenticationServices"),
+            .linkedFramework("CryptoKit"),
+            .linkedFramework("Security"),
         ]
     )
 )
