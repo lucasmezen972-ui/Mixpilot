@@ -1,0 +1,83 @@
+name: One-shot Spotify compile repair
+
+on:
+  push:
+    branches:
+      - consolidation/rekordbox-spotify-readiness
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidation/rekordbox-spotify-readiness
+          fetch-depth: 0
+
+      - name: Apply strictly bounded Swift fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Sources/MixPilotApp/SpotifyLibraryCoordinator.swift")
+          text = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  "@Published var rekordboxLibrarySource: RekordboxLibrarySource?",
+                  "@Published var rekordboxLibrarySource: MixPilotSystem.RekordboxLibrarySource?",
+                  1,
+              ),
+              (
+                  "if let window, !window.visibleText.isEmpty {",
+                  "if !window.visibleText.isEmpty {",
+                  1,
+              ),
+              (
+                  "window?.visibleText ?? []",
+                  "window.visibleText",
+                  2,
+              ),
+              (
+                  "try? data.write(to: url, options: .atomic)",
+                  "try? data.write(to: url, options: Data.WritingOptions.atomic)",
+                  1,
+              ),
+              (
+                  "private func sourceLabel(_ source: RekordboxLibrarySource?) -> String? {",
+                  "private func sourceLabel(_ source: MixPilotSystem.RekordboxLibrarySource?) -> String? {",
+                  1,
+              ),
+          ]
+
+          for old, new, expected in replacements:
+              count = text.count(old)
+              if count == 0 and text.count(new) == expected:
+                  continue
+              if count != expected:
+                  raise SystemExit(
+                      f"unsafe patch state for {old!r}: expected {expected}, found {count}"
+                  )
+              text = text.replace(old, new)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/fix-spotify-compile.yml
+          git diff --check
+
+      - name: Commit source repair and remove one-shot workflow
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Sources/MixPilotApp/SpotifyLibraryCoordinator.swift .github/workflows/fix-spotify-compile.yml
+          git commit -m "Fix Spotify coordinator compile errors"
+          git push origin HEAD:consolidation/rekordbox-spotify-readiness
