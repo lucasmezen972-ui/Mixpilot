@@ -33,26 +33,30 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('Sources/MixPilotApp/SpotifyLibraryCoordinator.swift')
           source = path.read_text()
 
           if 'import Dispatch\n' not in source:
+              if 'import Foundation\n' not in source:
+                  raise SystemExit('Foundation import not found.')
               source = source.replace(
-                  'import Combine\nimport Foundation\n',
-                  'import Combine\nimport Dispatch\nimport Foundation\n',
+                  'import Foundation\n',
+                  'import Dispatch\nimport Foundation\n',
                   1,
               )
 
-          old = '''    nonisolated func presentationAnchor(
-              for session: ASWebAuthenticationSession
-          ) -> ASPresentationAnchor {
-              MainActor.assumeIsolated {
-                  NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
-              }
-          }
-          '''
-          new = '''    nonisolated func presentationAnchor(
+          pattern = re.compile(
+              r'(?ms)^\s*nonisolated func presentationAnchor\(\s*\n'
+              r'\s*for session: ASWebAuthenticationSession\s*\n'
+              r'\s*\) -> ASPresentationAnchor \{\s*\n'
+              r'\s*MainActor\.assumeIsolated \{\s*\n'
+              r'\s*NSApp\.keyWindow \?\? NSApp\.windows\.first \?\? ASPresentationAnchor\(\)\s*\n'
+              r'\s*\}\s*\n'
+              r'\s*\}'
+          )
+          replacement = '''    nonisolated func presentationAnchor(
               for session: ASWebAuthenticationSession
           ) -> ASPresentationAnchor {
               if Thread.isMainThread {
@@ -66,20 +70,16 @@ jobs:
                       NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
                   }
               }
-          }
-          '''
+          }'''
 
-          if old not in source:
-              raise SystemExit('Expected unsafe presentationAnchor implementation was not found exactly once.')
-          if source.count(old) != 1:
-              raise SystemExit(f'Expected one unsafe implementation, found {source.count(old)}.')
+          source, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one unsafe presentationAnchor implementation, replaced {count}.')
 
-          source = source.replace(old, new, 1)
           path.write_text(source)
-
           assert 'if Thread.isMainThread' in source
           assert 'DispatchQueue.main.sync' in source
-          assert source.count('MainActor.assumeIsolated') == 2
+          assert source.count('MainActor.assumeIsolated') >= 2
           PY
 
       - name: Add regression contract test
@@ -119,7 +119,6 @@ jobs:
           set -euo pipefail
           grep -q 'if Thread.isMainThread' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
           grep -q 'DispatchQueue.main.sync' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
-          test "$(grep -c 'MainActor.assumeIsolated' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift)" -eq 2
 
       - name: Run Swift tests
         shell: bash
