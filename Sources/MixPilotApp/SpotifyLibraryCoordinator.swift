@@ -24,9 +24,46 @@ enum SpotifyConnectionState: Equatable, Sendable {
     }
 }
 
+struct SpotifyAuthorizationCallback: Equatable, Sendable {
+    let code: String
+    let state: String
+
+    static func parse(_ url: URL, expectedURL: URL) throws -> Self {
+        guard url.scheme?.lowercased() == expectedURL.scheme?.lowercased(),
+              url.host?.lowercased() == expectedURL.host?.lowercased(),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw SpotifyBridgeError.invalidCallback
+        }
+
+        var values: [String: String] = [:]
+        for item in components.queryItems ?? [] {
+            guard values[item.name] == nil else {
+                throw SpotifyBridgeError.invalidCallback
+            }
+            values[item.name] = item.value ?? ""
+        }
+
+        if let callbackError = values["error"], !callbackError.isEmpty {
+            throw SpotifyBridgeError.authorizationCancelled
+        }
+        guard let state = values["state"], !state.isEmpty else {
+            throw SpotifyBridgeError.invalidCallback
+        }
+        guard let code = values["code"], !code.isEmpty else {
+            throw SpotifyBridgeError.missingAuthorizationCode
+        }
+        return Self(code: code, state: state)
+    }
+}
+
 @MainActor
 final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
-    static let callbackURL = URL(string: "mixpilot-spotify://callback")!
+    static let callbackURL: URL = {
+        var components = URLComponents()
+        components.scheme = "mixpilot-spotify"
+        components.host = "callback"
+        return components.url ?? URL(fileURLWithPath: "/invalid-mixpilot-spotify-callback")
+    }()
 
     @Published var connectionState: SpotifyConnectionState = .disconnected
     @Published var accountName: String?
@@ -81,6 +118,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     private let selector = SpotifyAutomaticSetSelector()
     private let accessibilityBridge: DJAccessibilityBridge
     private let rekordboxDetector: RekordboxApplicationDetector
+    private let diagnosticWriter = SpotifyDiagnosticFileWriter()
 
     private var webAuthenticationSession: ASWebAuthenticationSession?
     private var webAuthenticationPresentationContext: SpotifyAuthenticationPresentationContext?
@@ -105,6 +143,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     func restoreSession() async {
         guard !clientID.isEmpty,
               let stored = tokenStore.read(clientID: clientID) else {
+            resetLibraryState()
             connectionState = .disconnected
             return
         }
@@ -123,6 +162,15 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             present(SpotifyBridgeError.missingClientID)
             return
         }
+        guard Self.callbackURL.scheme == "mixpilot-spotify",
+              Self.callbackURL.host == "callback" else {
+            present(SpotifyBridgeError.invalidAuthorizationURL)
+            return
+        }
+
+        cancelAuthorizationSession()
+        clearPendingAuthorization()
+
         do {
             let verifier = try SpotifyPKCE.randomURLSafeString(byteCount: 64)
             let state = try SpotifyPKCE.randomURLSafeString(byteCount: 32)
@@ -157,19 +205,21 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
                     guard let self else { return }
                     self.webAuthenticationSession = nil
                     self.webAuthenticationPresentationContext = nil
+
                     if error != nil {
-                        self.pendingVerifier = nil
-                        self.pendingState = nil
+                        self.clearPendingAuthorization()
                         self.present(SpotifyBridgeError.authorizationCancelled)
                         return
                     }
                     guard let callbackURL else {
+                        self.clearPendingAuthorization()
                         self.present(SpotifyBridgeError.invalidCallback)
                         return
                     }
                     await self.completeAuthorization(callbackURL)
                 }
             }
+
             let presentationContext = SpotifyAuthenticationPresentationContext(
                 anchor: NSApp.keyWindow
                     ?? NSApp.mainWindow
@@ -181,32 +231,42 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             session.prefersEphemeralWebBrowserSession = true
             webAuthenticationPresentationContext = presentationContext
             webAuthenticationSession = session
+
             guard session.start() else {
-                webAuthenticationSession = nil
-                webAuthenticationPresentationContext = nil
+                cancelAuthorizationSession()
+                clearPendingAuthorization()
                 throw SpotifyBridgeError.authorizationCancelled
             }
         } catch {
+            cancelAuthorizationSession()
+            clearPendingAuthorization()
             present(error)
         }
     }
 
     func disconnect() {
-        webAuthenticationSession?.cancel()
-        webAuthenticationSession = nil
-        webAuthenticationPresentationContext = nil
+        cancelAuthorizationSession()
+        clearPendingAuthorization()
         refreshTask?.cancel()
         refreshTask = nil
-        try? tokenStore.remove(clientID: clientID)
+
+        let removalError: Error?
+        do {
+            try tokenStore.remove(clientID: clientID)
+            removalError = nil
+        } catch {
+            removalError = error
+        }
+
         currentSession = nil
-        accountName = nil
-        accountIdentifier = nil
-        playlists = []
-        selectedPlaylistID = nil
-        selectedTracks = []
-        lastSynchronizationAt = nil
-        connectionState = .disconnected
-        statusMessage = "Compte Spotify déconnecté de MixPilot."
+        resetLibraryState()
+
+        if let removalError {
+            present(removalError)
+        } else {
+            connectionState = .disconnected
+            statusMessage = "Compte Spotify déconnecté de MixPilot."
+        }
     }
 
     func synchronizeLibrary() async throws {
@@ -231,16 +291,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         var synchronizedPlaylists: [SpotifyLibraryPlaylist] = []
 
         while let candidate = nextURL {
-            let pageURL: URL
-            do {
-                pageURL = try pagination.accept(candidate)
-            } catch SpotifyNetworkSecurityError.paginationLoop {
-                throw SpotifyBridgeError.paginationLoop
-            } catch SpotifyNetworkSecurityError.pageLimitExceeded {
-                throw SpotifyBridgeError.pageLimitExceeded
-            } catch {
-                throw SpotifyBridgeError.networkPolicy
-            }
+            let pageURL = try acceptedPageURL(candidate, guardState: &pagination)
             let page: SpotifyPageDTO<SpotifyPlaylistDTO> = try await apiGet(
                 SpotifyPageDTO<SpotifyPlaylistDTO>.self,
                 url: pageURL
@@ -356,7 +407,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
 
         let collectedAt = Date()
         let window = accessibilityBridge.observe(backend: .rekordbox)
-        let rows = accessibilityBridge.libraryRows(backend: .rekordbox, maxRows: 1_000)
+        let rows = await accessibilityBridge.libraryRows(backend: .rekordbox, maxRows: 1_000)
         rekordboxWindowObservation = window
         visibleRows = rows
 
@@ -384,7 +435,12 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
            matchedID != selectedPlaylistID,
            playlists.contains(where: { $0.id == matchedID }) {
             selectedPlaylistID = matchedID
-            try? await synchronizeSelectedPlaylist()
+            do {
+                try await synchronizeSelectedPlaylist()
+            } catch {
+                present(error)
+                return
+            }
             result = matcher.match(
                 backend: .rekordbox,
                 playlists: playlists,
@@ -417,8 +473,12 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         associations[manualAssociationKey(window: rekordboxWindowObservation)] = playlistID
         saveManualAssociations(associations)
         selectedPlaylistID = playlistID
-        try? await synchronizeSelectedPlaylist()
-        await detectVisibleRekordboxPlaylist()
+        do {
+            try await synchronizeSelectedPlaylist()
+            await detectVisibleRekordboxPlaylist()
+        } catch {
+            present(error)
+        }
     }
 
     func removeManualAssociation() async {
@@ -449,39 +509,50 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             unrecognizedTrackCount: playlistMatch?.unmatchedTrackIDs.count ?? 0,
             statusMessage: statusMessage
         )
-        guard let data = try? JSONEncoder.pretty.encode(diagnostic) else { return }
+
+        let data: Data
+        do {
+            data = try JSONEncoder.pretty.encode(diagnostic)
+        } catch {
+            statusMessage = "Le diagnostic Rekordbox n’a pas pu être préparé : \(error.localizedDescription)"
+            return
+        }
+
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "MixPilot-Rekordbox-Diagnostic.json"
         panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? data.write(to: url, options: Data.WritingOptions.atomic)
+
+        statusMessage = "Écriture du diagnostic Rekordbox…"
+        Task { @MainActor [weak self, diagnosticWriter] in
+            guard let self else { return }
+            do {
+                try await diagnosticWriter.writeAndVerify(data, to: url)
+                self.statusMessage = "Diagnostic Rekordbox exporté : \(url.lastPathComponent)"
+            } catch {
+                self.statusMessage = "Le diagnostic Rekordbox n’a pas pu être écrit : \(error.localizedDescription)"
+            }
+        }
     }
 
     private func completeAuthorization(_ callbackURL: URL) async {
-        defer {
-            pendingVerifier = nil
-            pendingState = nil
-        }
+        defer { clearPendingAuthorization() }
         do {
-            guard callbackURL.scheme == Self.callbackURL.scheme,
-                  callbackURL.host == Self.callbackURL.host,
-                  let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false) else {
-                throw SpotifyBridgeError.invalidCallback
-            }
-            let values = Dictionary(
-                uniqueKeysWithValues: components.queryItems?.map { ($0.name, $0.value ?? "") } ?? []
+            let callback = try SpotifyAuthorizationCallback.parse(
+                callbackURL,
+                expectedURL: Self.callbackURL
             )
-            guard values["state"] == pendingState else {
+            guard callback.state == pendingState else {
                 throw SpotifyBridgeError.stateMismatch
             }
-            guard let code = values["code"], !code.isEmpty,
-                  let verifier = pendingVerifier else {
+            guard let verifier = pendingVerifier else {
                 throw SpotifyBridgeError.missingAuthorizationCode
             }
+
             let token = try await httpClient.token(form: [
                 "client_id": clientID,
                 "grant_type": "authorization_code",
-                "code": code,
+                "code": callback.code,
                 "redirect_uri": Self.callbackURL.absoluteString,
                 "code_verifier": verifier,
             ])
@@ -517,16 +588,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         var tracks: [SpotifyLibraryTrack] = []
         var seen = Set<String>()
         while let candidate = nextURL {
-            let pageURL: URL
-            do {
-                pageURL = try pagination.accept(candidate)
-            } catch SpotifyNetworkSecurityError.paginationLoop {
-                throw SpotifyBridgeError.paginationLoop
-            } catch SpotifyNetworkSecurityError.pageLimitExceeded {
-                throw SpotifyBridgeError.pageLimitExceeded
-            } catch {
-                throw SpotifyBridgeError.networkPolicy
-            }
+            let pageURL = try acceptedPageURL(candidate, guardState: &pagination)
             let page: SpotifyPageDTO<SpotifyPlaylistItemDTO> = try await apiGet(
                 SpotifyPageDTO<SpotifyPlaylistItemDTO>.self,
                 url: pageURL
@@ -584,6 +646,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
               !refreshToken.isEmpty else {
             throw SpotifyBridgeError.noRefreshToken
         }
+
         let task = Task<SpotifyStoredSession, Error> { [httpClient, tokenStore, clientID] in
             let token = try await httpClient.token(form: [
                 "client_id": clientID,
@@ -629,24 +692,41 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         return url
     }
 
+    private func acceptedPageURL(
+        _ candidate: URL,
+        guardState: inout SpotifyPaginationGuard
+    ) throws -> URL {
+        do {
+            return try guardState.accept(candidate)
+        } catch SpotifyNetworkSecurityError.paginationLoop {
+            throw SpotifyBridgeError.paginationLoop
+        } catch SpotifyNetworkSecurityError.pageLimitExceeded {
+            throw SpotifyBridgeError.pageLimitExceeded
+        } catch {
+            throw SpotifyBridgeError.networkPolicy
+        }
+    }
+
     private func validatedNextURL(_ value: String?) throws -> URL? {
         guard let value, !value.isEmpty else { return nil }
-        guard let url = URL(string: value) else { throw SpotifyBridgeError.networkPolicy }
+        guard let url = URL(string: value) else {
+            throw SpotifyBridgeError.networkPolicy
+        }
         do {
-            return try SpotifyNetworkPolicy().validatedAPIURL(url)
+            return try SpotifyNetworkPolicy.validatedAPIURL(url)
         } catch {
             throw SpotifyBridgeError.networkPolicy
         }
     }
 
     private func libraryTrack(from dto: SpotifyTrackDTO) -> SpotifyLibraryTrack? {
-        guard let id = dto.id,
-              let uri = dto.uri,
+        guard let uri = dto.uri,
+              !uri.isEmpty,
               !dto.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
         return SpotifyLibraryTrack(
-            id: id,
+            id: dto.id,
             uri: uri,
             title: dto.name,
             artists: dto.artists.map(\.name),
@@ -702,6 +782,30 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         }
     }
 
+    private func cancelAuthorizationSession() {
+        webAuthenticationSession?.cancel()
+        webAuthenticationSession = nil
+        webAuthenticationPresentationContext = nil
+    }
+
+    private func clearPendingAuthorization() {
+        pendingVerifier = nil
+        pendingState = nil
+    }
+
+    private func resetLibraryState() {
+        accountName = nil
+        accountIdentifier = nil
+        playlists = []
+        selectedPlaylistID = nil
+        selectedTracks = []
+        lastSynchronizationAt = nil
+        rekordboxWindowObservation = nil
+        rekordboxLibrarySource = nil
+        playlistMatch = nil
+        visibleRows = []
+    }
+
     private func present(_ error: Error) {
         let message = (error as? LocalizedError)?.errorDescription
             ?? "Une erreur technique est survenue."
@@ -710,6 +814,8 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     }
 }
 
+// SAFETY: The presentation anchor is captured once on the MainActor, remains
+// immutable for the OAuth session lifetime, and is only returned to the system.
 private final class SpotifyAuthenticationPresentationContext: NSObject,
     ASWebAuthenticationPresentationContextProviding,
     @unchecked Sendable {
@@ -724,6 +830,23 @@ private final class SpotifyAuthenticationPresentationContext: NSObject,
         for session: ASWebAuthenticationSession
     ) -> ASPresentationAnchor {
         anchor
+    }
+}
+
+private actor SpotifyDiagnosticFileWriter {
+    func writeAndVerify(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        guard try Data(contentsOf: url) == data else {
+            throw SpotifyDiagnosticExportError.verificationFailed
+        }
+    }
+}
+
+private enum SpotifyDiagnosticExportError: Error, LocalizedError {
+    case verificationFailed
+
+    var errorDescription: String? {
+        "Le diagnostic écrit ne correspond pas aux données préparées."
     }
 }
 
