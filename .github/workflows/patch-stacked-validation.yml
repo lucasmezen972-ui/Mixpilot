@@ -1,4 +1,5 @@
 name: One-shot stacked validation patch
+# armed: stacked-pr-and-pgtap
 
 on:
   push:
