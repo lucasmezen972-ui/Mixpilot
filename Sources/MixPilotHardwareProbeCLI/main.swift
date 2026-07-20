@@ -28,6 +28,7 @@ private struct HardwareProbeReport: Codable {
     var succeeded: Bool { failures.isEmpty }
 }
 
+// SAFETY: Access to value is serialized by lock; no mutable state escapes.
 private final class AudioSampleCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
@@ -69,7 +70,7 @@ struct MixPilotHardwareProbeCLI {
             maxDepth: 6,
             maximumStrings: 500
         )
-        let rows = bridge.libraryRows(backend: backend, maxRows: 1_000)
+        let rows = await bridge.libraryRows(backend: backend, maxRows: 1_000)
         if strict && !observation.accessibilityGranted {
             failures.append("L’autorisation Accessibilité n’est pas accordée")
         }
@@ -102,7 +103,12 @@ struct MixPilotHardwareProbeCLI {
         do {
             try audioMonitor.start { _ in sampleCounter.increment() }
             audioStarted = true
-            try? await Task.sleep(for: .seconds(1.2))
+            do {
+                try await Task.sleep(for: .seconds(1.2))
+            } catch {
+                audioMonitor.stop()
+                warnings.append("Le test audio a été interrompu avant la fin de la fenêtre d’observation")
+            }
             audioMonitor.stop()
             if strict && sampleCounter.read() == 0 {
                 failures.append("Aucun niveau audio n’a été observé")
