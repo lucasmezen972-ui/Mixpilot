@@ -1,0 +1,87 @@
+name: One-shot permission onboarding wiring
+
+on:
+  push:
+    branches:
+      - consolidation/rekordbox-spotify-readiness
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidation/rekordbox-spotify-readiness
+          fetch-depth: 0
+
+      - name: Wire first launch and permission access
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path("Sources/MixPilotApp/MixPilotMainShellView.swift")
+          shell = shell_path.read_text(encoding="utf-8")
+
+          home_old = '''                case .home:
+                    DJSoftwareSettingsView(model: model)
+'''
+          home_new = '''                case .home:
+                    if model.hasCompletedOnboarding {
+                        DJSoftwareSettingsView(model: model)
+                    } else {
+                        PermissionOnboardingView(model: model)
+                    }
+'''
+          if shell.count(home_old) == 1:
+              shell = shell.replace(home_old, home_new)
+          elif shell.count(home_new) != 1:
+              raise SystemExit("unsafe home onboarding patch state")
+
+          anchor_old = '''            .padding(.horizontal, 4)
+
+            divider
+'''
+          anchor_new = '''            .padding(.horizontal, 4)
+
+            Button {
+                model.restartOnboarding()
+                surface = .home
+            } label: {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(model.hasCompletedOnboarding ? .white.opacity(0.68) : .orange)
+                    .padding(8)
+                    .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .help("Revoir les autorisations macOS")
+
+            divider
+'''
+          if shell.count(anchor_old) == 1:
+              shell = shell.replace(anchor_old, anchor_new)
+          elif shell.count(anchor_new) != 1:
+              raise SystemExit("unsafe permission shortcut patch state")
+
+          shell_path.write_text(shell, encoding="utf-8")
+          PY
+
+          rm .github/workflows/wire-permission-onboarding.yml
+          git diff --check
+
+      - name: Commit wiring and remove one-shot workflow
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Sources/MixPilotApp/MixPilotMainShellView.swift .github/workflows/wire-permission-onboarding.yml
+          git commit -m "Wire sequential permission onboarding"
+          git push origin HEAD:consolidation/rekordbox-spotify-readiness
