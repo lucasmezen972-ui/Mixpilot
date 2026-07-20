@@ -1,5 +1,6 @@
 #if os(macOS)
 import MixPilotCore
+import MixPilotSystem
 
 @MainActor
 extension AppModel {
