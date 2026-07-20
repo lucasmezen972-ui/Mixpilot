@@ -1,6 +1,6 @@
 #if os(macOS)
 import AppKit
-import AuthenticationServices
+@preconcurrency import AuthenticationServices
 import Combine
 import Foundation
 import MixPilotCore
@@ -713,14 +713,14 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
 private final class SpotifyAuthenticationPresentationContext: NSObject,
     ASWebAuthenticationPresentationContextProviding,
     @unchecked Sendable {
-    private let anchor: ASPresentationAnchor
+    nonisolated(unsafe) private let anchor: ASPresentationAnchor
 
     init(anchor: ASPresentationAnchor) {
         self.anchor = anchor
         super.init()
     }
 
-    func presentationAnchor(
+    nonisolated func presentationAnchor(
         for session: ASWebAuthenticationSession
     ) -> ASPresentationAnchor {
         anchor
