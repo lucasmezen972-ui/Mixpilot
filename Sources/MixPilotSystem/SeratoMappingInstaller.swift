@@ -64,7 +64,9 @@ public enum SeratoMappingInstallerError: Error, LocalizedError {
     case seratoMustBeClosed
     case invalidXML(String)
     case noBackupAvailable
+    case invalidBackup(String)
     case installationVerificationFailed
+    case automaticRecoveryFailed(operation: String, recovery: String)
 
     public var errorDescription: String? {
         switch self {
@@ -74,8 +76,12 @@ public enum SeratoMappingInstallerError: Error, LocalizedError {
             "Le preset XML généré est invalide : \(reason)"
         case .noBackupAvailable:
             "Aucune sauvegarde de mapping n’est disponible."
+        case .invalidBackup(let reason):
+            "La sauvegarde Serato ne peut pas être restaurée : \(reason)"
         case .installationVerificationFailed:
             "Les fichiers écrits ne correspondent pas au preset généré."
+        case .automaticRecoveryFailed(let operation, let recovery):
+            "L’opération Serato a échoué (\(operation)) et la restauration automatique est incomplète (\(recovery))."
         }
     }
 }
@@ -106,36 +112,34 @@ public final class SeratoMappingInstaller {
     public var installationDirectory: URL { xmlDirectory }
 
     public func inspect(expectedPreset: SeratoXMLPreset) -> SeratoMappingInstallationState {
-        let presetURL = xmlDirectory.appendingPathComponent(Self.presetFilename)
-        let autoSaveURL = xmlDirectory.appendingPathComponent(Self.autoSaveFilename)
-        let manifestURL = xmlDirectory.appendingPathComponent(Self.manifestFilename)
-
-        guard fileManager.fileExists(atPath: presetURL.path) ||
-                fileManager.fileExists(atPath: autoSaveURL.path) ||
-                fileManager.fileExists(atPath: manifestURL.path) else {
+        let urls = managedURLs
+        guard urls.contains(where: { fileManager.fileExists(atPath: $0.path) }) else {
             return .notInstalled
         }
 
-        guard let manifestData = try? Data(contentsOf: manifestURL),
-              let manifest = try? JSONDecoder.mixPilot.decode(SeratoMappingManifest.self, from: manifestData) else {
-            return .damaged("Le manifeste MixPilot est absent ou illisible.")
-        }
-
-        guard manifest.presetVersion == expectedPreset.version else {
-            return .updateAvailable(
-                installedVersion: manifest.presetVersion,
-                expectedVersion: expectedPreset.version
+        do {
+            let manifestData = try Data(contentsOf: manifestURL)
+            let manifest = try JSONDecoder.mixPilot.decode(
+                SeratoMappingManifest.self,
+                from: manifestData
             )
-        }
+            guard manifest.presetVersion == expectedPreset.version else {
+                return .updateAvailable(
+                    installedVersion: manifest.presetVersion,
+                    expectedVersion: expectedPreset.version
+                )
+            }
 
-        guard let presetData = try? Data(contentsOf: presetURL),
-              let autoSaveData = try? Data(contentsOf: autoSaveURL),
-              presetData == Data(expectedPreset.xml.utf8),
-              autoSaveData == Data(expectedPreset.xml.utf8) else {
-            return .damaged("Le preset installé diffère de la version attendue.")
+            let expectedXML = Data(expectedPreset.xml.utf8)
+            let presetData = try Data(contentsOf: presetURL)
+            let autoSaveData = try Data(contentsOf: autoSaveURL)
+            guard presetData == expectedXML, autoSaveData == expectedXML else {
+                return .damaged("Le preset installé diffère de la version attendue.")
+            }
+            return .installed(version: manifest.presetVersion, directory: xmlDirectory.path)
+        } catch {
+            return .damaged("Le manifeste ou les fichiers MixPilot sont illisibles : \(error.localizedDescription)")
         }
-
-        return .installed(version: manifest.presetVersion, directory: xmlDirectory.path)
     }
 
     @discardableResult
@@ -147,38 +151,115 @@ public final class SeratoMappingInstaller {
         try validateXML(preset.xml)
         try fileManager.createDirectory(at: xmlDirectory, withIntermediateDirectories: true)
 
-        let presetURL = xmlDirectory.appendingPathComponent(Self.presetFilename)
-        let autoSaveURL = xmlDirectory.appendingPathComponent(Self.autoSaveFilename)
-        let manifestURL = xmlDirectory.appendingPathComponent(Self.manifestFilename)
-        let managedURLs = [presetURL, autoSaveURL, manifestURL]
-
         if case .installed = inspect(expectedPreset: preset) {
-            return SeratoMappingInstallationResult(
-                presetPath: presetURL.path,
-                autoSavePath: autoSaveURL.path,
-                backupPath: nil,
-                manifestPath: manifestURL.path,
-                supportedActionCount: preset.supportedActions.count,
-                unsupportedActions: preset.unsupportedActions
-            )
+            return installationResult(preset: preset, backupURL: nil)
         }
 
+        let snapshot = try captureSnapshot(urls: managedURLs)
         let backupURL = try createBackupIfNeeded(managedURLs: managedURLs)
         let xmlData = Data(preset.xml.utf8)
-        try xmlData.write(to: presetURL, options: .atomic)
-        try xmlData.write(to: autoSaveURL, options: .atomic)
-
         let manifest = SeratoMappingManifest(preset: preset, installedAt: now())
         let manifestData = try JSONEncoder.mixPilot.encode(manifest)
-        try manifestData.write(to: manifestURL, options: .atomic)
 
-        guard (try? Data(contentsOf: presetURL)) == xmlData,
-              (try? Data(contentsOf: autoSaveURL)) == xmlData else {
-            throw SeratoMappingInstallerError.installationVerificationFailed
+        do {
+            try xmlData.write(to: presetURL, options: .atomic)
+            try xmlData.write(to: autoSaveURL, options: .atomic)
+            try manifestData.write(to: manifestURL, options: .atomic)
+            try verifyInstallation(
+                expectedXML: xmlData,
+                expectedManifest: manifest,
+                expectedManifestData: manifestData
+            )
+            return installationResult(preset: preset, backupURL: backupURL)
+        } catch let operationError {
+            do {
+                try restore(snapshot: snapshot)
+            } catch let recoveryError {
+                throw SeratoMappingInstallerError.automaticRecoveryFailed(
+                    operation: operationError.localizedDescription,
+                    recovery: recoveryError.localizedDescription
+                )
+            }
+            throw operationError
         }
-        try validateXML(String(decoding: Data(contentsOf: presetURL), as: UTF8.self))
+    }
 
-        return SeratoMappingInstallationResult(
+    public func rollback(seratoRunning: Bool) throws -> String {
+        guard !seratoRunning else { throw SeratoMappingInstallerError.seratoMustBeClosed }
+        let backupRoot = xmlDirectory.appendingPathComponent("MixPilot Backups", isDirectory: true)
+        guard fileManager.fileExists(atPath: backupRoot.path) else {
+            throw SeratoMappingInstallerError.noBackupAvailable
+        }
+
+        let directories = try fileManager.contentsOfDirectory(
+            at: backupRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        guard let latest = directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).last else {
+            throw SeratoMappingInstallerError.noBackupAvailable
+        }
+
+        let indexURL = latest.appendingPathComponent("backup-index.json")
+        let indexData = try Data(contentsOf: indexURL)
+        let index = try JSONDecoder.mixPilot.decode(SeratoMappingBackupIndex.self, from: indexData)
+        try validateBackupIndex(index)
+
+        var restoredData: [String: Data] = [:]
+        for filename in index.existingFilenames {
+            restoredData[filename] = try Data(contentsOf: latest.appendingPathComponent(filename))
+        }
+
+        let snapshot = try captureSnapshot(urls: managedURLs)
+        do {
+            for filename in index.managedFilenames {
+                let destination = xmlDirectory.appendingPathComponent(filename)
+                if let data = restoredData[filename] {
+                    try data.write(to: destination, options: .atomic)
+                } else if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+            }
+            try verifyRollback(index: index, restoredData: restoredData)
+            return latest.path
+        } catch let operationError {
+            do {
+                try restore(snapshot: snapshot)
+            } catch let recoveryError {
+                throw SeratoMappingInstallerError.automaticRecoveryFailed(
+                    operation: operationError.localizedDescription,
+                    recovery: recoveryError.localizedDescription
+                )
+            }
+            throw operationError
+        }
+    }
+
+    private var presetURL: URL {
+        xmlDirectory.appendingPathComponent(Self.presetFilename)
+    }
+
+    private var autoSaveURL: URL {
+        xmlDirectory.appendingPathComponent(Self.autoSaveFilename)
+    }
+
+    private var manifestURL: URL {
+        xmlDirectory.appendingPathComponent(Self.manifestFilename)
+    }
+
+    private var managedURLs: [URL] {
+        [presetURL, autoSaveURL, manifestURL]
+    }
+
+    private var allowedManagedFilenames: Set<String> {
+        Set(managedURLs.map(\.lastPathComponent))
+    }
+
+    private func installationResult(
+        preset: SeratoXMLPreset,
+        backupURL: URL?
+    ) -> SeratoMappingInstallationResult {
+        SeratoMappingInstallationResult(
             presetPath: presetURL.path,
             autoSavePath: autoSaveURL.path,
             backupPath: backupURL?.path,
@@ -188,35 +269,61 @@ public final class SeratoMappingInstaller {
         )
     }
 
-    public func rollback(seratoRunning: Bool) throws -> String {
-        guard !seratoRunning else { throw SeratoMappingInstallerError.seratoMustBeClosed }
-        let backupRoot = xmlDirectory.appendingPathComponent("MixPilot Backups", isDirectory: true)
-        let directories = (try? fileManager.contentsOfDirectory(
-            at: backupRoot,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        guard let latest = directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).last else {
-            throw SeratoMappingInstallerError.noBackupAvailable
+    private func verifyInstallation(
+        expectedXML: Data,
+        expectedManifest: SeratoMappingManifest,
+        expectedManifestData: Data
+    ) throws {
+        guard try Data(contentsOf: presetURL) == expectedXML,
+              try Data(contentsOf: autoSaveURL) == expectedXML,
+              try Data(contentsOf: manifestURL) == expectedManifestData else {
+            throw SeratoMappingInstallerError.installationVerificationFailed
         }
+        try validateXML(String(decoding: expectedXML, as: UTF8.self))
+        let decodedManifest = try JSONDecoder.mixPilot.decode(
+            SeratoMappingManifest.self,
+            from: Data(contentsOf: manifestURL)
+        )
+        guard decodedManifest == expectedManifest else {
+            throw SeratoMappingInstallerError.installationVerificationFailed
+        }
+    }
 
-        let indexURL = latest.appendingPathComponent("backup-index.json")
-        let indexData = try Data(contentsOf: indexURL)
-        let index = try JSONDecoder.mixPilot.decode(SeratoMappingBackupIndex.self, from: indexData)
-
+    private func verifyRollback(
+        index: SeratoMappingBackupIndex,
+        restoredData: [String: Data]
+    ) throws {
         for filename in index.managedFilenames {
             let destination = xmlDirectory.appendingPathComponent(filename)
-            let source = latest.appendingPathComponent(filename)
-            if index.existingFilenames.contains(filename) {
-                if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.removeItem(at: destination)
+            if let expected = restoredData[filename] {
+                guard try Data(contentsOf: destination) == expected else {
+                    throw SeratoMappingInstallerError.installationVerificationFailed
                 }
-                try fileManager.copyItem(at: source, to: destination)
+            } else if fileManager.fileExists(atPath: destination.path) {
+                throw SeratoMappingInstallerError.installationVerificationFailed
+            }
+        }
+    }
+
+    private func captureSnapshot(urls: [URL]) throws -> [String: Data?] {
+        var snapshot: [String: Data?] = [:]
+        for url in urls {
+            snapshot[url.lastPathComponent] = fileManager.fileExists(atPath: url.path)
+                ? try Data(contentsOf: url)
+                : nil
+        }
+        return snapshot
+    }
+
+    private func restore(snapshot: [String: Data?]) throws {
+        for (filename, data) in snapshot {
+            let destination = xmlDirectory.appendingPathComponent(filename)
+            if let data {
+                try data.write(to: destination, options: .atomic)
             } else if fileManager.fileExists(atPath: destination.path) {
                 try fileManager.removeItem(at: destination)
             }
         }
-        return latest.path
     }
 
     private func createBackupIfNeeded(managedURLs: [URL]) throws -> URL? {
@@ -247,6 +354,30 @@ public final class SeratoMappingInstaller {
             options: .atomic
         )
         return backupURL
+    }
+
+    private func validateBackupIndex(_ index: SeratoMappingBackupIndex) throws {
+        let managed = Set(index.managedFilenames)
+        let existing = Set(index.existingFilenames)
+        guard !managed.isEmpty,
+              managed.isSubset(of: allowedManagedFilenames),
+              existing.isSubset(of: managed),
+              index.managedFilenames.allSatisfy(isSafeFilename),
+              index.existingFilenames.allSatisfy(isSafeFilename) else {
+            throw SeratoMappingInstallerError.invalidBackup(
+                "le manifeste de sauvegarde contient des chemins ou fichiers non autorisés"
+            )
+        }
+    }
+
+    private func isSafeFilename(_ filename: String) -> Bool {
+        guard !filename.isEmpty,
+              filename == URL(fileURLWithPath: filename).lastPathComponent,
+              !filename.contains("/"),
+              !filename.contains("\\") else {
+            return false
+        }
+        return true
     }
 
     private func validateXML(_ xml: String) throws {
