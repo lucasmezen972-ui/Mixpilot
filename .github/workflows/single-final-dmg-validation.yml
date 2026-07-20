@@ -1,0 +1,249 @@
+name: Single final security and DMG validation
+
+on:
+  pull_request:
+    branches:
+      - orchestration/final-dmg-validation
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mixpilot-single-final-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  MIXPILOT_VALIDATION_VERSION: 0.4.0-final-candidate
+
+jobs:
+  supabase-validation:
+    name: Fresh Supabase migrations and pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Apply the guarded atomic client patch
+        run: python3 Scripts/apply_atomic_cloud_client.py
+      - name: Remove temporary orchestration files from the validation tree
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/trusted-one-shot-atomic-cloud-client.yml \
+            .github/workflows/one-shot-atomic-cloud-client.yml \
+            .github/workflows/wire-atomic-cloud-command-client.yml \
+            FINAL_VALIDATION_TRIGGER
+      - name: Install pinned Supabase CLI
+        run: npm install --no-save supabase@2.109.1
+      - name: Initialize Supabase when absent
+        shell: bash
+        run: |
+          if [[ ! -f supabase/config.toml ]]; then
+            npx supabase init
+          fi
+      - name: Rebuild database and execute pgTAP
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          npx supabase start 2>&1 | tee supabase-start.log
+          npx supabase db reset 2>&1 | tee supabase-reset.log
+          npx supabase test db 2>&1 | tee supabase-tests.log
+          npx supabase migration list --local 2>&1 | tee supabase-migrations.log
+      - name: Upload Supabase evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-final-Supabase-evidence
+          path: |
+            supabase-start.log
+            supabase-reset.log
+            supabase-tests.log
+            supabase-migrations.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup || true
+
+  apple-validation:
+    name: Swift, simulations, iPhone and final DMG
+    runs-on: macos-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply the guarded atomic client patch
+        run: python3 Scripts/apply_atomic_cloud_client.py
+      - name: Remove temporary orchestration files from the validation tree
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/trusted-one-shot-atomic-cloud-client.yml \
+            .github/workflows/one-shot-atomic-cloud-client.yml \
+            .github/workflows/wire-atomic-cloud-command-client.yml \
+            FINAL_VALIDATION_TRIGGER
+      - name: Prepare scripts
+        run: |
+          chmod +x Scripts/*.sh
+          mkdir -p static-checks
+      - name: Static architecture and safety checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          ./Scripts/check_package_manifest.sh 2>&1 | tee static-checks/package-manifest.log
+          ./Scripts/check_source_architecture.sh 2>&1 | tee static-checks/source-architecture.log
+          ./Scripts/check_runtime_safety.sh 2>&1 | tee static-checks/runtime-safety.log
+          ./Scripts/check_documentation_consistency.sh 2>&1 | tee static-checks/documentation-consistency.log
+          python3 Scripts/check_help_localizations.py 2>&1 | tee static-checks/help-localizations.log
+          ./Scripts/check_transport_reliability.sh 2>&1 | tee static-checks/transport-reliability.log
+          ./Scripts/check_validation_context.sh 2>&1 | tee static-checks/validation-context.log
+      - name: Complete Swift test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee swift-test.log
+      - name: Simulate 50 tracks with injected failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 50 --backend all --inject-failures \
+            2>&1 | tee simulation-50-report.json
+      - name: Simulate 250 tracks with injected failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift run MixPilotSimulatorCLI --tracks 250 --backend all --inject-failures \
+            2>&1 | tee simulation-250-report.json
+      - name: Build all macOS release products
+        run: |
+          swift build -c release --product MixPilotAutopilot
+          swift build -c release --product MixPilotHardwareProbeCLI
+          swift build -c release --product MixPilotMappingPublisherCLI
+      - name: Install XcodeGen
+        shell: bash
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+      - name: Generate iPhone project
+        working-directory: Mobile/MixPilotRemote
+        run: xcodegen generate
+      - name: Build and XCTest iPhone Remote
+        working-directory: Mobile/MixPilotRemote
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > available-simulators.json
+          SIMULATOR_UDID="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("available-simulators.json").read_text())
+          for devices in payload.get("devices", {}).values():
+              for device in devices:
+                  if device.get("isAvailable") and "iPhone" in device.get("name", ""):
+                      print(device["udid"])
+                      raise SystemExit(0)
+          raise SystemExit("No available iPhone simulator was found.")
+          PY
+          )"
+          xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          set -o pipefail
+          xcodebuild \
+            -project MixPilotRemote.xcodeproj \
+            -scheme MixPilotRemote \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -resultBundlePath iphone-remote-tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee iphone-remote-xctest.log
+      - name: Build the final candidate DMG
+        env:
+          MIXPILOT_VERSION: ${{ env.MIXPILOT_VALIDATION_VERSION }}
+          CODE_SIGN_IDENTITY: "-"
+        run: |
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+      - name: Verify application signature and DMG checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+      - name: Upload final DMG and validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-final-validated-DMG
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+            static-checks
+            swift-test.log
+            simulation-50-report.json
+            simulation-250-report.json
+            Mobile/MixPilotRemote/iphone-remote-xctest.log
+            Mobile/MixPilotRemote/available-simulators.json
+            Mobile/MixPilotRemote/iphone-remote-tests.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
+  finalize-source:
+    name: Commit the exact validated source tree
+    needs:
+      - supabase-validation
+      - apple-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Merge the orchestration base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+          git merge --no-edit "origin/${{ github.event.pull_request.base.ref }}"
+      - name: Apply exactly the source patch that passed validation
+        run: python3 Scripts/apply_atomic_cloud_client.py
+      - name: Restore standard workflows and remove every temporary helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout "origin/${{ github.event.pull_request.base.ref }}" -- .github/workflows
+          rm -f \
+            .github/workflows/trusted-one-shot-atomic-cloud-client.yml \
+            .github/workflows/single-final-dmg-validation.yml \
+            .github/workflows/one-shot-atomic-cloud-client.yml \
+            .github/workflows/wire-atomic-cloud-command-client.yml \
+            FINAL_VALIDATION_TRIGGER \
+            Scripts/apply_atomic_cloud_client.py
+      - name: Commit validated source without starting another run
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "mixpilot-final-validation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "security: finalize atomic cloud trust [skip ci]"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
