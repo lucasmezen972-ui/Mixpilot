@@ -101,6 +101,7 @@ public actor MixPilotCloudService {
     private let supabase: SupabaseClient
     private let urlSession: URLSession
     private let installationID: UUID
+    private let commandAgentInstanceID: String?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -117,6 +118,7 @@ public actor MixPilotCloudService {
             supabaseKey: Self.publishableKey
         )
         self.installationID = Self.loadInstallationID()
+        self.commandAgentInstanceID = try? MixPilotCloudAgentIdentityStore().loadOrCreate()
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -306,22 +308,23 @@ public actor MixPilotCloudService {
         return release.isAvailable(currentBuild: currentBuild, installationID: installationID) ? release : nil
     }
 
+    /// Compatibility name kept for the coordinator while the implementation is
+    /// now fully atomic: returned commands are already claimed by this Mac.
     public func pendingCommands() async throws -> [MixPilotCloudCommand] {
         guard let context else { return [] }
+        guard let commandAgentInstanceID else {
+            throw MixPilotCloudCommandError.agentIdentityUnavailable
+        }
         let authSession = try await authenticatedSession()
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
         return try await performRequest(
-            path: "rest/v1/mixpilot_commands",
-            method: "GET",
+            path: "rest/v1/rpc/claim_mixpilot_commands",
+            method: "POST",
             accessToken: authSession.accessToken,
-            queryItems: [
-                URLQueryItem(name: "device_id", value: "eq.\(context.deviceID.uuidString)"),
-                URLQueryItem(name: "status", value: "eq.pending"),
-                URLQueryItem(name: "expires_at", value: "gt.\(formatter.string(from: Date()))"),
-                URLQueryItem(name: "order", value: "created_at.asc"),
-                URLQueryItem(name: "limit", value: "10")
-            ]
+            body: MixPilotCloudCommandClaimRequest(
+                deviceID: context.deviceID,
+                instanceID: commandAgentInstanceID,
+                limit: 10
+            )
         )
     }
 
@@ -330,19 +333,25 @@ public actor MixPilotCloudService {
         succeeded: Bool,
         result: [String: String]
     ) async throws {
+        guard let commandAgentInstanceID else {
+            throw MixPilotCloudCommandError.agentIdentityUnavailable
+        }
         let authSession = try await authenticatedSession()
-        let _: EmptyResponse = try await performRequest(
-            path: "rest/v1/mixpilot_commands",
-            method: "PATCH",
+        let completed: Bool = try await performRequest(
+            path: "rest/v1/rpc/complete_mixpilot_command",
+            method: "POST",
             accessToken: authSession.accessToken,
-            queryItems: [URLQueryItem(name: "id", value: "eq.\(command.id.uuidString)")],
-            prefer: "return=minimal",
-            body: CommandCompletionRow(
-                status: succeeded ? "completed" : "failed",
-                completedAt: Date(),
-                result: result
+            body: MixPilotCloudCommandCompletionRequest(
+                commandID: command.id,
+                instanceID: commandAgentInstanceID,
+                succeeded: succeeded,
+                result: result,
+                failureCode: succeeded ? nil : result["error"]
             )
         )
+        guard completed else {
+            throw MixPilotCloudCommandError.completionRejected
+        }
     }
 
     public func closeSession() async {
@@ -654,17 +663,6 @@ private struct SessionHeartbeatRow: Encodable {
 private struct SessionEndRow: Encodable {
     let endedAt: Date
     enum CodingKeys: String, CodingKey { case endedAt = "ended_at" }
-}
-
-private struct CommandCompletionRow: Encodable {
-    let status: String
-    let completedAt: Date
-    let result: [String: String]
-    enum CodingKeys: String, CodingKey {
-        case status
-        case completedAt = "completed_at"
-        case result
-    }
 }
 
 private struct EmptyResponse: Codable { init() {} }
