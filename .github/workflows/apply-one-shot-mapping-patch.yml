@@ -1,5 +1,7 @@
 name: Apply one-shot async mapping patch
 
+# This second commit intentionally re-arms the workflow after it already exists
+# in the branch parent. The job itself only accepts the exact commit message below.
 on:
   push:
     branches:
