@@ -6,6 +6,11 @@ on:
       - main
       - consolidation/rekordbox-spotify-readiness
   workflow_dispatch:
+  push:
+    branches:
+      - audit/ultimate-hardening-staging
+    paths:
+      - .audit/run-dual-audit
 
 permissions:
   contents: read
@@ -16,19 +21,33 @@ concurrency:
 
 jobs:
   audit:
-    name: Line-by-line repository audit
+    name: Dual repository audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Validate audit script syntax
-        run: python3 -m py_compile Scripts/ultimate_repository_audit.py
-      - name: Scan every tracked text file
-        run: python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+      - name: Validate both audit scripts
+        run: |
+          python3 -m py_compile Scripts/ultimate_repository_audit.py
+          python3 -m py_compile Scripts/architecture_counter_audit.py
+      - name: Run both independent repository audits
+        run: |
+          set +e
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+          first_status=$?
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
+          second_status=$?
+          set -e
+          if (( first_status != 0 || second_status != 0 )); then
+            echo "At least one repository audit reported blocking findings."
+            exit 1
+          fi
       - name: Upload complete audit reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-ultimate-repository-audit
-          path: ultimate-audit
+          name: MixPilot-dual-repository-audit
+          path: |
+            ultimate-audit
+            architecture-counter-audit
           if-no-files-found: error
