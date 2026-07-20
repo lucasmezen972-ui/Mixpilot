@@ -1,7 +1,8 @@
 #if os(macOS)
 
-// AppModel is globally isolated to MainActor. The unchecked conformance documents
-// that references may cross callback boundaries only to be re-entered on MainActor.
+// SAFETY: AppModel is globally isolated to MainActor. References may cross
+// callback boundaries only so execution can immediately re-enter that actor;
+// mutable model state is never accessed outside MainActor isolation.
 extension AppModel: @unchecked Sendable {}
 
 #endif
