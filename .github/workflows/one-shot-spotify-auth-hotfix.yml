@@ -6,6 +6,12 @@ on:
       - ops/spotify-auth-crash-fix
     paths:
       - .github/spotify-auth-hotfix.trigger
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - ops/spotify-auth-crash-fix
+    paths:
+      - .github/spotify-auth-hotfix.trigger
 
 permissions:
   contents: write
