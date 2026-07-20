@@ -57,7 +57,7 @@ final class CloudCommandRPCTests: XCTestCase {
         XCTAssertTrue(source.contains("rest/v1/rpc/complete_mixpilot_command"))
         XCTAssertFalse(source.contains("path: \"rest/v1/mixpilot_commands\""))
         XCTAssertFalse(source.contains("URLQueryItem(name: \"status\", value: \"eq.pending\")"))
-        XCTAssertFalse(source.contains("MixPilotCloudCommandCompletionRow"))
+        XCTAssertFalse(source.contains("CommandCompletionRow"))
         XCTAssertTrue(source.contains("MixPilotCloudAgentIdentityStore().loadOrCreate()"))
     }
 
