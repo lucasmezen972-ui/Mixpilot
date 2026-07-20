@@ -13,9 +13,16 @@ STAGING="$ROOT/build/dmg-staging"
 BUILD_DIR="$ROOT/build"
 DMG_NAME="MixPilot-Autopilot.dmg"
 DMG="$BUILD_DIR/$DMG_NAME"
+FIRST_AUDIT_SCRIPT="$ROOT/Scripts/ultimate_repository_audit.py"
+COUNTER_AUDIT_SCRIPT="$ROOT/Scripts/architecture_counter_audit.py"
 AUDIT_REPORT="$ROOT/ultimate-audit/ultimate-audit.json"
 COUNTER_AUDIT_REPORT="$ROOT/architecture-counter-audit/architecture-counter-audit.json"
 CURRENT_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
+
+if [[ ! -f "$FIRST_AUDIT_SCRIPT" || ! -f "$COUNTER_AUDIT_SCRIPT" ]]; then
+  echo "Both repository audit scripts are required before packaging." >&2
+  exit 1
+fi
 
 if [[ ! -f "$AUDIT_REPORT" || ! -f "$COUNTER_AUDIT_REPORT" ]]; then
   echo "Both repository audits are required before packaging. Rebuilding first." >&2
