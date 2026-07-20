@@ -19,8 +19,28 @@ APP_DIR="$BUILD_DIR/$APP_NAME.app"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
 ICON_SOURCE="$BUILD_DIR/MixPilotAppIcon.jpg"
+AUDIT_DIR="$ROOT/ultimate-audit"
 
 cd "$ROOT"
+
+# A release candidate must be produced from the exact repository state that
+# passed the repository-wide line-by-line audit. This gate is intentionally
+# not bypassed by MIXPILOT_SKIP_TESTS.
+rm -rf "$AUDIT_DIR"
+python3 "$ROOT/Scripts/ultimate_repository_audit.py" --output-dir "$AUDIT_DIR"
+python3 - "$AUDIT_DIR/ultimate-audit.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+summary = report.get("summary", {})
+if summary.get("errors") != 0:
+    raise SystemExit("Repository audit contains blocking errors.")
+if not summary.get("git_head"):
+    raise SystemExit("Repository audit did not record the audited Git commit.")
+PY
+
 if [[ "${MIXPILOT_SKIP_TESTS:-0}" == "1" ]]; then
   echo "Skipping Swift tests because MIXPILOT_SKIP_TESTS=1."
 else
