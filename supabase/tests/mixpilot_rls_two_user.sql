@@ -123,7 +123,7 @@ select throws_ok(
         '22000000-0000-0000-0000-000000000002',
         'test', 3
     )$$,
-    '42501',
+    '23503',
     null,
     'user A cannot attach a session to user B device'
 );
@@ -151,7 +151,7 @@ select throws_ok(
         'test', 'cross_session_event', 'info',
         '14100000-0000-0000-0000-000000000001'
     )$$,
-    '42501',
+    '23503',
     null,
     'user A cannot attach an event to user B session'
 );
