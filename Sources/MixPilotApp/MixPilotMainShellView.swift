@@ -23,7 +23,11 @@ struct MixPilotMainShellView: View {
             Group {
                 switch surface {
                 case .home:
-                    DJSoftwareSettingsView(model: model)
+                    if model.hasCompletedOnboarding {
+                        DJSoftwareSettingsView(model: model)
+                    } else {
+                        PermissionOnboardingView(model: model)
+                    }
                 case .workspace:
                     UnifiedWorkspaceView(model: model)
                 }
@@ -77,6 +81,19 @@ struct MixPilotMainShellView: View {
                 }
             }
             .padding(.horizontal, 4)
+
+            Button {
+                model.restartOnboarding()
+                surface = .home
+            } label: {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(model.hasCompletedOnboarding ? .white.opacity(0.68) : .orange)
+                    .padding(8)
+                    .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .help("Revoir les autorisations macOS")
 
             divider
 
