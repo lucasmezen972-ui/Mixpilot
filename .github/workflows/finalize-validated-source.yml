@@ -1,0 +1,56 @@
+name: Finalize validated source only
+
+on:
+  pull_request:
+    branches:
+      - orchestration/final-dmg-validation
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mixpilot-source-finalization-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.head_ref == 'consolidation/security-cloud-trust'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fetch validated patch and feature workflow sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin orchestration/final-dmg-validation consolidation/rekordbox-spotify-readiness
+          git show origin/orchestration/final-dmg-validation:Scripts/apply_atomic_cloud_client.py > /tmp/apply_atomic_cloud_client.py
+      - name: Apply the exact atomic patch that produced the validated DMG
+        run: python3 /tmp/apply_atomic_cloud_client.py
+      - name: Restore standard workflow and remove temporary orchestration files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout origin/consolidation/rekordbox-spotify-readiness -- .github/workflows/architecture-principles.yml
+          rm -f \
+            .github/workflows/trusted-one-shot-atomic-cloud-client.yml \
+            .github/workflows/one-shot-atomic-cloud-client.yml \
+            .github/workflows/wire-atomic-cloud-command-client.yml \
+            FINAL_VALIDATION_TRIGGER \
+            FINAL_SOURCE_COMMIT_TRIGGER
+      - name: Commit the validated source without starting another workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "mixpilot-final-validation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "security: finalize validated atomic cloud source [skip ci]"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
