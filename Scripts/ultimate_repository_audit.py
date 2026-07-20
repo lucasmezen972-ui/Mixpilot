@@ -10,14 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import plistlib
 import re
 import subprocess
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -86,7 +83,7 @@ SWIFT_HARD_ERRORS = [
      "Forced try can terminate the process."),
     ("forced-cast", re.compile(r"\bas!\s+"),
      "Forced casts can terminate the process."),
-    ("unchecked-continuation", re.compile(r"\bwithUnsafe(?:Throwing)?Continuation\s*\("),
+    ("unchecked-continuation", re.compile(r"\bwithUnsafe(?:Throwing)?Continuation\b"),
      "Use checked continuations unless a measured hot path proves otherwise."),
     ("blocking-sleep", re.compile(r"\b(?:Thread\.sleep|sleep|usleep)\s*\("),
      "Blocking sleeps are forbidden in application/runtime source."),
@@ -142,6 +139,7 @@ FORCE_UNWRAP_CANDIDATE = re.compile(
 EMPTY_CATCH = re.compile(r"catch\s*\{\s*\}", re.MULTILINE)
 MUTABLE_STATIC = re.compile(r"^\s*(?:public\s+|private\s+|internal\s+|fileprivate\s+)?static\s+var\s+", re.MULTILINE)
 
+
 @dataclass(frozen=True)
 class Finding:
     severity: str
@@ -150,6 +148,18 @@ class Finding:
     line: int
     message: str
     excerpt: str
+
+
+def current_git_head() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+
 
 def git_tracked_files() -> list[Path]:
     try:
@@ -165,8 +175,10 @@ def git_tracked_files() -> list[Path]:
             if path.is_file() and not any(part in EXCLUDED_PARTS for part in path.parts)
         ]
 
+
 def relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
+
 
 def is_text_candidate(path: Path) -> bool:
     rel = relative(path)
@@ -177,6 +189,7 @@ def is_text_candidate(path: Path) -> bool:
     return path.name in {
         "Package.swift", "Package.resolved", "Dockerfile", "Makefile", ".gitignore",
     }
+
 
 def read_text(path: Path) -> str | None:
     try:
@@ -191,6 +204,7 @@ def read_text(path: Path) -> str | None:
         except UnicodeDecodeError:
             continue
     return None
+
 
 def add(
     findings: list[Finding],
@@ -210,18 +224,20 @@ def add(
         excerpt=excerpt.strip()[:240],
     ))
 
+
 def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
+
 
 def has_safety_comment(lines: list[str], index: int) -> bool:
     start = max(0, index - 4)
     context = "\n".join(lines[start:index + 1]).upper()
     return "SAFETY:" in context and ("THREAD" in context or "ACTOR" in context or "IMMUTABLE" in context)
 
+
 def scan_common(path: str, text: str, findings: list[Finding]) -> None:
-    if MERGE_MARKERS.search(text):
-        match = MERGE_MARKERS.search(text)
-        assert match
+    match = MERGE_MARKERS.search(text)
+    if match:
         add(findings, "error", "merge-conflict-marker", path,
             line_number(text, match.start()), "Unresolved merge conflict marker.", match.group(0))
 
@@ -235,12 +251,13 @@ def scan_common(path: str, text: str, findings: list[Finding]) -> None:
             line_number(text, match.start()), "Personal absolute path makes builds non-portable.", match.group(0))
 
     for index, line in enumerate(text.splitlines(), start=1):
-        if line.rstrip("\n\r") != line.rstrip("\n\r").rstrip(" \t"):
+        if line != line.rstrip(" \t"):
             add(findings, "warning", "trailing-whitespace", path, index,
                 "Trailing whitespace.", line)
         if len(line) > 240 and not path.endswith((".json", ".strings", ".md")):
             add(findings, "warning", "very-long-line", path, index,
                 "Line exceeds 240 characters and is hard to review.", line)
+
 
 def scan_swift(path: str, text: str, findings: list[Finding]) -> None:
     is_production = path.startswith(SOURCE_PREFIXES) and not path.startswith(TEST_PREFIXES)
@@ -253,10 +270,9 @@ def scan_swift(path: str, text: str, findings: list[Finding]) -> None:
 
     for rule, pattern, message in SWIFT_WARNINGS:
         for match in pattern.finditer(text):
-            severity = "warning"
             if rule == "fatal-production" and not is_production:
                 continue
-            add(findings, severity, rule, path, line_number(text, match.start()), message, match.group(0))
+            add(findings, "warning", rule, path, line_number(text, match.start()), message, match.group(0))
 
     for index, line in enumerate(lines):
         if "@unchecked Sendable" in line or "nonisolated(unsafe)" in line:
@@ -289,6 +305,7 @@ def scan_swift(path: str, text: str, findings: list[Finding]) -> None:
         add(findings, "warning", "mainactor-blocking-io", path, 1,
             "A @MainActor file performs synchronous file I/O.", "Data/String(contentsOf:)")
 
+
 def scan_shell(path: str, text: str, findings: list[Finding]) -> None:
     if path.startswith("Scripts/") and not text.startswith("#!"):
         add(findings, "error", "missing-shebang", path, 1,
@@ -301,9 +318,10 @@ def scan_shell(path: str, text: str, findings: list[Finding]) -> None:
             add(findings, "error", rule, path, line_number(text, match.start()), message, match.group(0))
     for rule, pattern, message in INSECURE_TRANSPORT_PATTERNS:
         for match in pattern.finditer(text):
-            if "http://www.apple.com/DTDs/" in match.group(0):
+            if "http://www.apple.com/DTDs/" in text[max(0, match.start() - 80):match.end() + 80]:
                 continue
             add(findings, "error", rule, path, line_number(text, match.start()), message, match.group(0))
+
 
 def scan_sql(path: str, text: str, findings: list[Finding]) -> None:
     lower = text.lower()
@@ -319,6 +337,7 @@ def scan_sql(path: str, text: str, findings: list[Finding]) -> None:
         add(findings, "warning", "permissive-rls-policy", path, line_number(text, match.start()),
             "RLS policy USING (true) deserves explicit review.", "USING (true)")
 
+
 def scan_plist(path: Path, rel: str, findings: list[Finding]) -> None:
     try:
         payload = plistlib.loads(path.read_bytes())
@@ -330,10 +349,10 @@ def scan_plist(path: Path, rel: str, findings: list[Finding]) -> None:
         if isinstance(ats, dict) and ats.get("NSAllowsArbitraryLoads") is True:
             add(findings, "error", "ats-arbitrary-loads", rel, 1,
                 "NSAllowsArbitraryLoads must not be enabled.", "NSAllowsArbitraryLoads")
-    if rel.endswith("PrivacyInfo.xcprivacy"):
-        if not isinstance(payload, dict):
-            add(findings, "error", "invalid-privacy-manifest", rel, 1,
-                "Privacy manifest root must be a dictionary.", "")
+    if rel.endswith("PrivacyInfo.xcprivacy") and not isinstance(payload, dict):
+        add(findings, "error", "invalid-privacy-manifest", rel, 1,
+            "Privacy manifest root must be a dictionary.", "")
+
 
 def scan_repository_invariants(paths: list[Path], findings: list[Finding]) -> None:
     rels = [relative(path) for path in paths]
@@ -421,7 +440,14 @@ def scan_repository_invariants(paths: list[Path], findings: list[Finding]) -> No
             add(findings, "error", "swift-tools-version", relative(package), 1,
                 "Package must use Swift tools 6.0.", "")
 
-def write_reports(findings: list[Finding], files: int, lines: int, output_dir: Path) -> None:
+
+def write_reports(
+    findings: list[Finding],
+    files: int,
+    lines: int,
+    git_head: str | None,
+    output_dir: Path,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     ordered = sorted(findings, key=lambda item: (
         0 if item.severity == "error" else 1,
@@ -431,6 +457,7 @@ def write_reports(findings: list[Finding], files: int, lines: int, output_dir: P
     ))
     payload = {
         "summary": {
+            "git_head": git_head,
             "files_scanned": files,
             "lines_scanned": lines,
             "errors": sum(item.severity == "error" for item in ordered),
@@ -445,6 +472,7 @@ def write_reports(findings: list[Finding], files: int, lines: int, output_dir: P
     rows = [
         "# MixPilot ultimate repository audit",
         "",
+        f"- Git head: `{git_head or 'unknown'}`",
         f"- Files scanned: {files}",
         f"- Lines scanned: {lines}",
         f"- Errors: {payload['summary']['errors']}",
@@ -460,6 +488,7 @@ def write_reports(findings: list[Finding], files: int, lines: int, output_dir: P
             "",
         ])
     (output_dir / "ultimate-audit.md").write_text("\n".join(rows), encoding="utf-8")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -496,13 +525,20 @@ def main() -> int:
             scan_plist(path, rel, findings)
 
     scan_repository_invariants(tracked, findings)
-    write_reports(findings, files_scanned, lines_scanned, ROOT / args.output_dir)
+    git_head = current_git_head()
+    write_reports(
+        findings,
+        files_scanned,
+        lines_scanned,
+        git_head,
+        ROOT / args.output_dir,
+    )
 
     errors = [item for item in findings if item.severity == "error"]
     warnings = [item for item in findings if item.severity == "warning"]
     print(
-        f"Ultimate audit scanned {files_scanned} files / {lines_scanned} lines: "
-        f"{len(errors)} errors, {len(warnings)} warnings."
+        f"Ultimate audit scanned {files_scanned} files / {lines_scanned} lines "
+        f"at {git_head or 'unknown HEAD'}: {len(errors)} errors, {len(warnings)} warnings."
     )
     for item in sorted(errors + warnings, key=lambda value: (
         0 if value.severity == "error" else 1,
@@ -514,6 +550,7 @@ def main() -> int:
     if errors or (args.fail_on_warnings and warnings):
         return 1
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
