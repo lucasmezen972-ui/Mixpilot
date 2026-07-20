@@ -17,7 +17,7 @@ func rekordboxObservationSourceFreshness() {
         .spotifyAPI(synchronizedAt: observedAt),
     ]
 
-    #expect(currentSources.allSatisfy(\.isCurrentObservation))
+    #expect(currentSources.allSatisfy { $0.isCurrentObservation })
     #expect(informationalSources.allSatisfy { !$0.isCurrentObservation })
     #expect((currentSources + informationalSources).allSatisfy { $0.date == observedAt })
 }
