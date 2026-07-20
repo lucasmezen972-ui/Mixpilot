@@ -191,11 +191,14 @@ public final class SeratoMappingInstaller {
             throw SeratoMappingInstallerError.noBackupAvailable
         }
 
-        let directories = try fileManager.contentsOfDirectory(
+        let candidates = try fileManager.contentsOfDirectory(
             at: backupRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )
+        let directories = try candidates.filter { url in
+            try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        }
         guard let latest = directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).last else {
             throw SeratoMappingInstallerError.noBackupAvailable
         }
@@ -274,15 +277,18 @@ public final class SeratoMappingInstaller {
         expectedManifest: SeratoMappingManifest,
         expectedManifestData: Data
     ) throws {
-        guard try Data(contentsOf: presetURL) == expectedXML,
-              try Data(contentsOf: autoSaveURL) == expectedXML,
-              try Data(contentsOf: manifestURL) == expectedManifestData else {
+        let writtenPreset = try Data(contentsOf: presetURL)
+        let writtenAutoSave = try Data(contentsOf: autoSaveURL)
+        let writtenManifest = try Data(contentsOf: manifestURL)
+        guard writtenPreset == expectedXML,
+              writtenAutoSave == expectedXML,
+              writtenManifest == expectedManifestData else {
             throw SeratoMappingInstallerError.installationVerificationFailed
         }
-        try validateXML(String(decoding: expectedXML, as: UTF8.self))
+        try validateXML(String(decoding: writtenPreset, as: UTF8.self))
         let decodedManifest = try JSONDecoder.mixPilot.decode(
             SeratoMappingManifest.self,
-            from: Data(contentsOf: manifestURL)
+            from: writtenManifest
         )
         guard decodedManifest == expectedManifest else {
             throw SeratoMappingInstallerError.installationVerificationFailed
@@ -305,20 +311,25 @@ public final class SeratoMappingInstaller {
         }
     }
 
-    private func captureSnapshot(urls: [URL]) throws -> [String: Data?] {
-        var snapshot: [String: Data?] = [:]
-        for url in urls {
-            snapshot[url.lastPathComponent] = fileManager.fileExists(atPath: url.path)
-                ? try Data(contentsOf: url)
-                : nil
+    private func captureSnapshot(urls: [URL]) throws -> SeratoMappingSnapshot {
+        var existingFilenames: Set<String> = []
+        var data: [String: Data] = [:]
+        for url in urls where fileManager.fileExists(atPath: url.path) {
+            existingFilenames.insert(url.lastPathComponent)
+            data[url.lastPathComponent] = try Data(contentsOf: url)
         }
-        return snapshot
+        return SeratoMappingSnapshot(
+            managedFilenames: Set(urls.map(\.lastPathComponent)),
+            existingFilenames: existingFilenames,
+            data: data
+        )
     }
 
-    private func restore(snapshot: [String: Data?]) throws {
-        for (filename, data) in snapshot {
+    private func restore(snapshot: SeratoMappingSnapshot) throws {
+        for filename in snapshot.managedFilenames {
             let destination = xmlDirectory.appendingPathComponent(filename)
-            if let data {
+            if snapshot.existingFilenames.contains(filename),
+               let data = snapshot.data[filename] {
                 try data.write(to: destination, options: .atomic)
             } else if fileManager.fileExists(atPath: destination.path) {
                 try fileManager.removeItem(at: destination)
@@ -390,6 +401,12 @@ public final class SeratoMappingInstaller {
             )
         }
     }
+}
+
+private struct SeratoMappingSnapshot {
+    let managedFilenames: Set<String>
+    let existingFilenames: Set<String>
+    let data: [String: Data]
 }
 
 private struct SeratoMappingBackupIndex: Codable {
