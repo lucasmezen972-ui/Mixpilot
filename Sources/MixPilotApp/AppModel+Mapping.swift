@@ -4,6 +4,17 @@ import MixPilotCore
 import MixPilotMIDI
 import MixPilotSystem
 
+enum MappingTestResult: Equatable, Sendable {
+    case sending
+    case sent(commandID: UUID, sentAt: Date)
+    case failed(error: String)
+
+    var sentCommand: (id: UUID, sentAt: Date)? {
+        guard case .sent(let commandID, let sentAt) = self else { return nil }
+        return (commandID, sentAt)
+    }
+}
+
 @MainActor
 extension AppModel {
     func configureMIDI() {
@@ -81,28 +92,37 @@ extension AppModel {
         }
     }
 
-    func testMapping(_ action: DJControlAction) {
-        Task {
-            do {
-                guard let mappedController else {
-                    throw DJBackendError.commandRejected(
-                        "Le contrôleur MIDI n’est pas encore disponible."
-                    )
-                }
-                if let mapping = mappingProfile[action], mapping.kind == .controlChange {
-                    try await mappedController.set(action, value: 0.5)
-                } else {
-                    try await mappedController.trigger(action)
-                }
-                midiStatus = "Commande envoyée. Confirme maintenant la réaction du logiciel DJ."
-            } catch {
-                midiStatus = "La commande n’a pas pu être envoyée. Vérifie le mapping et la connexion MIDI."
-                runtimeStatus = humanMessage(for: error)
+    func testMapping(_ action: DJControlAction) async -> MappingTestResult {
+        midiStatus = "Envoi de la commande MIDI…"
+        do {
+            guard let mappedController else {
+                throw DJBackendError.commandRejected(
+                    "Le contrôleur MIDI n’est pas encore disponible."
+                )
             }
+            if let mapping = mappingProfile[action], mapping.kind == .controlChange {
+                try await mappedController.set(action, value: 0.5)
+            } else {
+                try await mappedController.trigger(action)
+            }
+            let commandID = UUID()
+            let sentAt = Date()
+            midiStatus = "Commande envoyée. Confirme maintenant la réaction du logiciel DJ."
+            return .sent(commandID: commandID, sentAt: sentAt)
+        } catch {
+            let message = humanMessage(for: error)
+            midiStatus = "La commande n’a pas pu être envoyée. Vérifie le mapping et la connexion MIDI."
+            runtimeStatus = message
+            return .failed(error: message)
         }
     }
 
-    func recordMappingValidation(_ action: DJControlAction, succeeded: Bool) {
+    func recordMappingValidation(
+        _ action: DJControlAction,
+        commandID: UUID,
+        sentAt: Date,
+        succeeded: Bool
+    ) {
         guard let selectedBackend else {
             midiStatus = "Choisis d’abord le logiciel DJ à tester."
             return
@@ -118,13 +138,13 @@ extension AppModel {
             mappingVersion: mappingProfile.validationIdentifier,
             action: action
         )
+        let resultLabel = succeeded ? "DEVICE_CONFIRMED" : "USER_REJECTED"
         let record = DJCommandValidationRecord(
             key: key,
             status: succeeded ? .automatedSuccess : .failed,
             evidence: succeeded ? .deviceConfirmed : .userRejected,
-            detail: succeeded
-                ? "Réaction confirmée par l’utilisateur sur le logiciel DJ actif."
-                : "La réaction attendue n’a pas été observée."
+            validatedAt: Date(),
+            detail: "\(resultLabel); commandID=\(commandID.uuidString); sentAt=\(ISO8601DateFormatter().string(from: sentAt))"
         )
 
         Task {
