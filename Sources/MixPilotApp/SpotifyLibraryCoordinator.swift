@@ -43,7 +43,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         bundleIdentifier: nil
     )
     @Published var rekordboxWindowObservation: DJWindowObservation?
-    @Published var rekordboxLibrarySource: RekordboxLibrarySource?
+    @Published var rekordboxLibrarySource: MixPilotSystem.RekordboxLibrarySource?
     @Published var playlistMatch: SpotifyPlaylistMatchResult?
     @Published var visibleRows: [DJLibraryRow] = []
 
@@ -348,7 +348,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         rekordboxWindowObservation = window
         visibleRows = rows
 
-        if let window, !window.visibleText.isEmpty {
+        if !window.visibleText.isEmpty {
             rekordboxLibrarySource = .visibleText(observedAt: collectedAt)
         } else if !rows.isEmpty {
             rekordboxLibrarySource = .freshOCR(observedAt: collectedAt)
@@ -362,7 +362,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             backend: .rekordbox,
             playlists: playlists,
             tracks: selectedTracks,
-            visibleText: window?.visibleText ?? [],
+            visibleText: window.visibleText,
             rows: rows.map(\.fields),
             manualPlaylistID: manualID,
             observedAt: collectedAt
@@ -377,7 +377,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
                 backend: .rekordbox,
                 playlists: playlists,
                 tracks: selectedTracks,
-                visibleText: window?.visibleText ?? [],
+                visibleText: window.visibleText,
                 rows: rows.map(\.fields),
                 manualPlaylistID: manualID,
                 observedAt: collectedAt
@@ -442,7 +442,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         panel.nameFieldStringValue = "MixPilot-Rekordbox-Diagnostic.json"
         panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? data.write(to: url, options: .atomic)
+        try? data.write(to: url, options: Data.WritingOptions.atomic)
     }
 
     private func completeAuthorization(_ callbackURL: URL) async {
@@ -679,7 +679,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         UserDefaults.standard.set(values, forKey: Self.manualAssociationsDefaultsKey)
     }
 
-    private func sourceLabel(_ source: RekordboxLibrarySource?) -> String? {
+    private func sourceLabel(_ source: MixPilotSystem.RekordboxLibrarySource?) -> String? {
         switch source {
         case .accessibility: "accessibility"
         case .visibleText: "visibleText"
