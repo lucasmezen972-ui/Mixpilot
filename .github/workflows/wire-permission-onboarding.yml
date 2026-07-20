@@ -1,4 +1,5 @@
 name: One-shot permission onboarding wiring
+# armed: first-launch permission route
 
 on:
   push:
