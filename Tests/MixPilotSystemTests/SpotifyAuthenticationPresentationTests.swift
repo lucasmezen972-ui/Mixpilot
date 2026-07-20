@@ -9,6 +9,9 @@ final class SpotifyAuthenticationPresentationTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains(
+            "@preconcurrency import AuthenticationServices"
+        ))
+        XCTAssertTrue(source.contains(
             "private final class SpotifyAuthenticationPresentationContext"
         ))
         XCTAssertTrue(source.contains(
@@ -19,6 +22,12 @@ final class SpotifyAuthenticationPresentationTests: XCTestCase {
         ))
         XCTAssertTrue(source.contains("NSApp.keyWindow"))
         XCTAssertTrue(source.contains("NSApp.mainWindow"))
+        XCTAssertTrue(source.contains(
+            "nonisolated(unsafe) private let anchor: ASPresentationAnchor"
+        ))
+        XCTAssertTrue(source.contains(
+            "nonisolated func presentationAnchor("
+        ))
         XCTAssertFalse(source.contains("MainActor.assumeIsolated"))
         XCTAssertFalse(source.contains("DispatchQueue.main.sync"))
         XCTAssertFalse(source.contains(
