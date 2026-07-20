@@ -2,7 +2,6 @@
 import AppKit
 import AuthenticationServices
 import Combine
-import Dispatch
 import Foundation
 import MixPilotCore
 import MixPilotSystem
@@ -84,6 +83,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     private let rekordboxDetector: RekordboxApplicationDetector
 
     private var webAuthenticationSession: ASWebAuthenticationSession?
+    private var webAuthenticationPresentationContext: SpotifyAuthenticationPresentationContext?
     private var refreshTask: Task<SpotifyStoredSession, Error>?
     private var currentSession: SpotifyStoredSession?
     private var pendingState: String?
@@ -156,6 +156,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.webAuthenticationSession = nil
+                    self.webAuthenticationPresentationContext = nil
                     if error != nil {
                         self.pendingVerifier = nil
                         self.pendingState = nil
@@ -169,11 +170,20 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
                     await self.completeAuthorization(callbackURL)
                 }
             }
-            session.presentationContextProvider = self
+            let presentationContext = SpotifyAuthenticationPresentationContext(
+                anchor: NSApp.keyWindow
+                    ?? NSApp.mainWindow
+                    ?? NSApp.windows.first(where: \.isVisible)
+                    ?? NSApp.windows.first
+                    ?? ASPresentationAnchor()
+            )
+            session.presentationContextProvider = presentationContext
             session.prefersEphemeralWebBrowserSession = true
+            webAuthenticationPresentationContext = presentationContext
             webAuthenticationSession = session
             guard session.start() else {
                 webAuthenticationSession = nil
+                webAuthenticationPresentationContext = nil
                 throw SpotifyBridgeError.authorizationCancelled
             }
         } catch {
@@ -184,6 +194,7 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     func disconnect() {
         webAuthenticationSession?.cancel()
         webAuthenticationSession = nil
+        webAuthenticationPresentationContext = nil
         refreshTask?.cancel()
         refreshTask = nil
         try? tokenStore.remove(clientID: clientID)
@@ -699,22 +710,21 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
     }
 }
 
-extension SpotifyLibraryCoordinator: ASWebAuthenticationPresentationContextProviding {
-    nonisolated func presentationAnchor(
-    for session: ASWebAuthenticationSession
-) -> ASPresentationAnchor {
-    if Thread.isMainThread {
-        return MainActor.assumeIsolated {
-            NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
-        }
+private final class SpotifyAuthenticationPresentationContext: NSObject,
+    ASWebAuthenticationPresentationContextProviding,
+    @unchecked Sendable {
+    private let anchor: ASPresentationAnchor
+
+    init(anchor: ASPresentationAnchor) {
+        self.anchor = anchor
+        super.init()
     }
 
-    return DispatchQueue.main.sync {
-        MainActor.assumeIsolated {
-            NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
-        }
+    func presentationAnchor(
+        for session: ASWebAuthenticationSession
+    ) -> ASPresentationAnchor {
+        anchor
     }
-}
 }
 
 private struct RekordboxSpotifyDiagnostic: Codable {
