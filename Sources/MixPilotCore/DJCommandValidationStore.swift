@@ -44,12 +44,14 @@ public struct DJValidationPlatformContext: Codable, Hashable, Sendable {
            !environmentBuild.isEmpty {
             return environmentBuild
         }
-        guard let executableURL = Bundle.main.executableURL,
-              let attributes = try? FileManager.default.attributesOfItem(atPath: executableURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date else {
+        guard let executableURL = Bundle.main.executableURL else { return nil }
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: executableURL.path)
+            guard let modificationDate = attributes[.modificationDate] as? Date else { return nil }
+            return "development-\(Int(modificationDate.timeIntervalSince1970))"
+        } catch {
             return nil
         }
-        return "development-\(Int(modificationDate.timeIntervalSince1970))"
     }
 
     private static func currentHardwareModel() -> String? {
@@ -192,7 +194,11 @@ public actor InMemoryDJCommandValidationStore: DJCommandValidationStoring {
     private var records: [String: DJCommandValidationRecord]
 
     public init(records: [DJCommandValidationRecord] = []) {
-        self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.key.storageKey, $0) })
+        var indexed: [String: DJCommandValidationRecord] = [:]
+        for record in records {
+            indexed[record.key.storageKey] = record
+        }
+        self.records = indexed
     }
 
     public func record(_ record: DJCommandValidationRecord) async throws {
@@ -245,10 +251,14 @@ public actor UserDefaultsDJCommandValidationStore: DJCommandValidationStoring {
     }
 
     private func loadRecords() -> [String: DJCommandValidationRecord] {
-        guard let data = defaults.data(forKey: Self.defaultsKey),
-              let records = try? decoder.decode([String: DJCommandValidationRecord].self, from: data) else {
+        guard let data = defaults.data(forKey: Self.defaultsKey) else { return [:] }
+        do {
+            return try decoder.decode([String: DJCommandValidationRecord].self, from: data)
+        } catch {
+            let quarantineKey = "\(Self.defaultsKey).corrupt.\(UUID().uuidString)"
+            defaults.set(data, forKey: quarantineKey)
+            defaults.removeObject(forKey: Self.defaultsKey)
             return [:]
         }
-        return records
     }
 }
