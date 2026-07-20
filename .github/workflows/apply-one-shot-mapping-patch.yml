@@ -1,9 +1,6 @@
 name: Apply one-shot async mapping patch
 
 on:
-  push:
-    branches:
-      - consolidation/rekordbox-spotify-readiness
   pull_request:
     branches:
       - main
@@ -13,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.head_ref == 'consolidation/rekordbox-spotify-readiness' || github.ref_name == 'consolidation/rekordbox-spotify-readiness'
+    if: github.head_ref == 'consolidation/rekordbox-spotify-readiness'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,58 +18,72 @@ jobs:
           ref: consolidation/rekordbox-spotify-readiness
           fetch-depth: 0
 
-      - name: Apply exact idempotent async send-result patches
+      - name: Apply bounded async send-result patches
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          replacements = {
-              Path('Sources/MixPilotApp/RekordboxCompatibilityLabView.swift'): (
-                  '        Button { appModel.testMapping(action) } label: {',
-                  '''        Button {
-              Task { @MainActor in
-                  _ = await appModel.testMapping(action)
-              }
-          } label: {'''
+          patches = [
+              (
+                  Path('Sources/MixPilotApp/RekordboxCompatibilityLabView.swift'),
+                  re.compile(r'(?m)^(?P<i>\s*)Button\s*\{\s*appModel\.testMapping\(action\)\s*\}\s*label:\s*\{'),
+                  lambda m: (
+                      f"{m.group('i')}Button {{\n"
+                      f"{m.group('i')}    Task {{ @MainActor in\n"
+                      f"{m.group('i')}        _ = await appModel.testMapping(action)\n"
+                      f"{m.group('i')}    }}\n"
+                      f"{m.group('i')}}} label: {{"
+                  ),
+                  'await appModel.testMapping(action)'
               ),
-              Path('Sources/MixPilotApp/RekordboxDeviceValidationView.swift'): (
-                  '''                    Button("ENVOYER LE TEST") {
-                          appModel.testMapping(command.action)
-                          session.markSent(command)
-                      }''',
-                  '''                    Button("ENVOYER LE TEST") {
-                          Task { @MainActor in
-                              let result = await appModel.testMapping(command.action)
-                              if case .sent = result {
-                                  session.markSent(command)
-                              }
-                          }
-                      }'''
+              (
+                  Path('Sources/MixPilotApp/RekordboxDeviceValidationView.swift'),
+                  re.compile(
+                      r'(?m)^(?P<i>\s*)Button\("ENVOYER LE TEST"\)\s*\{\s*'
+                      r'appModel\.testMapping\(command\.action\)\s*'
+                      r'session\.markSent\(command\)\s*\}'
+                  ),
+                  lambda m: (
+                      f"{m.group('i')}Button(\"ENVOYER LE TEST\") {{\n"
+                      f"{m.group('i')}    Task {{ @MainActor in\n"
+                      f"{m.group('i')}        let result = await appModel.testMapping(command.action)\n"
+                      f"{m.group('i')}        if case .sent = result {{\n"
+                      f"{m.group('i')}            session.markSent(command)\n"
+                      f"{m.group('i')}        }}\n"
+                      f"{m.group('i')}    }}\n"
+                      f"{m.group('i')}}}"
+                  ),
+                  'let result = await appModel.testMapping(command.action)'
               ),
-              Path('Sources/MixPilotApp/RekordboxHubView.swift'): (
-                  '''        Button {
-              appModel.testMapping(action)
-          } label: {''',
-                  '''        Button {
-              Task { @MainActor in
-                  _ = await appModel.testMapping(action)
-              }
-          } label: {'''
+              (
+                  Path('Sources/MixPilotApp/RekordboxHubView.swift'),
+                  re.compile(r'(?m)^(?P<i>\s*)Button\s*\{\s*appModel\.testMapping\(action\)\s*\}\s*label:\s*\{'),
+                  lambda m: (
+                      f"{m.group('i')}Button {{\n"
+                      f"{m.group('i')}    Task {{ @MainActor in\n"
+                      f"{m.group('i')}        _ = await appModel.testMapping(action)\n"
+                      f"{m.group('i')}    }}\n"
+                      f"{m.group('i')}}} label: {{"
+                  ),
+                  'await appModel.testMapping(action)'
               ),
-          }
+          ]
 
-          for path, (old, new) in replacements.items():
+          for path, pattern, replacement, corrected_marker in patches:
               text = path.read_text()
-              old_count = text.count(old)
-              new_count = text.count(new)
-              if old_count == 1 and new_count == 0:
-                  path.write_text(text.replace(old, new, 1))
-              elif old_count == 0 and new_count == 1:
+              matches = list(pattern.finditer(text))
+              if len(matches) == 1:
+                  text, count = pattern.subn(replacement, text, count=1)
+                  if count != 1:
+                      raise SystemExit(f'{path}: replacement failed')
+                  path.write_text(text)
+              elif len(matches) == 0 and text.count(corrected_marker) == 1:
                   continue
               else:
                   raise SystemExit(
-                      f'{path}: unsafe patch state old={old_count} new={new_count}'
+                      f'{path}: unsafe patch state matches={len(matches)} corrected={text.count(corrected_marker)}'
                   )
           PY
 
