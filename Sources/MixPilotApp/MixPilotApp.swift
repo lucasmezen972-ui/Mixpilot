@@ -6,11 +6,24 @@ import SwiftUI
 
 @main
 struct MixPilotAutopilotApp: App {
-    @StateObject private var model = AppModel()
-    @StateObject private var remoteBridge = MixPilotRemoteBridge()
-    @StateObject private var cloud = MixPilotCloudCoordinator()
+    @StateObject private var model: AppModel
+    @StateObject private var remoteBridge: MixPilotRemoteBridge
+    @StateObject private var cloud: MixPilotCloudCoordinator
+    @StateObject private var spotifyLibrary: SpotifyLibraryCoordinator
     @State private var mainSurface: MixPilotMainSurface = .home
     private let cloudBackendContextStore = MixPilotCloudBackendContextStore()
+
+    init() {
+        let sharedModel = AppModel()
+        _model = StateObject(wrappedValue: sharedModel)
+        _remoteBridge = StateObject(wrappedValue: MixPilotRemoteBridge())
+        _cloud = StateObject(wrappedValue: MixPilotCloudCoordinator())
+        _spotifyLibrary = StateObject(
+            wrappedValue: SpotifyLibraryCoordinator(
+                accessibilityBridge: sharedModel.accessibilityBridge
+            )
+        )
+    }
 
     private var insecureRemoteDevelopmentOverrideEnabled: Bool {
         MixPilotRemoteTransportSecurityPolicy.allowsCurrentDevelopmentTransport
@@ -81,8 +94,8 @@ struct MixPilotAutopilotApp: App {
                 Button(remoteBridge.isRunning
                        ? "Désactiver la télécommande iPhone"
                        : insecureRemoteDevelopmentOverrideEnabled
-                           ? "Activer la télécommande iPhone (développement)"
-                           : "Télécommande iPhone indisponible (sécurité)") {
+                            ? "Activer la télécommande iPhone (développement)"
+                            : "Télécommande iPhone indisponible (sécurité)") {
                     if remoteBridge.isRunning {
                         remoteBridge.stop()
                     } else if insecureRemoteDevelopmentOverrideEnabled {
@@ -124,6 +137,11 @@ struct MixPilotAutopilotApp: App {
             DJSoftwareSettingsView(model: model)
         }
         .defaultSize(width: 1_100, height: 760)
+
+        Window("Bibliothèque Rekordbox / Spotify", id: "spotify-library") {
+            SpotifyLibraryView(spotify: spotifyLibrary, model: model)
+        }
+        .defaultSize(width: 1_220, height: 860)
 
         Window("Préparer un set rapidement", id: "quick-set") {
             QuickSetView(model: model)
@@ -233,6 +251,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "dj-software")
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
+
+            Button("Bibliothèque Rekordbox / Spotify") {
+                openWindow(id: "spotify-library")
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
 
             Button("Préparer un set rapidement") {
                 openWindow(id: "quick-set")
