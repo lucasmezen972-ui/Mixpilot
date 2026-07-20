@@ -14,6 +14,8 @@ struct SpotifyStoredSession: Codable, Equatable, Sendable {
     }
 }
 
+// SAFETY: The store contains only an immutable service identifier. Security
+// framework operations do not retain references to mutable Swift state.
 struct SpotifyTokenStore: @unchecked Sendable {
     private let service = "com.mixpilot.autopilot.spotify"
 
@@ -31,7 +33,18 @@ struct SpotifyTokenStore: @unchecked Sendable {
               let data = result as? Data else {
             return nil
         }
-        return try? JSONDecoder().decode(SpotifyStoredSession.self, from: data)
+
+        do {
+            return try JSONDecoder().decode(SpotifyStoredSession.self, from: data)
+        } catch {
+            let deletionQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: clientID,
+            ]
+            SecItemDelete(deletionQuery as CFDictionary)
+            return nil
+        }
     }
 
     func save(_ session: SpotifyStoredSession, clientID: String) throws {
