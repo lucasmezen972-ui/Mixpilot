@@ -8,6 +8,8 @@ protocol MixPilotRemoteTokenStoring: Sendable {
     func remove(deviceID: String) throws
 }
 
+// SAFETY: The store contains only an immutable service identifier. Security
+// framework operations do not retain references to mutable Swift state.
 struct MixPilotRemoteKeychainStore: MixPilotRemoteTokenStoring, @unchecked Sendable {
     private let service = "com.mixpilot.autopilot.remote"
 
@@ -40,6 +42,7 @@ struct MixPilotRemoteKeychainStore: MixPilotRemoteTokenStoring, @unchecked Senda
         }
         var insertion = lookup
         insertion[kSecValueData as String] = data
+        insertion[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let addStatus = SecItemAdd(insertion as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
             throw MixPilotRemotePairingError.keychain(addStatus)
@@ -179,14 +182,20 @@ final class MixPilotRemotePairingAuthority {
         seenCommands = seenCommands.filter { now.timeIntervalSince($0.value) < 300 }
         if seenCommands.count > 500 {
             let retained = seenCommands.sorted { $0.value > $1.value }.prefix(250)
-            seenCommands = Dictionary(uniqueKeysWithValues: retained.map { ($0.key, $0.value) })
+            var compacted: [UUID: Date] = [:]
+            compacted.reserveCapacity(retained.count)
+            for (commandID, receivedAt) in retained {
+                compacted[commandID] = receivedAt
+            }
+            seenCommands = compacted
         }
     }
 
     private static func securePIN() throws -> String {
         var value: UInt32 = 0
-        let status = withUnsafeMutableBytes(of: &value) { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+        let status = withUnsafeMutableBytes(of: &value) { buffer -> OSStatus in
+            guard let baseAddress = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, baseAddress)
         }
         guard status == errSecSuccess else {
             throw MixPilotRemotePairingError.randomGeneration
@@ -196,8 +205,9 @@ final class MixPilotRemotePairingAuthority {
 
     private static func secureToken() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
-        let status = bytes.withUnsafeMutableBytes { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+        let status = bytes.withUnsafeMutableBytes { buffer -> OSStatus in
+            guard let baseAddress = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, baseAddress)
         }
         guard status == errSecSuccess else {
             throw MixPilotRemotePairingError.randomGeneration
