@@ -16,6 +16,8 @@ public struct ConnectivityStatus: Hashable, Sendable {
     }
 }
 
+// SAFETY: Every mutable field is serialized by lock. NWPathMonitor callbacks
+// only update state while holding that lock, and the callback handler is Sendable.
 public final class ConnectivityMonitor: @unchecked Sendable {
     public typealias Handler = @Sendable (ConnectivityStatus) -> Void
 
@@ -145,6 +147,8 @@ public enum SleepAssertionError: Error, LocalizedError {
     }
 }
 
+// SAFETY: The IOPM assertion identifier is mutable only while lock is held.
+// acquire, release and deinit therefore serialize creation and disposal.
 public final class SleepAssertionManager: @unchecked Sendable {
     private let lock = NSLock()
     private var assertionID = IOPMAssertionID(0)
