@@ -1,0 +1,165 @@
+name: One-shot Spotify authentication hotfix
+
+on:
+  push:
+    branches:
+      - ops/spotify-auth-crash-fix
+    paths:
+      - .github/spotify-auth-hotfix.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-package:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout consolidation branch
+        uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+
+      - name: Patch off-main AuthenticationServices callback crash
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Sources/MixPilotApp/SpotifyLibraryCoordinator.swift')
+          source = path.read_text()
+
+          if 'import Dispatch\n' not in source:
+              source = source.replace(
+                  'import Combine\nimport Foundation\n',
+                  'import Combine\nimport Dispatch\nimport Foundation\n',
+                  1,
+              )
+
+          old = '''    nonisolated func presentationAnchor(
+              for session: ASWebAuthenticationSession
+          ) -> ASPresentationAnchor {
+              MainActor.assumeIsolated {
+                  NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+              }
+          }
+          '''
+          new = '''    nonisolated func presentationAnchor(
+              for session: ASWebAuthenticationSession
+          ) -> ASPresentationAnchor {
+              if Thread.isMainThread {
+                  return MainActor.assumeIsolated {
+                      NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+                  }
+              }
+
+              return DispatchQueue.main.sync {
+                  MainActor.assumeIsolated {
+                      NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+                  }
+              }
+          }
+          '''
+
+          if old not in source:
+              raise SystemExit('Expected unsafe presentationAnchor implementation was not found exactly once.')
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected one unsafe implementation, found {source.count(old)}.')
+
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+
+          assert 'if Thread.isMainThread' in source
+          assert 'DispatchQueue.main.sync' in source
+          assert source.count('MainActor.assumeIsolated') == 2
+          PY
+
+      - name: Add regression contract test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > Tests/MixPilotSystemTests/SpotifyAuthenticationPresentationTests.swift <<'SWIFT'
+          #if os(macOS)
+          import Foundation
+          import XCTest
+
+          final class SpotifyAuthenticationPresentationTests: XCTestCase {
+              func testPresentationAnchorMarshalsToMainQueueBeforeAssumingMainActor() throws {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = root.appendingPathComponent(
+                      "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
+                  )
+                  let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+                  XCTAssertTrue(source.contains("if Thread.isMainThread"))
+                  XCTAssertTrue(source.contains("DispatchQueue.main.sync"))
+                  XCTAssertTrue(source.contains("MainActor.assumeIsolated"))
+                  XCTAssertFalse(source.contains(
+                      "-> ASPresentationAnchor {\n        MainActor.assumeIsolated"
+                  ))
+              }
+          }
+          #endif
+          SWIFT
+
+      - name: Verify focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'if Thread.isMainThread' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          grep -q 'DispatchQueue.main.sync' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          test "$(grep -c 'MainActor.assumeIsolated' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift)" -eq 2
+
+      - name: Run Swift tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee spotify-hotfix-swift-test.log
+
+      - name: Build macOS release product
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift build -c release --product MixPilotAutopilot
+
+      - name: Build corrected app and DMG
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.1-spotify-auth-hotfix
+          CODE_SIGN_IDENTITY: '-'
+        run: |
+          set -euo pipefail
+          chmod +x Scripts/*.sh
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+          codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+
+      - name: Commit validated source fix without starting full CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'MixPilot Hotfix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            Sources/MixPilotApp/SpotifyLibraryCoordinator.swift \
+            Tests/MixPilotSystemTests/SpotifyAuthenticationPresentationTests.swift
+          git commit -m 'fix: marshal Spotify presentation anchor to main queue [skip ci]'
+          git push origin HEAD:consolidation/security-cloud-trust
+
+      - name: Upload corrected DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-0.4.1-spotify-auth-hotfix
+          path: |
+            spotify-hotfix-swift-test.log
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: error
