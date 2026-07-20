@@ -3,22 +3,41 @@ import Foundation
 import XCTest
 
 final class SpotifyAuthenticationPresentationTests: XCTestCase {
-    func testPresentationAnchorMarshalsToMainQueueBeforeAssumingMainActor() throws {
+    func testPresentationAnchorUsesMainActorWithoutRuntimeAssumptions() throws {
+        let source = try repositoryFile(
+            "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains(
+            "extension SpotifyLibraryCoordinator: ASWebAuthenticationPresentationContextProviding"
+        ))
+        XCTAssertTrue(source.contains("func presentationAnchor("))
+        XCTAssertTrue(source.contains("NSApp.keyWindow"))
+        XCTAssertTrue(source.contains("NSApp.mainWindow"))
+        XCTAssertFalse(source.contains("nonisolated func presentationAnchor"))
+        XCTAssertFalse(source.contains("MainActor.assumeIsolated"))
+        XCTAssertFalse(source.contains("DispatchQueue.main.sync"))
+    }
+
+    func testReleaseBundleRegistersSpotifyCallbackScheme() throws {
+        let script = try repositoryFile("Scripts/build_release.sh")
+
+        XCTAssertTrue(script.contains("CFBundleURLTypes"))
+        XCTAssertTrue(script.contains("CFBundleURLSchemes"))
+        XCTAssertTrue(script.contains("mixpilot-spotify"))
+        XCTAssertTrue(script.contains("plutil -lint"))
+        XCTAssertTrue(script.contains("PlistBuddy"))
+    }
+
+    private func repositoryFile(_ relativePath: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceURL = root.appendingPathComponent(
-            "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
+        return try String(
+            contentsOf: root.appendingPathComponent(relativePath),
+            encoding: .utf8
         )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-
-        XCTAssertTrue(source.contains("if Thread.isMainThread"))
-        XCTAssertTrue(source.contains("DispatchQueue.main.sync"))
-        XCTAssertTrue(source.contains("MainActor.assumeIsolated"))
-        XCTAssertFalse(source.contains(
-            "-> ASPresentationAnchor {\n        MainActor.assumeIsolated"
-        ))
     }
 }
 #endif
