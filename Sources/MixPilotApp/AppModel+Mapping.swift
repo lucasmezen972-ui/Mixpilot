@@ -31,7 +31,15 @@ extension AppModel {
             midiStatus = "Contrôleur virtuel actif"
 
             Task {
-                let profile = (try? await store.load()) ?? .developmentDefault
+                let profile: MIDIMappingProfile
+                do {
+                    profile = try await store.load()
+                } catch {
+                    profile = .developmentDefault
+                    midiStatus = "Profil local illisible • profil sûr chargé"
+                    runtimeStatus = humanMessage(for: error)
+                }
+
                 mappingProfile = profile
                 let mapped = MappedMIDIController(controller: controller, profile: profile)
                 mappedController = mapped
@@ -54,12 +62,20 @@ extension AppModel {
                 selectedBackend = await registry.restoreSelection()
 
                 if selectedBackend != nil {
-                    try? await rebuildRuntimeCoordinator()
+                    do {
+                        try await rebuildRuntimeCoordinator()
+                    } catch {
+                        runtimeCoordinator = nil
+                        runtimeStatus = humanMessage(for: error)
+                        midiStatus = "Contrôleur actif • runtime DJ indisponible"
+                    }
                 } else {
                     runtimeCoordinator = nil
                 }
 
-                midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
+                if runtimeCoordinator != nil || selectedBackend == nil {
+                    midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
+                }
                 await refreshEnvironmentNow()
             }
         } catch {
@@ -70,24 +86,42 @@ extension AppModel {
     }
 
     func resetDefaultMapping() {
-        mappingProfile = .developmentDefault
+        guard let mappingStore else {
+            midiStatus = "Le stockage du mapping n’est pas encore disponible."
+            return
+        }
+
+        let profile = MIDIMappingProfile.developmentDefault
+        mappingProfile = profile
         Task {
-            await mappedController?.replaceProfile(mappingProfile)
-            _ = try? await mappingStore?.save(mappingProfile)
-            midiStatus = "Profil par défaut chargé"
-            await refreshEnvironmentNow()
+            do {
+                _ = try await mappingStore.save(profile)
+                await mappedController?.replaceProfile(profile)
+                midiStatus = "Profil par défaut chargé et sauvegardé"
+                await refreshEnvironmentNow()
+            } catch {
+                midiStatus = "Le profil par défaut est chargé en mémoire mais n’a pas pu être sauvegardé."
+                runtimeStatus = humanMessage(for: error)
+            }
         }
     }
 
     func saveMapping() {
+        guard let mappingStore else {
+            midiStatus = "Le stockage du mapping n’est pas encore disponible."
+            return
+        }
+
+        let profile = mappingProfile
         Task {
             do {
-                _ = try await mappingStore?.save(mappingProfile)
-                await mappedController?.replaceProfile(mappingProfile)
+                _ = try await mappingStore.save(profile)
+                await mappedController?.replaceProfile(profile)
                 midiStatus = "Mapping sauvegardé"
                 await refreshEnvironmentNow()
             } catch {
                 midiStatus = "Le mapping n’a pas pu être sauvegardé. Vérifie l’espace disponible, puis réessaie."
+                runtimeStatus = humanMessage(for: error)
             }
         }
     }
@@ -148,11 +182,16 @@ extension AppModel {
         )
 
         Task {
-            try? await commandValidationStore.record(record)
-            midiStatus = succeeded
-                ? "Commande confirmée avec \(selectedBackend.displayName)."
-                : "Commande marquée comme non fonctionnelle. MixPilot ne l’utilisera pas en Live."
-            await refreshEnvironmentNow()
+            do {
+                try await commandValidationStore.record(record)
+                midiStatus = succeeded
+                    ? "Commande confirmée avec \(selectedBackend.displayName)."
+                    : "Commande marquée comme non fonctionnelle. MixPilot ne l’utilisera pas en Live."
+                await refreshEnvironmentNow()
+            } catch {
+                midiStatus = "Commande testée, mais la validation n’a pas pu être sauvegardée."
+                runtimeStatus = humanMessage(for: error)
+            }
         }
     }
 }
