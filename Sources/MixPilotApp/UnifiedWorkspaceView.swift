@@ -5,7 +5,9 @@ import SwiftUI
 struct UnifiedWorkspaceView: View {
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
-    @State private var pendingCommandValidation: DJControlAction?
+    @State private var pendingCommandValidation: PendingCommandValidation?
+    @State private var mappingTestResult: MappingTestResult?
+    @State private var warningsAcceptedForSession = false
 
     var body: some View {
         ZStack {
@@ -46,6 +48,26 @@ struct UnifiedWorkspaceView: View {
         case .onboarding, .dashboard, .studio:
             .prepare
         }
+    }
+
+    private var liveReadiness: LiveReadiness {
+        let blockers = model.preflightReport.items.compactMap { item -> LiveBlocker? in
+            guard case .failed = item.status else { return nil }
+            return LiveBlocker(title: item.title, detail: item.detail)
+        }
+        if !blockers.isEmpty {
+            return .blocked(blockers)
+        }
+
+        let warnings = model.preflightReport.items.compactMap { item -> LiveWarning? in
+            switch item.status {
+            case .warning, .notTested:
+                return LiveWarning(title: item.title, detail: item.detail)
+            case .passed, .failed:
+                return nil
+            }
+        }
+        return warnings.isEmpty ? .ready : .readyWithWarnings(warnings)
     }
 
     private var prepareView: some View {
@@ -102,56 +124,145 @@ struct UnifiedWorkspaceView: View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
                 eyebrow: "Vérifier",
-                title: "Contrôler le système avant le Live",
-                subtitle: "Chaque blocage explique ce qui ne fonctionne pas, son impact et l’action à effectuer. Internet et les services en ligne ne bloquent jamais un set local déjà préparé.",
+                title: "Préparer et diagnostiquer le Live",
+                subtitle: "Les vérifications expliquent les limites du système. Elles ne ferment jamais l’onglet Live et les avertissements n’empêchent pas le mode automatique supervisé.",
                 symbol: "checkmark.shield.fill",
-                accent: model.preflightReport.canStartLive ? .green : .orange
+                accent: readinessAccent
             ) {
-                Button("Actualiser") { model.refreshEnvironment() }
+                Button("Actualiser l’observation") { model.refreshEnvironment() }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
                 Button("Configurer le logiciel") { openWindow(id: "dj-software") }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .cyan))
+                Button("Ouvrir le Live") { model.selectedSection = .live }
+                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 14)], spacing: 14) {
-                verificationTile("Logiciel DJ", model.backendStatus, "music.note.list", .purple)
-                verificationTile("Commandes", model.midiStatus, "slider.horizontal.3", .blue)
-                verificationTile("Lecture de l’état", model.accessibilityStatus, "eye.fill", .cyan)
-                verificationTile("Audio", model.audioStatus, "waveform", .mint)
-                verificationTile("Musique de secours", model.emergencyStatus, "lifepreserver.fill", .orange)
-                verificationTile(
-                    "Rapport final",
-                    model.preflightReport.canStartLive ? "Prêt pour le Live" : "\(model.preflightReport.failedItems.count) blocage(s)",
-                    "checkmark.seal.fill",
-                    model.preflightReport.canStartLive ? .green : .red
-                )
-            }
+            readinessSummary
+
+            verificationSection(
+                title: "ESSENTIEL",
+                symbol: "exclamationmark.octagon.fill",
+                items: essentialItems,
+                emptyMessage: "Aucun blocage absolu détecté."
+            )
+
+            verificationSection(
+                title: "RECOMMANDÉ",
+                symbol: "exclamationmark.triangle.fill",
+                items: recommendedItems,
+                emptyMessage: "Aucun avertissement restant."
+            )
+
+            observationSection
 
             HStack(spacing: 10) {
                 Button("Autoriser la lecture de l’interface") { model.requestAccessibility() }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
-                Button(model.audioMonitor.isRunning ? "Audio actif" : "Démarrer la surveillance audio") {
+                Button(model.audioMonitor.isRunning ? "Audio actif" : "Redémarrer l’audio") {
                     model.startAudioMonitoring()
                 }
                 .buttonStyle(MixPilotSecondaryButtonStyle())
                 .disabled(model.audioMonitor.isRunning)
                 Button("Choisir la musique de secours") { model.selectEmergencyAudio() }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
+                Button("Réinitialiser le contrôleur MIDI") { model.resetDefaultMapping() }
+                    .buttonStyle(MixPilotSecondaryButtonStyle())
             }
 
             criticalCommandTester
 
-            VStack(spacing: 10) {
-                ForEach(model.preflightReport.items) { item in
-                    preflightRow(item)
-                }
-            }
-
             HStack {
                 Spacer()
-                Button("Ouvrir le Live") { model.selectedSection = .live }
+                switch liveReadiness {
+                case .ready, .readyWithWarnings:
+                    Button("Continuer en mode automatique supervisé") {
+                        warningsAcceptedForSession = true
+                        model.selectedSection = .live
+                    }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
-                    .disabled(!model.preflightReport.canStartLive)
+                case .blocked:
+                    Button("Ouvrir le Live pour consulter le diagnostic") {
+                        model.selectedSection = .live
+                    }
+                    .buttonStyle(MixPilotPrimaryButtonStyle(accent: .orange))
+                }
+            }
+        }
+    }
+
+    private var readinessSummary: some View {
+        MixPilotGlassCard(accent: readinessAccent) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: readinessSymbol)
+                    .font(.title2)
+                    .foregroundStyle(readinessAccent)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(readinessTitle).font(.headline)
+                    Text(readinessDetail)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.58))
+                    if warningsAcceptedForSession {
+                        Text("Avertissements acceptés pour cette session — les sécurités d’arrêt et la reprise manuelle restent actives.")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private var essentialItems: [PreflightItem] {
+        model.preflightReport.items.filter {
+            if case .failed = $0.status { return true }
+            return false
+        }
+    }
+
+    private var recommendedItems: [PreflightItem] {
+        model.preflightReport.items.filter {
+            switch $0.status {
+            case .warning, .notTested: true
+            case .passed, .failed: false
+            }
+        }
+    }
+
+    private var observationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("OBSERVATION EN DIRECT", systemImage: "dot.radiowaves.left.and.right")
+                .font(.headline)
+                .foregroundStyle(.cyan)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 14)], spacing: 14) {
+                verificationTile("Logiciel DJ", model.backendStatus, "music.note.list", .purple)
+                verificationTile("Commandes MIDI", model.midiStatus, "slider.horizontal.3", .blue)
+                verificationTile("Accessibilité", model.accessibilityStatus, "eye.fill", .cyan)
+                verificationTile("Audio", model.audioStatus, "waveform", .mint)
+                verificationTile("Musique de secours", model.emergencyStatus, "lifepreserver.fill", .orange)
+                verificationTile("Runtime", model.runtimeStatus, "clock.arrow.circlepath", .green)
+            }
+        }
+    }
+
+    private func verificationSection(
+        title: String,
+        symbol: String,
+        items: [PreflightItem],
+        emptyMessage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(title == "ESSENTIEL" ? .red : .orange)
+            if items.isEmpty {
+                Text(emptyMessage)
+                    .font(.callout)
+                    .foregroundStyle(.white.opacity(0.58))
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+            } else {
+                ForEach(items) { item in preflightRow(item) }
             }
         }
     }
@@ -162,7 +273,7 @@ struct UnifiedWorkspaceView: View {
                 MixPilotPanelTitle(
                     title: "Tests réels des commandes critiques",
                     symbol: "button.programmable",
-                    subtitle: "Envoie une commande, observe le logiciel DJ, puis enregistre uniquement le résultat réellement constaté.",
+                    subtitle: "La confirmation n’est proposée qu’après un envoi MIDI réellement réussi.",
                     accent: pendingCommandValidation == nil ? .blue : .orange
                 )
                 HStack(spacing: 10) {
@@ -170,21 +281,36 @@ struct UnifiedWorkspaceView: View {
                     commandTestButton("Tester Play / Pause", action: .playA)
                     commandTestButton("Tester le volume", action: .volumeA)
                 }
-                if let action = pendingCommandValidation {
+
+                if mappingTestResult == .sending {
+                    HStack(spacing: 9) {
+                        ProgressView()
+                        Text("Envoi de la commande MIDI…")
+                    }
+                    .font(.callout)
+                }
+
+                if case .some(.failed(let error)) = mappingTestResult {
+                    MixPilotNotice(
+                        title: "Commande non envoyée",
+                        message: error,
+                        kind: .warning
+                    )
+                }
+
+                if let pending = pendingCommandValidation {
                     MixPilotNotice(
                         title: "Réaction à confirmer",
-                        message: "Commande \(action.rawValue) envoyée. Vérifie le deck 1 dans \(model.selectedBackend?.displayName ?? "le logiciel DJ").",
+                        message: "Commande \(pending.action.rawValue) envoyée à \(pending.sentAt.formatted(date: .omitted, time: .standard)). Vérifie le deck 1 dans \(model.selectedBackend?.displayName ?? "le logiciel DJ").",
                         kind: .warning
                     )
                     HStack(spacing: 10) {
                         Button("RÉACTION VALIDÉE") {
-                            model.recordMappingValidation(action, succeeded: true)
-                            pendingCommandValidation = nil
+                            recordPendingValidation(pending, succeeded: true)
                         }
                         .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
                         Button("ÉCHEC") {
-                            model.recordMappingValidation(action, succeeded: false)
-                            pendingCommandValidation = nil
+                            recordPendingValidation(pending, succeeded: false)
                         }
                         .buttonStyle(MixPilotDangerButtonStyle())
                     }
@@ -195,31 +321,66 @@ struct UnifiedWorkspaceView: View {
 
     private func commandTestButton(_ title: String, action: DJControlAction) -> some View {
         Button(title) {
-            model.testMapping(action)
-            pendingCommandValidation = action
+            Task { @MainActor in
+                pendingCommandValidation = nil
+                mappingTestResult = .sending
+                let result = await model.testMapping(action)
+                mappingTestResult = result
+                if case .sent(let commandID, let sentAt) = result {
+                    pendingCommandValidation = PendingCommandValidation(
+                        action: action,
+                        commandID: commandID,
+                        sentAt: sentAt
+                    )
+                }
+            }
         }
         .buttonStyle(MixPilotSecondaryButtonStyle())
-        .disabled(model.selectedBackend == nil || pendingCommandValidation != nil)
+        .disabled(model.selectedBackend == nil || pendingCommandValidation != nil || mappingTestResult == .sending)
+    }
+
+    private func recordPendingValidation(_ pending: PendingCommandValidation, succeeded: Bool) {
+        model.recordMappingValidation(
+            pending.action,
+            commandID: pending.commandID,
+            sentAt: pending.sentAt,
+            succeeded: succeeded
+        )
+        pendingCommandValidation = nil
+        mappingTestResult = nil
     }
 
     private var liveView: some View {
         VStack(alignment: .leading, spacing: 22) {
             MixPilotSectionHero(
                 eyebrow: "Live",
-                title: model.isLiveRunning ? "Autopilote en cours" : "Prêt à lancer le Live",
-                subtitle: "Le Mac reste la source de vérité. Un problème de services en ligne ou de connexion iPhone ne coupe jamais la musique.",
+                title: model.isLiveRunning ? "Autopilote en cours" : "Live automatique supervisé",
+                subtitle: "Le Live reste accessible en mode dégradé. Les limitations d’observation sont visibles mais ne remplacent jamais les sécurités d’arrêt ni la reprise manuelle.",
                 symbol: "play.circle.fill",
                 accent: model.isLiveRunning ? .green : .cyan
             ) {
                 Button(model.liveArmed ? "Désarmer" : "Armer le Live") { model.armLive() }
                     .buttonStyle(MixPilotSecondaryButtonStyle())
-                    .disabled(model.isLiveRunning || !model.preflightReport.canStartLive)
+                    .disabled(model.isLiveRunning)
                 Button("Lancer le Live") { model.startLive() }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .green))
                     .disabled(!model.liveArmed || model.isLiveRunning)
                 Button("Reprendre la main", role: .destructive) { model.takeManualControl() }
                     .buttonStyle(MixPilotDangerButtonStyle())
                     .disabled(!model.isLiveRunning)
+            }
+
+            if case .blocked(let blockers) = liveReadiness {
+                MixPilotGlassCard(accent: .red) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Démarrage actuellement impossible").font(.headline)
+                        ForEach(blockers) { blocker in
+                            Text("• \(blocker.title) — \(blocker.detail)")
+                                .font(.callout)
+                                .foregroundStyle(.white.opacity(0.65))
+                        }
+                    }
+                }
             }
 
             backendSummary
@@ -289,7 +450,7 @@ struct UnifiedWorkspaceView: View {
             MixPilotSectionHero(
                 eyebrow: "Avancé",
                 title: "Diagnostics et outils techniques",
-                subtitle: "Ces outils ne sont pas nécessaires au parcours normal. Ils servent à valider une version, inspecter un mapping ou préparer un rapport technique.",
+                subtitle: "Ces outils servent à valider une version, inspecter un mapping ou préparer un rapport technique.",
                 symbol: "gearshape.2.fill",
                 accent: .orange
             ) {
@@ -319,8 +480,7 @@ struct UnifiedWorkspaceView: View {
             MixPilotGlassCard(accent: .blue) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Simulation du moteur")
-                            .font(.headline)
+                        Text("Simulation du moteur").font(.headline)
                         Text("Une simulation valide le code et les scénarios de panne. Elle ne remplace jamais un test sur le logiciel et le matériel réels.")
                             .font(.callout)
                             .foregroundStyle(.white.opacity(0.55))
@@ -487,6 +647,41 @@ struct UnifiedWorkspaceView: View {
         }
     }
 
+    private var readinessAccent: Color {
+        switch liveReadiness {
+        case .ready: .green
+        case .readyWithWarnings: .orange
+        case .blocked: .red
+        }
+    }
+
+    private var readinessSymbol: String {
+        switch liveReadiness {
+        case .ready: "checkmark.circle.fill"
+        case .readyWithWarnings: "exclamationmark.triangle.fill"
+        case .blocked: "xmark.octagon.fill"
+        }
+    }
+
+    private var readinessTitle: String {
+        switch liveReadiness {
+        case .ready: "Prêt pour le Live"
+        case .readyWithWarnings: "Prêt avec avertissements"
+        case .blocked: "Blocage réel détecté"
+        }
+    }
+
+    private var readinessDetail: String {
+        switch liveReadiness {
+        case .ready:
+            "Les fonctions essentielles sont disponibles."
+        case .readyWithWarnings(let warnings):
+            "\(warnings.count) avertissement(s) limitent la supervision sans empêcher l’accès au Live."
+        case .blocked(let blockers):
+            "\(blockers.count) problème(s) empêchent actuellement l’exécution, mais le tableau Live reste consultable."
+        }
+    }
+
     private func preflightSymbol(_ status: PreflightItemStatus) -> String {
         switch status {
         case .passed: "checkmark.circle.fill"
@@ -504,6 +699,30 @@ struct UnifiedWorkspaceView: View {
         case .notTested: .gray
         }
     }
+}
+
+struct LiveWarning: Identifiable, Equatable, Sendable {
+    var title: String
+    var detail: String
+    var id: String { "warning|\(title)|\(detail)" }
+}
+
+struct LiveBlocker: Identifiable, Equatable, Sendable {
+    var title: String
+    var detail: String
+    var id: String { "blocker|\(title)|\(detail)" }
+}
+
+enum LiveReadiness: Equatable, Sendable {
+    case ready
+    case readyWithWarnings([LiveWarning])
+    case blocked([LiveBlocker])
+}
+
+private struct PendingCommandValidation: Equatable {
+    var action: DJControlAction
+    var commandID: UUID
+    var sentAt: Date
 }
 
 enum PrimaryWorkspaceArea: String, CaseIterable, Identifiable {
