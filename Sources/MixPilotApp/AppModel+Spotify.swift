@@ -26,11 +26,21 @@ extension AppModel {
         )
         optimizationReport = SetOptimizer().analyze(tracks: tracks)
         libraryRowCount = tracks.count
-        playlistWarnings = [
-            "BPM non analysé — transition prudente",
-        ] + (usedLikedSongsFallback
-            ? ["La playlist a été complétée avec les Titres likés pour atteindre deux morceaux exploitables."]
-            : [])
+
+        var warnings = [
+            PlaylistImportWarning(
+                rowIndex: -1,
+                message: "BPM non analysé — transition prudente"
+            ),
+        ]
+        if usedLikedSongsFallback {
+            warnings.append(PlaylistImportWarning(
+                rowIndex: -1,
+                message: "La playlist a été complétée avec les Titres likés pour atteindre deux morceaux exploitables."
+            ))
+        }
+        playlistWarnings = warnings
+
         runtimeStatus = "\(tracks.count) titres Spotify préparés pour \(selectedBackend.displayName)."
         updateSnapshotForProject()
         evaluatePreflight()
