@@ -6,6 +6,8 @@ protocol MixPilotCloudAgentIdentityStoring: Sendable {
     func loadOrCreate() throws -> String
 }
 
+// SAFETY: The store contains only immutable service/account identifiers.
+// Keychain operations do not retain mutable Swift state across threads.
 struct MixPilotCloudAgentIdentityStore: MixPilotCloudAgentIdentityStoring, @unchecked Sendable {
     private let service = "com.mixpilot.autopilot.cloud-agent"
     private let account = "command-agent-instance-id"
@@ -22,7 +24,12 @@ struct MixPilotCloudAgentIdentityStore: MixPilotCloudAgentIdentityStoring, @unch
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(lookup as CFDictionary)
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(lookup as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return value }
+        guard updateStatus == errSecItemNotFound else {
+            throw MixPilotCloudAgentIdentityError.keychain(updateStatus)
+        }
 
         var insert = lookup
         insert[kSecValueData as String] = data
