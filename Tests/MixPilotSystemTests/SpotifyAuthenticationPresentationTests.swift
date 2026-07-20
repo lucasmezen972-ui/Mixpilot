@@ -3,20 +3,27 @@ import Foundation
 import XCTest
 
 final class SpotifyAuthenticationPresentationTests: XCTestCase {
-    func testPresentationAnchorUsesMainActorWithoutRuntimeAssumptions() throws {
+    func testPresentationContextAvoidsRuntimeActorAssumptions() throws {
         let source = try repositoryFile(
             "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
         )
 
         XCTAssertTrue(source.contains(
-            "extension SpotifyLibraryCoordinator: ASWebAuthenticationPresentationContextProviding"
+            "private final class SpotifyAuthenticationPresentationContext"
         ))
-        XCTAssertTrue(source.contains("func presentationAnchor("))
+        XCTAssertTrue(source.contains(
+            "private var webAuthenticationPresentationContext: SpotifyAuthenticationPresentationContext?"
+        ))
+        XCTAssertTrue(source.contains(
+            "session.presentationContextProvider = presentationContext"
+        ))
         XCTAssertTrue(source.contains("NSApp.keyWindow"))
         XCTAssertTrue(source.contains("NSApp.mainWindow"))
-        XCTAssertFalse(source.contains("nonisolated func presentationAnchor"))
         XCTAssertFalse(source.contains("MainActor.assumeIsolated"))
         XCTAssertFalse(source.contains("DispatchQueue.main.sync"))
+        XCTAssertFalse(source.contains(
+            "extension SpotifyLibraryCoordinator: ASWebAuthenticationPresentationContextProviding"
+        ))
     }
 
     func testReleaseBundleRegistersSpotifyCallbackScheme() throws {
