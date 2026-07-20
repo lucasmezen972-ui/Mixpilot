@@ -1,0 +1,149 @@
+name: One-shot atomic cloud client integration
+
+on:
+  pull_request:
+    branches:
+      - consolidation/rekordbox-spotify-readiness
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.head_ref == 'consolidation/security-cloud-trust' || github.ref_name == 'consolidation/security-cloud-trust'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+
+      - name: Replace legacy command table access with atomic RPCs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('Sources/MixPilotSystem/MixPilotCloudService.swift')
+          source = path.read_text()
+
+          replacements = [
+              (
+                  '    private let installationID: UUID\n    private let encoder: JSONEncoder',
+                  '    private let installationID: UUID\n    private let commandAgentInstanceID: String?\n    private let encoder: JSONEncoder'
+              ),
+              (
+                  '        self.installationID = Self.loadInstallationID()\n\n        let encoder = JSONEncoder()',
+                  '        self.installationID = Self.loadInstallationID()\n        self.commandAgentInstanceID = try? MixPilotCloudAgentIdentityStore().loadOrCreate()\n\n        let encoder = JSONEncoder()'
+              ),
+              (
+                  '''    public func pendingCommands() async throws -> [MixPilotCloudCommand] {
+        guard let context else { return [] }
+        let authSession = try await authenticatedSession()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return try await performRequest(
+            path: "rest/v1/mixpilot_commands",
+            method: "GET",
+            accessToken: authSession.accessToken,
+            queryItems: [
+                URLQueryItem(name: "device_id", value: "eq.\(context.deviceID.uuidString)"),
+                URLQueryItem(name: "status", value: "eq.pending"),
+                URLQueryItem(name: "expires_at", value: "gt.\(formatter.string(from: Date()))"),
+                URLQueryItem(name: "order", value: "created_at.asc"),
+                URLQueryItem(name: "limit", value: "10")
+            ]
+        )
+    }''',
+                  '''    /// Compatibility name kept for the coordinator while the implementation is
+    /// now fully atomic: returned commands are already claimed by this Mac.
+    public func pendingCommands() async throws -> [MixPilotCloudCommand] {
+        guard let context else { return [] }
+        guard let commandAgentInstanceID else {
+            throw MixPilotCloudCommandError.agentIdentityUnavailable
+        }
+        let authSession = try await authenticatedSession()
+        return try await performRequest(
+            path: "rest/v1/rpc/claim_mixpilot_commands",
+            method: "POST",
+            accessToken: authSession.accessToken,
+            body: MixPilotCloudCommandClaimRequest(
+                deviceID: context.deviceID,
+                instanceID: commandAgentInstanceID,
+                limit: 10
+            )
+        )
+    }'''
+              ),
+              (
+                  '''    public func completeCommand(
+        _ command: MixPilotCloudCommand,
+        succeeded: Bool,
+        result: [String: String]
+    ) async throws {
+        let authSession = try await authenticatedSession()
+        let _: EmptyResponse = try await performRequest(
+            path: "rest/v1/mixpilot_commands",
+            method: "PATCH",
+            accessToken: authSession.accessToken,
+            queryItems: [URLQueryItem(name: "id", value: "eq.\(command.id.uuidString)")],
+            prefer: "return=minimal",
+            body: CommandCompletionRow(
+                status: succeeded ? "completed" : "failed",
+                completedAt: Date(),
+                result: result
+            )
+        )
+    }''',
+                  '''    public func completeCommand(
+        _ command: MixPilotCloudCommand,
+        succeeded: Bool,
+        result: [String: String]
+    ) async throws {
+        guard let commandAgentInstanceID else {
+            throw MixPilotCloudCommandError.agentIdentityUnavailable
+        }
+        let authSession = try await authenticatedSession()
+        let completed: Bool = try await performRequest(
+            path: "rest/v1/rpc/complete_mixpilot_command",
+            method: "POST",
+            accessToken: authSession.accessToken,
+            body: MixPilotCloudCommandCompletionRequest(
+                commandID: command.id,
+                instanceID: commandAgentInstanceID,
+                succeeded: succeeded,
+                result: result,
+                failureCode: succeeded ? nil : result["error"]
+            )
+        )
+        guard completed else {
+            throw MixPilotCloudCommandError.completionRejected
+        }
+    }'''
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'unsafe replacement count {count} for: {old[:80]!r}')
+              source = source.replace(old, new, 1)
+
+          if 'path: "rest/v1/mixpilot_commands"' in source:
+              raise SystemExit('legacy command-table endpoint still present')
+          if 'rest/v1/rpc/claim_mixpilot_commands' not in source:
+              raise SystemExit('claim RPC missing after patch')
+          if 'rest/v1/rpc/complete_mixpilot_command' not in source:
+              raise SystemExit('completion RPC missing after patch')
+
+          path.write_text(source)
+          PY
+
+      - name: Commit atomic command client integration
+        run: |
+          git config user.name "mixpilot-ci"
+          git config user.email "actions@users.noreply.github.com"
+          git add Sources/MixPilotSystem/MixPilotCloudService.swift
+          git diff --cached --check
+          git commit -m "security: route cloud commands through atomic RPCs"
+          git push origin HEAD:consolidation/security-cloud-trust
