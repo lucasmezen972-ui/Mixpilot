@@ -427,8 +427,12 @@ struct RekordboxDeviceValidationView: View {
 
                 HStack(spacing: 10) {
                     Button("ENVOYER LE TEST") {
-                        appModel.testMapping(command.action)
-                        session.markSent(command)
+                        Task { @MainActor in
+                            let result = await appModel.testMapping(command.action)
+                            if case .sent = result {
+                                session.markSent(command)
+                            }
+                        }
                     }
                     .buttonStyle(MixPilotPrimaryButtonStyle(accent: .blue))
                     .disabled(!session.commandsArmed || !command.isAvailableForInstalledVersion)

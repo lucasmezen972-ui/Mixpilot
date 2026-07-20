@@ -898,7 +898,9 @@ struct RekordboxHubView: View {
 
     private func controlButton(_ title: String, symbol: String, action: SeratoAction) -> some View {
         Button {
-            appModel.testMapping(action)
+            Task { @MainActor in
+                _ = await appModel.testMapping(action)
+            }
         } label: {
             VStack(spacing: 8) {
                 ZStack {

@@ -325,7 +325,11 @@ struct RekordboxCompatibilityLabView: View {
     }
 
     private func midiButton(_ title: String, _ action: SeratoAction, _ symbol: String) -> some View {
-        Button { appModel.testMapping(action) } label: {
+        Button {
+            Task { @MainActor in
+                _ = await appModel.testMapping(action)
+            }
+        } label: {
             HStack {
                 Image(systemName: symbol).frame(width: 20)
                 Text(title).font(.caption.bold())
