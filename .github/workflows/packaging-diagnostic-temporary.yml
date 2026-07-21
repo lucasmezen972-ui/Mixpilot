@@ -1,0 +1,65 @@
+name: MixPilot Packaging Diagnostic (Temporary)
+
+on:
+  pull_request_target:
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostic:
+    if: >-
+      github.event.pull_request.number == 53 &&
+      github.event.pull_request.head.ref == 'consolidation/security-cloud-trust'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout audited PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Run packaging diagnostic
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.0-dev
+          CODE_SIGN_IDENTITY: '-'
+          MIXPILOT_SKIP_TESTS: '1'
+        run: |
+          set -u
+          chmod +x Scripts/*.sh
+          set +e
+          set -o pipefail
+          ./Scripts/build_release.sh 2>&1 | tee build-release.log
+          build_status=${PIPESTATUS[0]}
+          package_status=99
+          if [[ "$build_status" -eq 0 ]]; then
+            ./Scripts/package_dmg.sh 2>&1 | tee package-dmg.log
+            package_status=${PIPESTATUS[0]}
+          else
+            echo "Packaging skipped because build_release.sh failed." | tee package-dmg.log
+          fi
+          printf 'build_status=%s\npackage_status=%s\n' "$build_status" "$package_status" | tee packaging-status.txt
+          exit 0
+      - name: Upload diagnostic logs and package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-packaging-diagnostic
+          path: |
+            build-release.log
+            package-dmg.log
+            packaging-status.txt
+            ultimate-audit
+            architecture-counter-audit
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: warn
+      - name: Enforce diagnostic result
+        shell: bash
+        run: |
+          set -euo pipefail
+          source packaging-status.txt
+          [[ "$build_status" -eq 0 ]]
+          [[ "$package_status" -eq 0 ]]
