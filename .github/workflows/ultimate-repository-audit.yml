@@ -1,5 +1,5 @@
 name: Ultimate Repository Audit
-# Applies the final model-only Hub fix, then audits the resulting branch head.
+# Final trigger: patch the Hub once, then audit the committed branch head.
 
 on:
   pull_request:
