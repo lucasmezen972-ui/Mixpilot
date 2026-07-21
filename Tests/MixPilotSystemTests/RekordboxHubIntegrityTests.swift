@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 
+// Permanent regression gate for the async Rekordbox Hub file layer.
 final class RekordboxHubIntegrityTests: XCTestCase {
     func testHubKeepsAsyncFileIsolationAndPreparationPreview() throws {
         let source = try String(
