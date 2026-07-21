@@ -1,4 +1,5 @@
 name: Ultimate Repository Audit
+# Permanent read-only gate for the audited consolidation branch.
 
 on:
   pull_request:
