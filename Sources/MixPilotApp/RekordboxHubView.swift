@@ -5,6 +5,27 @@ import MixPilotSystem
 import SwiftUI
 import UniformTypeIdentifiers
 
+private actor RekordboxHubFileStore {
+    func importLibrary(
+        at url: URL,
+        installedVersion: String?
+    ) throws -> RekordboxLibraryImportResult {
+        let data = try Data(contentsOf: url)
+        return try RekordboxLibraryImporter().importData(
+            data,
+            fileExtension: url.pathExtension,
+            installedVersion: installedVersion
+        )
+    }
+
+    func writeAndVerify(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        guard try Data(contentsOf: url) == data else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+}
+
 @MainActor
 final class RekordboxHubModel: ObservableObject {
     @Published private(set) var importResult: RekordboxLibraryImportResult?
@@ -16,7 +37,7 @@ final class RekordboxHubModel: ObservableObject {
     @Published private(set) var lastPreset: RekordboxAdvancedMIDIPreset?
     @Published private(set) var presetURL: URL?
 
-    private let importer = RekordboxLibraryImporter()
+    private let fileStore = RekordboxHubFileStore()
 
     init() {
         refreshEnvironment()
@@ -56,22 +77,28 @@ final class RekordboxHubModel: ObservableObject {
     }
 
     func importLibrary(at url: URL) {
+        guard !isWorking else { return }
         isWorking = true
-        defer { isWorking = false }
-        do {
-            let data = try Data(contentsOf: url)
-            let result = try importer.importData(
-                data,
-                fileExtension: url.pathExtension,
-                installedVersion: rekordboxVersion
-            )
-            importResult = result
-            sourceFilename = url.lastPathComponent
-            status = "\(result.tracks.count) titre(s), \(result.playlists.count) playlist(s) • \(result.source.displayName)"
-        } catch {
-            importResult = nil
-            sourceFilename = nil
-            status = "Import refusé : \(error.localizedDescription)"
+        status = "Import de \(url.lastPathComponent)…"
+        let installedVersion = rekordboxVersion
+
+        let fileStore = self.fileStore
+        Task { @MainActor [weak self, fileStore] in
+            guard let self else { return }
+            defer { isWorking = false }
+            do {
+                let result = try await fileStore.importLibrary(
+                    at: url,
+                    installedVersion: installedVersion
+                )
+                importResult = result
+                sourceFilename = url.lastPathComponent
+                status = "\(result.tracks.count) titre(s), \(result.playlists.count) playlist(s) • \(result.source.displayName)"
+            } catch {
+                importResult = nil
+                sourceFilename = nil
+                status = "Import refusé : \(error.localizedDescription)"
+            }
         }
     }
 
@@ -90,6 +117,7 @@ final class RekordboxHubModel: ObservableObject {
     }
 
     func exportPreset(profile: MIDIMappingProfile) {
+        guard !isWorking else { return }
         if lastPreset == nil { generatePreset(profile: profile) }
         guard let preset = lastPreset else { return }
         let panel = NSSavePanel()
@@ -97,27 +125,25 @@ final class RekordboxHubModel: ObservableObject {
         panel.nameFieldStringValue = "MixPilot Virtual Controller Advanced.midi.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let data = Data(preset.csv.utf8)
-            try data.write(to: url, options: .atomic)
-            guard try Data(contentsOf: url) == data else {
-                throw CocoaError(.fileWriteUnknown)
+
+        isWorking = true
+        status = "Export et vérification de \(url.lastPathComponent)…"
+        let data = Data(preset.csv.utf8)
+        let fileStore = self.fileStore
+        Task { @MainActor [weak self, fileStore] in
+            guard let self else { return }
+            defer { isWorking = false }
+            do {
+                try await fileStore.writeAndVerify(data, to: url)
+                presetURL = url
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                status = "Preset exporté et vérifié : \(url.lastPathComponent)"
+            } catch {
+                status = "Échec de l’export : \(error.localizedDescription)"
             }
-            presetURL = url
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-            status = "Preset exporté et vérifié : \(url.lastPathComponent)"
-        } catch {
-            status = "Échec de l’export : \(error.localizedDescription)"
         }
     }
 
-    var preparationPreview: SetProject? {
-        guard let result = importResult, !result.tracks.isEmpty else { return nil }
-        return SetPreparationEngine().prepare(
-            name: sourceFilename ?? "Bibliothèque rekordbox",
-            tracks: result.mixPilotTracks
-        )
-    }
 }
 
 private enum RekordboxHubSection: String, CaseIterable, Identifiable {
