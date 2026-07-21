@@ -5,12 +5,8 @@ on:
     branches:
       - main
       - consolidation/rekordbox-spotify-readiness
+      - consolidation/security-cloud-trust
   workflow_dispatch:
-  push:
-    branches:
-      - audit/ultimate-hardening-staging
-    paths:
-      - .audit/run-dual-audit
 
 permissions:
   contents: read
@@ -23,7 +19,7 @@ jobs:
   audit:
     name: Dual repository audit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Validate both audit scripts
@@ -31,6 +27,7 @@ jobs:
           python3 -m py_compile Scripts/ultimate_repository_audit.py
           python3 -m py_compile Scripts/architecture_counter_audit.py
       - name: Run both independent repository audits
+        shell: bash
         run: |
           set +e
           python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
@@ -42,6 +39,28 @@ jobs:
             echo "At least one repository audit reported blocking findings."
             exit 1
           fi
+      - name: Verify both reports target the same commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          reports = (
+              Path("ultimate-audit/ultimate-audit.json"),
+              Path("architecture-counter-audit/architecture-counter-audit.json"),
+          )
+          for report_path in reports:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              summary = report.get("summary", {})
+              if summary.get("errors") != 0:
+                  raise SystemExit(f"{report_path} contains blocking errors")
+              if summary.get("git_head") != head:
+                  raise SystemExit(f"{report_path} does not match {head}")
+          PY
       - name: Upload complete audit reports
         if: always()
         uses: actions/upload-artifact@v4
