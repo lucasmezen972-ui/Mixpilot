@@ -1,0 +1,127 @@
+name: Temporary Cloud Compatibility Fix
+
+on:
+  pull_request_target:
+    types: [reopened]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.number == 53 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'consolidation/security-cloud-trust'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Repair cloud compatibility contracts atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service_path = Path("Sources/MixPilotSystem/MixPilotCloudService.swift")
+          legacy_path = Path("Sources/MixPilotSystem/MixPilotCloudService+LegacyCompatibility.swift")
+          test_path = Path("Tests/MixPilotSystemTests/CloudLegacyCompatibilityTests.swift")
+
+          service = service_path.read_text(encoding="utf-8")
+          stale_identity = "MixPilotCloudAgentIdentityStore().loadOrCreate().instanceID"
+          if service.count(stale_identity) != 1:
+              raise SystemExit("Expected exactly one stale cloud-agent identity access.")
+          service = service.replace(
+              stale_identity,
+              "MixPilotCloudAgentIdentityStore().loadOrCreate()",
+              1,
+          )
+
+          legacy = legacy_path.read_text(encoding="utf-8")
+          stale_return = ") async throws -> MixPilotCloudContext {"
+          if legacy.count(stale_return) != 1:
+              raise SystemExit("Expected exactly one stale MixPilotCloudContext return type.")
+          legacy = legacy.replace(stale_return, ") async throws -> UUID {", 1)
+
+          stale_context = '''        MixPilotCloudBackendContext(
+              identifier: .rekordbox,
+              softwareVersion: rekordboxVersion,
+              controllerName: "MixPilot Virtual Controller"
+          )'''
+          current_context = '''        MixPilotCloudBackendContext(
+              identifier: .rekordbox,
+              softwareVersion: rekordboxVersion,
+              controllerName: "MixPilot Virtual Controller",
+              mappingVersion: nil,
+              mappingSHA256: nil,
+              capabilities: DJBackendCapabilities(),
+              validationStatus: DJValidationStatus.requiresBackendValidation.rawValue
+          )'''
+          if legacy.count(stale_context) != 1:
+              raise SystemExit("Expected exactly one incomplete legacy backend context.")
+          legacy = legacy.replace(stale_context, current_context, 1)
+
+          test = '''import Foundation
+          import XCTest
+
+          final class CloudLegacyCompatibilityTests: XCTestCase {
+              func testLegacyAdapterMatchesCurrentCloudContracts() throws {
+                  let service = try sourceFile("Sources/MixPilotSystem/MixPilotCloudService.swift")
+                  let legacy = try sourceFile("Sources/MixPilotSystem/MixPilotCloudService+LegacyCompatibility.swift")
+
+                  XCTAssertFalse(service.contains("loadOrCreate().instanceID"))
+                  XCTAssertTrue(service.contains("MixPilotCloudAgentIdentityStore().loadOrCreate()"))
+                  XCTAssertFalse(legacy.contains("MixPilotCloudContext"))
+                  XCTAssertTrue(legacy.contains("async throws -> UUID"))
+                  XCTAssertTrue(legacy.contains("capabilities: DJBackendCapabilities()"))
+                  XCTAssertTrue(legacy.contains(
+                      "validationStatus: DJValidationStatus.requiresBackendValidation.rawValue"
+                  ))
+              }
+
+              private func sourceFile(_ path: String) throws -> String {
+                  try String(
+                      contentsOf: repositoryRoot().appendingPathComponent(path),
+                      encoding: .utf8
+                  )
+              }
+
+              private func repositoryRoot() -> URL {
+                  var url = URL(fileURLWithPath: #filePath)
+                  for _ in 0..<3 {
+                      url.deleteLastPathComponent()
+                  }
+                  return url
+              }
+          }
+          '''
+
+          if "loadOrCreate().instanceID" in service:
+              raise SystemExit("Stale identity member access remains.")
+          if "MixPilotCloudContext" in legacy:
+              raise SystemExit("Stale legacy context type remains.")
+          if legacy.count("DJValidationStatus.requiresBackendValidation.rawValue") != 1:
+              raise SystemExit("Legacy validation status is missing or duplicated.")
+
+          service_path.write_text(service, encoding="utf-8")
+          legacy_path.write_text(legacy, encoding="utf-8")
+          test_path.write_text(test, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            Sources/MixPilotSystem/MixPilotCloudService.swift \
+            Sources/MixPilotSystem/MixPilotCloudService+LegacyCompatibility.swift \
+            Tests/MixPilotSystemTests/CloudLegacyCompatibilityTests.swift
+          git commit -m "fix: align legacy cloud contracts with current service API"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
