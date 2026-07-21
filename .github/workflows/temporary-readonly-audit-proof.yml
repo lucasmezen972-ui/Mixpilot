@@ -1,0 +1,130 @@
+name: Temporary Read-Only Audit Proof
+
+on:
+  pull_request_target:
+    types: [reopened]
+    branches:
+      - consolidation/security-cloud-trust
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: mixpilot-readonly-audit-proof-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'audit/ultimate-hardening-final'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Validate audit scripts and Hub contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/ultimate_repository_audit.py
+          python3 -m py_compile Scripts/architecture_counter_audit.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("Sources/MixPilotApp/RekordboxHubView.swift").read_text(encoding="utf-8")
+          checks = {
+              "file actor": source.count("private actor RekordboxHubFileStore") == 1,
+              "preview contract": source.count("var preparationPreview: SetProject?") == 1,
+              "preparation engine": source.count("SetPreparationEngine().prepare(") == 1,
+              "async model operations": source.count("Task { @MainActor [weak self, fileStore] in") == 2,
+              "isolated disk reads": source.index("Data(contentsOf:") < source.index("@MainActor"),
+          }
+          failed = [name for name, passed in checks.items() if not passed]
+          if failed:
+              raise SystemExit("Hub integrity checks failed: " + ", ".join(failed))
+          PY
+
+      - name: Run both independent repository audits
+        shell: bash
+        run: |
+          set +e
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+          first_status=$?
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
+          second_status=$?
+          set -e
+          if (( first_status != 0 || second_status != 0 )); then
+            echo "At least one repository audit reported blocking findings."
+            exit 1
+          fi
+
+      - name: Verify both reports and publish proof
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          expected = os.environ["EXPECTED_HEAD"]
+          if head != expected:
+              raise SystemExit(f"Checked out {head}, expected {expected}")
+
+          reports = (
+              Path("ultimate-audit/ultimate-audit.json"),
+              Path("architecture-counter-audit/architecture-counter-audit.json"),
+          )
+          summaries = []
+          for report_path in reports:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              summary = report.get("summary", {})
+              if summary.get("errors") != 0:
+                  raise SystemExit(f"{report_path} contains blocking errors")
+              if summary.get("git_head") != head:
+                  raise SystemExit(f"{report_path} does not match {head}")
+              summaries.append((report_path.name, summary))
+
+          lines = [
+              "## ✅ Audit final permanent en lecture seule",
+              "",
+              f"SHA audité : `{head}`",
+              "",
+          ]
+          for name, summary in summaries:
+              lines.append(
+                  f"- **{name}** — erreurs : {summary.get('errors', 0)}, "
+                  f"avertissements : {summary.get('warnings', 0)}, "
+                  f"fichiers : {summary.get('files_scanned', summary.get('files', 'n/a'))}"
+              )
+          lines.extend([
+              "",
+              "Contrats Hub confirmés : acteur d’I/O dédié, deux opérations asynchrones et `preparationPreview` conservé.",
+              "Aucun fichier ni branche n’a été modifié par cette validation.",
+          ])
+          Path("audit-comment.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          gh pr comment "$PR_NUMBER" --body-file audit-comment.md
+
+      - name: Upload complete audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-final-readonly-audit
+          path: |
+            ultimate-audit
+            architecture-counter-audit
+          if-no-files-found: error
