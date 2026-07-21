@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 
+// Permanent regression gate for the legacy cloud adapter and agent identity contract.
 final class CloudLegacyCompatibilityTests: XCTestCase {
     func testLegacyAdapterMatchesCurrentCloudContracts() throws {
         let service = try sourceFile("Sources/MixPilotSystem/MixPilotCloudService.swift")
