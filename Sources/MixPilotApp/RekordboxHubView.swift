@@ -144,6 +144,15 @@ final class RekordboxHubModel: ObservableObject {
         }
     }
 
+
+
+    var preparationPreview: SetProject? {
+        guard let result = importResult, !result.tracks.isEmpty else { return nil }
+        return SetPreparationEngine().prepare(
+            name: sourceFilename ?? "Bibliothèque rekordbox",
+            tracks: result.mixPilotTracks
+        )
+    }
 }
 
 private enum RekordboxHubSection: String, CaseIterable, Identifiable {
