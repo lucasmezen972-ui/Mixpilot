@@ -1,5 +1,5 @@
 name: Ultimate Repository Audit
-# Final trigger: patch the Hub once, then audit the committed branch head.
+# Base-branch audit definition used by the temporary hardening PR.
 
 on:
   pull_request:
