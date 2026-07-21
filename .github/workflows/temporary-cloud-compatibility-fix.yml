@@ -8,11 +8,12 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   patch:
     if: >-
-      github.event.pull_request.number == 53 &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'consolidation/security-cloud-trust'
     runs-on: ubuntu-latest
@@ -26,10 +27,14 @@ jobs:
 
       - name: Repair cloud compatibility contracts atomically
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           service_path = Path("Sources/MixPilotSystem/MixPilotCloudService.swift")
           legacy_path = Path("Sources/MixPilotSystem/MixPilotCloudService+LegacyCompatibility.swift")
@@ -45,31 +50,66 @@ jobs:
               1,
           )
 
-          legacy = legacy_path.read_text(encoding="utf-8")
-          stale_return = ") async throws -> MixPilotCloudContext {"
-          if legacy.count(stale_return) != 1:
-              raise SystemExit("Expected exactly one stale MixPilotCloudContext return type.")
-          legacy = legacy.replace(stale_return, ") async throws -> UUID {", 1)
+          legacy = dedent('''\
+          #if os(macOS)
+          import Foundation
+          import MixPilotCore
 
-          stale_context = '''        MixPilotCloudBackendContext(
-              identifier: .rekordbox,
-              softwareVersion: rekordboxVersion,
-              controllerName: "MixPilot Virtual Controller"
-          )'''
-          current_context = '''        MixPilotCloudBackendContext(
-              identifier: .rekordbox,
-              softwareVersion: rekordboxVersion,
-              controllerName: "MixPilot Virtual Controller",
-              mappingVersion: nil,
-              mappingSHA256: nil,
-              capabilities: DJBackendCapabilities(),
-              validationStatus: DJValidationStatus.requiresBackendValidation.rawValue
-          )'''
-          if legacy.count(stale_context) != 1:
-              raise SystemExit("Expected exactly one incomplete legacy backend context.")
-          legacy = legacy.replace(stale_context, current_context, 1)
+          public extension MixPilotCloudService {
+              @available(*, deprecated, message: "Pass an explicit MixPilotCloudBackendContext")
+              func connect(
+                  appVersion: String,
+                  appBuild: Int,
+                  rekordboxVersion: String?,
+                  liveMode: Bool
+              ) async throws -> UUID {
+                  try await connect(
+                      appVersion: appVersion,
+                      appBuild: appBuild,
+                      backend: legacyRekordboxContext(rekordboxVersion: rekordboxVersion),
+                      liveMode: liveMode,
+                      telemetryEnabled: MixPilotOnlineDiagnosticsPreferences().isEnabled
+                  )
+              }
 
-          test = '''import Foundation
+              @available(*, deprecated, message: "Pass an explicit MixPilotCloudBackendContext")
+              func heartbeat(
+                  appVersion: String,
+                  appBuild: Int,
+                  rekordboxVersion: String?,
+                  liveMode: Bool
+              ) async throws {
+                  try await heartbeat(
+                      appVersion: appVersion,
+                      appBuild: appBuild,
+                      backend: legacyRekordboxContext(rekordboxVersion: rekordboxVersion),
+                      liveMode: liveMode,
+                      telemetryEnabled: MixPilotOnlineDiagnosticsPreferences().isEnabled
+                  )
+              }
+
+              /// This overload predates multi-backend support and only exposes a
+              /// `rekordboxVersion` argument. Preserve source compatibility without reading
+              /// any hidden global selection state; new callers must pass an explicit context.
+              private func legacyRekordboxContext(
+                  rekordboxVersion: String?
+              ) -> MixPilotCloudBackendContext {
+                  MixPilotCloudBackendContext(
+                      identifier: .rekordbox,
+                      softwareVersion: rekordboxVersion,
+                      controllerName: "MixPilot Virtual Controller",
+                      mappingVersion: nil,
+                      mappingSHA256: nil,
+                      capabilities: DJBackendCapabilities(),
+                      validationStatus: DJValidationStatus.requiresBackendValidation.rawValue
+                  )
+              }
+          }
+          #endif
+          ''')
+
+          test = dedent('''\
+          import Foundation
           import XCTest
 
           final class CloudLegacyCompatibilityTests: XCTestCase {
@@ -102,7 +142,7 @@ jobs:
                   return url
               }
           }
-          '''
+          ''')
 
           if "loadOrCreate().instanceID" in service:
               raise SystemExit("Stale identity member access remains.")
@@ -124,4 +164,6 @@ jobs:
             Sources/MixPilotSystem/MixPilotCloudService+LegacyCompatibility.swift \
             Tests/MixPilotSystemTests/CloudLegacyCompatibilityTests.swift
           git commit -m "fix: align legacy cloud contracts with current service API"
+          new_sha=$(git rev-parse HEAD)
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          gh pr comment "$PR_NUMBER" --body "✅ Correctif de compatibilité cloud poussé sur \`$new_sha\` : identité d’agent alignée, adaptateur legacy migré vers UUID et test anti-régression ajouté."
