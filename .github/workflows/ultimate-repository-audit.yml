@@ -1,4 +1,5 @@
 name: Ultimate Repository Audit
+# Final pre-release audit trigger: both reports must target the same merge SHA.
 
 on:
   pull_request:
