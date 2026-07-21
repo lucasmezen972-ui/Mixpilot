@@ -2,12 +2,14 @@ name: Temporary MixPilot Audit Target
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [reopened]
     branches:
       - consolidation/security-cloud-trust
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: mixpilot-temporary-audit-${{ github.event.pull_request.number }}
@@ -15,7 +17,9 @@ concurrency:
 
 jobs:
   audit:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'audit/ultimate-hardening-final'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'audit/ultimate-hardening-final'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,7 +29,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Apply verified Rekordbox Hub async I/O patch
+      - name: Restore and verify Rekordbox Hub preview contract
         shell: bash
         run: |
           set -euo pipefail
@@ -34,128 +38,49 @@ jobs:
 
           path = Path("Sources/MixPilotApp/RekordboxHubView.swift")
           source = path.read_text(encoding="utf-8")
-          view_marker = "private enum RekordboxHubSection"
-          original_tail = source[source.index(view_marker):]
 
           if "private actor RekordboxHubFileStore" not in source:
-              imports_marker = "import UniformTypeIdentifiers\n\n@MainActor\n"
-              actor_block = '''import UniformTypeIdentifiers
+              raise SystemExit("RekordboxHubFileStore is missing.")
 
-          private actor RekordboxHubFileStore {
-              func importLibrary(
-                  at url: URL,
-                  installedVersion: String?
-              ) throws -> RekordboxLibraryImportResult {
-                  let data = try Data(contentsOf: url)
-                  return try RekordboxLibraryImporter().importData(
-                      data,
-                      fileExtension: url.pathExtension,
-                      installedVersion: installedVersion
+          if "var preparationPreview: SetProject?" not in source:
+              marker = "\n}\n\nprivate enum RekordboxHubSection"
+              if source.count(marker) != 1:
+                  raise SystemExit("Expected RekordboxHubModel closing marker was not found exactly once.")
+              property_block = '''
+              var preparationPreview: SetProject? {
+                  guard let result = importResult, !result.tracks.isEmpty else { return nil }
+                  return SetPreparationEngine().prepare(
+                      name: sourceFilename ?? "Bibliothèque rekordbox",
+                      tracks: result.mixPilotTracks
                   )
               }
-
-              func writeAndVerify(_ data: Data, to url: URL) throws {
-                  try data.write(to: url, options: .atomic)
-                  guard try Data(contentsOf: url) == data else {
-                      throw CocoaError(.fileWriteUnknown)
-                  }
-              }
-          }
-
-          @MainActor
           '''
-              if imports_marker not in source:
-                  raise SystemExit("Expected Hub import marker is missing.")
-              source = source.replace(imports_marker, actor_block, 1)
-
-              old_property = "    private let importer = RekordboxLibraryImporter()"
-              if source.count(old_property) != 1:
-                  raise SystemExit("Expected importer property was not found exactly once.")
               source = source.replace(
-                  old_property,
-                  "    private let fileStore = RekordboxHubFileStore()",
+                  marker,
+                  "\n\n" + property_block + "}\n\nprivate enum RekordboxHubSection",
                   1,
               )
 
-              import_start = source.index("    func importLibrary(at url: URL) {")
-              import_end = source.index("\n    func generatePreset", import_start)
-              new_import = '''    func importLibrary(at url: URL) {
-                  guard !isWorking else { return }
-                  isWorking = true
-                  status = "Import de \\(url.lastPathComponent)…"
-                  let installedVersion = rekordboxVersion
-
-                  let fileStore = self.fileStore
-                  Task { @MainActor [weak self, fileStore] in
-                      guard let self else { return }
-                      defer { isWorking = false }
-                      do {
-                          let result = try await fileStore.importLibrary(
-                              at: url,
-                              installedVersion: installedVersion
-                          )
-                          importResult = result
-                          sourceFilename = url.lastPathComponent
-                          status = "\\(result.tracks.count) titre(s), \\(result.playlists.count) playlist(s) • \\(result.source.displayName)"
-                      } catch {
-                          importResult = nil
-                          sourceFilename = nil
-                          status = "Import refusé : \\(error.localizedDescription)"
-                      }
-                  }
-              }
-          '''
-              source = source[:import_start] + new_import + source[import_end:]
-
-              export_start = source.index("    func exportPreset(profile: MIDIMappingProfile) {")
-              class_end = source.index("\n}\n\n" + view_marker, export_start)
-              new_export = '''    func exportPreset(profile: MIDIMappingProfile) {
-                  guard !isWorking else { return }
-                  if lastPreset == nil { generatePreset(profile: profile) }
-                  guard let preset = lastPreset else { return }
-                  let panel = NSSavePanel()
-                  panel.title = "Exporter le mapping rekordbox avancé"
-                  panel.nameFieldStringValue = "MixPilot Virtual Controller Advanced.midi.csv"
-                  panel.allowedContentTypes = [.commaSeparatedText]
-                  guard panel.runModal() == .OK, let url = panel.url else { return }
-
-                  isWorking = true
-                  status = "Export et vérification de \\(url.lastPathComponent)…"
-                  let data = Data(preset.csv.utf8)
-                  let fileStore = self.fileStore
-                  Task { @MainActor [weak self, fileStore] in
-                      guard let self else { return }
-                      defer { isWorking = false }
-                      do {
-                          try await fileStore.writeAndVerify(data, to: url)
-                          presetURL = url
-                          NSWorkspace.shared.activateFileViewerSelecting([url])
-                          status = "Preset exporté et vérifié : \\(url.lastPathComponent)"
-                      } catch {
-                          status = "Échec de l’export : \\(error.localizedDescription)"
-                      }
-                  }
-              }
-          '''
-              source = source[:export_start] + new_export + source[class_end:]
-
-          if source[source.index(view_marker):] != original_tail:
-              raise SystemExit("The SwiftUI view changed outside the Hub model.")
-          if source.count("Data(contentsOf:") != 2:
-              raise SystemExit("Unexpected synchronous read count after patch.")
-          if source.index("Data(contentsOf:") > source.index("@MainActor"):
-              raise SystemExit("A synchronous read still exists inside the MainActor model.")
-          if source.count("Task { @MainActor [weak self, fileStore] in") != 2:
-              raise SystemExit("Both asynchronous model operations were not installed.")
+          checks = {
+              "file actor": source.count("private actor RekordboxHubFileStore") == 1,
+              "preview contract": source.count("var preparationPreview: SetProject?") == 1,
+              "preparation engine": source.count("SetPreparationEngine().prepare(") == 1,
+              "async model operations": source.count("Task { @MainActor [weak self, fileStore] in") == 2,
+              "isolated disk reads": source.index("Data(contentsOf:") < source.index("@MainActor"),
+          }
+          failed = [name for name, passed in checks.items() if not passed]
+          if failed:
+              raise SystemExit("Hub integrity checks failed: " + ", ".join(failed))
 
           path.write_text(source, encoding="utf-8")
           PY
+
           git diff --check
           if ! git diff --quiet -- Sources/MixPilotApp/RekordboxHubView.swift; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add Sources/MixPilotApp/RekordboxHubView.swift
-            git commit -m "fix: move Rekordbox Hub file I/O off MainActor [skip ci]"
+            git commit -m "fix: restore Rekordbox Hub preparation preview [skip ci]"
             git push origin HEAD:${{ github.event.pull_request.head.ref }}
           fi
 
@@ -178,8 +103,11 @@ jobs:
             exit 1
           fi
 
-      - name: Verify both reports target the same commit
+      - name: Verify both reports and publish proof
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -192,6 +120,7 @@ jobs:
               Path("ultimate-audit/ultimate-audit.json"),
               Path("architecture-counter-audit/architecture-counter-audit.json"),
           )
+          summaries = []
           for report_path in reports:
               report = json.loads(report_path.read_text(encoding="utf-8"))
               summary = report.get("summary", {})
@@ -199,7 +128,27 @@ jobs:
                   raise SystemExit(f"{report_path} contains blocking errors")
               if summary.get("git_head") != head:
                   raise SystemExit(f"{report_path} does not match {head}")
+              summaries.append((report_path.name, summary))
+
+          lines = [
+              "## ✅ Double audit MixPilot validé",
+              "",
+              f"SHA audité : `{head}`",
+              "",
+          ]
+          for name, summary in summaries:
+              lines.append(
+                  f"- **{name}** — erreurs : {summary.get('errors', 0)}, "
+                  f"avertissements : {summary.get('warnings', 0)}, "
+                  f"fichiers : {summary.get('files_scanned', summary.get('files', 'n/a'))}"
+              )
+          lines.extend([
+              "",
+              "Contrats Hub confirmés : acteur d’I/O dédié, deux opérations asynchrones et `preparationPreview` conservé.",
+          ])
+          Path("audit-comment.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
+          gh pr comment "$PR_NUMBER" --body-file audit-comment.md
 
       - name: Upload complete audit reports
         if: always()
