@@ -20,6 +20,9 @@ public enum AudioLevelMonitorError: Error, LocalizedError {
     }
 }
 
+// SAFETY: Every mutable field and AVAudioEngine lifecycle transition is
+// serialized by stateLock. Audio callbacks copy the handler while locked and
+// deliver samples by re-entering MainActor; recovery work is generation-checked.
 public final class AudioLevelMonitor: @unchecked Sendable {
     public typealias SampleHandler = @MainActor @Sendable (AudioLevelSample) -> Void
 

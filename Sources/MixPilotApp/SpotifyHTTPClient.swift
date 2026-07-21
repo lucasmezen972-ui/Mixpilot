@@ -2,6 +2,8 @@
 import Foundation
 import MixPilotCore
 
+// SAFETY: requiredHost and policy are immutable after initialization. URLSession
+// delegate callbacks only read those values and never mutate shared Swift state.
 private final class SpotifyRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let requiredHost: String
     private let policy = SpotifyNetworkPolicy()

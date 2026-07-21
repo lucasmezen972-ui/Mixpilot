@@ -20,25 +20,38 @@ RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ICONSET_DIR="$BUILD_DIR/MixPilot.iconset"
 ICON_SOURCE="$BUILD_DIR/MixPilotAppIcon.jpg"
 AUDIT_DIR="$ROOT/ultimate-audit"
+COUNTER_AUDIT_DIR="$ROOT/architecture-counter-audit"
+CURRENT_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
 
 cd "$ROOT"
 
 # A release candidate must be produced from the exact repository state that
-# passed the repository-wide line-by-line audit. This gate is intentionally
-# not bypassed by MIXPILOT_SKIP_TESTS.
-rm -rf "$AUDIT_DIR"
+# passed both independent repository audits. This gate is intentionally not
+# bypassed by MIXPILOT_SKIP_TESTS.
+rm -rf "$AUDIT_DIR" "$COUNTER_AUDIT_DIR"
 python3 "$ROOT/Scripts/ultimate_repository_audit.py" --output-dir "$AUDIT_DIR"
-python3 - "$AUDIT_DIR/ultimate-audit.json" <<'PY'
+python3 "$ROOT/Scripts/architecture_counter_audit.py" --output-dir "$COUNTER_AUDIT_DIR"
+python3 - \
+  "$AUDIT_DIR/ultimate-audit.json" \
+  "$COUNTER_AUDIT_DIR/architecture-counter-audit.json" \
+  "$CURRENT_HEAD" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-summary = report.get("summary", {})
-if summary.get("errors") != 0:
-    raise SystemExit("Repository audit contains blocking errors.")
-if not summary.get("git_head"):
-    raise SystemExit("Repository audit did not record the audited Git commit.")
+expected_head = sys.argv[3]
+for report_name, report_path in (
+    ("line-by-line audit", Path(sys.argv[1])),
+    ("architecture counter-audit", Path(sys.argv[2])),
+):
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    summary = report.get("summary", {})
+    if summary.get("errors") != 0:
+        raise SystemExit(f"The {report_name} contains blocking errors.")
+    if summary.get("git_head") != expected_head:
+        raise SystemExit(
+            f"The {report_name} does not match the current Git commit."
+        )
 PY
 
 if [[ "${MIXPILOT_SKIP_TESTS:-0}" == "1" ]]; then

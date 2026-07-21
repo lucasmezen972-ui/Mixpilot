@@ -80,6 +80,8 @@ public enum DJAccessibilityError: Error, LocalizedError {
 
 @MainActor
 public final class DJAccessibilityBridge {
+    private let rekordboxOCRReader = RekordboxPlaylistOCRReader()
+
     public init() {}
 
     public func requestAccessibilityPrompt() {
@@ -152,7 +154,7 @@ public final class DJAccessibilityBridge {
     public func libraryRows(
         backend: DJBackendIdentifier,
         maxRows: Int = 500
-    ) -> [DJLibraryRow] {
+    ) async -> [DJLibraryRow] {
         guard let application = application(for: backend) else {
             return []
         }
@@ -185,7 +187,7 @@ public final class DJAccessibilityBridge {
         if !accessibilityRows.isEmpty || backend != .rekordbox {
             return accessibilityRows
         }
-        return RekordboxPlaylistOCRReader().rows(
+        return await rekordboxOCRReader.rows(
             processIdentifier: application.processIdentifier,
             maxRows: maxRows
         )
@@ -396,9 +398,9 @@ public extension DJAccessibilityBridge {
     func libraryRows(
         software: DJSoftware? = nil,
         maxRows: Int = 500
-    ) -> [DJLibraryRow] {
+    ) async -> [DJLibraryRow] {
         guard let backend = software?.backendIdentifier else { return [] }
-        return libraryRows(backend: backend, maxRows: maxRows)
+        return await libraryRows(backend: backend, maxRows: maxRows)
     }
 
     @available(*, deprecated, message: "Use activate(.serato)")

@@ -24,8 +24,64 @@ env:
   MIXPILOT_VALIDATION_VERSION: ${{ github.event.inputs.version || '0.4.0-dev' }}
 
 jobs:
+  repository-audits:
+    name: Two-pass repository audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate both audit scripts
+        run: |
+          python3 -m py_compile Scripts/ultimate_repository_audit.py
+          python3 -m py_compile Scripts/architecture_counter_audit.py
+      - name: Run both independent repository audits
+        shell: bash
+        run: |
+          set +e
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+          first_status=$?
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
+          second_status=$?
+          set -e
+          if (( first_status != 0 || second_status != 0 )); then
+            echo "At least one repository audit reported blocking findings."
+            exit 1
+          fi
+      - name: Verify both reports target this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          reports = (
+              Path("ultimate-audit/ultimate-audit.json"),
+              Path("architecture-counter-audit/architecture-counter-audit.json"),
+          )
+          for report_path in reports:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              summary = report.get("summary", {})
+              if summary.get("errors") != 0:
+                  raise SystemExit(f"{report_path} contains blocking errors")
+              if summary.get("git_head") != head:
+                  raise SystemExit(f"{report_path} does not match {head}")
+          PY
+      - name: Upload two-pass audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-two-pass-repository-audit
+          path: |
+            ultimate-audit
+            architecture-counter-audit
+          if-no-files-found: error
+
   runner-smoke-ubuntu:
     name: Runner smoke test (Ubuntu)
+    needs: repository-audits
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -102,6 +158,7 @@ jobs:
 
   runner-smoke-macos:
     name: Runner smoke test (macOS)
+    needs: repository-audits
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -252,6 +309,7 @@ jobs:
         run: |
           {
             echo "## Final validation"
+            echo "- Two independent repository audits passed on the same Git commit."
             echo "- Development/ad hoc signing is accepted for this workflow."
             echo "- Developer ID and notarization are not required here."
             echo "- Physical DJ software, audio and controller tests remain separate."

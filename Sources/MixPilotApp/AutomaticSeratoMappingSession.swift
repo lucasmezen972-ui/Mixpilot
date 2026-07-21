@@ -84,8 +84,10 @@ final class AutomaticSeratoMappingSession: ObservableObject {
                 runningApplication.terminate()
                 let closed = await waitUntilSeratoStops()
                 guard closed else {
-                    status = "Impossible de fermer Serato"
-                    detail = "Ferme Serato manuellement puis reclique sur Installer. Aucun fichier n’a été modifié."
+                    status = Task.isCancelled ? "Installation annulée" : "Impossible de fermer Serato"
+                    detail = Task.isCancelled
+                        ? "Aucun fichier n’a été modifié."
+                        : "Ferme Serato manuellement puis reclique sur Installer. Aucun fichier n’a été modifié."
                     isWorking = false
                     return
                 }
@@ -129,6 +131,9 @@ final class AutomaticSeratoMappingSession: ObservableObject {
                     detail = "Preset installé et Serato relancé. Active-le dans Réglages → MIDI. Fonctions volontairement non devinées : \(unsupported). Les transitions utilisent les volumes comme solution de secours."
                 }
                 refresh(profile: profile)
+            } catch is CancellationError {
+                status = "Installation annulée"
+                detail = "La tâche a été interrompue. L’installateur transactionnel a conservé ou restauré le mapping précédent."
             } catch {
                 status = "Installation impossible"
                 detail = error.localizedDescription
@@ -151,7 +156,7 @@ final class AutomaticSeratoMappingSession: ObservableObject {
             if let runningApplication {
                 runningApplication.terminate()
                 guard await waitUntilSeratoStops() else {
-                    status = "Impossible de fermer Serato"
+                    status = Task.isCancelled ? "Restauration annulée" : "Impossible de fermer Serato"
                     detail = "Aucun fichier n’a été modifié."
                     isWorking = false
                     return
@@ -174,6 +179,9 @@ final class AutomaticSeratoMappingSession: ObservableObject {
                 status = "Ancien mapping restauré"
                 detail = "Sauvegarde restaurée depuis \(restoredPath)."
                 refresh(profile: profile)
+            } catch is CancellationError {
+                status = "Restauration annulée"
+                detail = "L’opération a été interrompue sans appliquer de changement incomplet."
             } catch {
                 status = "Retour arrière impossible"
                 detail = error.localizedDescription
@@ -227,18 +235,28 @@ final class AutomaticSeratoMappingSession: ObservableObject {
 
     private func waitUntilSeratoStops() async -> Bool {
         for _ in 0..<24 {
+            if Task.isCancelled { return false }
             if runningSeratoApplication() == nil { return true }
-            try? await Task.sleep(for: .milliseconds(250))
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return false
+            }
         }
-        return runningSeratoApplication() == nil
+        return !Task.isCancelled && runningSeratoApplication() == nil
     }
 
     private func waitUntilSeratoStarts() async -> Bool {
         for _ in 0..<40 {
+            if Task.isCancelled { return false }
             if runningSeratoApplication() != nil { return true }
-            try? await Task.sleep(for: .milliseconds(250))
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return false
+            }
         }
-        return runningSeratoApplication() != nil
+        return !Task.isCancelled && runningSeratoApplication() != nil
     }
 }
 #endif

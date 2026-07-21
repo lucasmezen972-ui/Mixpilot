@@ -118,12 +118,15 @@ extension AppModel {
         let observation = accessibilityBridge.observe(backend: selectedBackend)
         accessibilityStatus = observation.accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : "Surveillance arrêtée"
-        libraryRowCount = observation.accessibilityGranted
-            ? accessibilityBridge.libraryRows(
+        if observation.accessibilityGranted {
+            let visibleRows = await accessibilityBridge.libraryRows(
                 backend: selectedBackend,
                 maxRows: 1_000
-            ).count
-            : 0
+            )
+            libraryRowCount = visibleRows.count
+        } else {
+            libraryRowCount = 0
+        }
 
         var activeBackendAvailable = false
         do {
