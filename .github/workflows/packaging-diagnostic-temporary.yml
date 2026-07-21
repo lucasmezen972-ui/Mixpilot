@@ -2,7 +2,7 @@ name: MixPilot Packaging Diagnostic (Temporary)
 
 on:
   pull_request:
-    types: [edited]
+    types: [assigned]
 
 permissions:
   contents: read
