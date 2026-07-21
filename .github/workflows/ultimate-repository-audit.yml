@@ -62,7 +62,7 @@ jobs:
               if summary.get("git_head") != head:
                   raise SystemExit(f"{report_path} does not match {head}")
           PY
-      - name: Upload complete audit reports
+      - name: Upload complete audit reports and Hub source snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -70,4 +70,5 @@ jobs:
           path: |
             ultimate-audit
             architecture-counter-audit
+            Sources/MixPilotApp/RekordboxHubView.swift
           if-no-files-found: error
