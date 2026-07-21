@@ -22,15 +22,33 @@ ICON_SOURCE="$BUILD_DIR/MixPilotAppIcon.jpg"
 AUDIT_DIR="$ROOT/ultimate-audit"
 COUNTER_AUDIT_DIR="$ROOT/architecture-counter-audit"
 CURRENT_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
+AUDIT_WORKTREE=""
+
+cleanup_audit_worktree() {
+  if [[ -n "$AUDIT_WORKTREE" ]]; then
+    git -C "$ROOT" worktree remove --force "$AUDIT_WORKTREE" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_audit_worktree EXIT
 
 cd "$ROOT"
 
-# A release candidate must be produced from the exact repository state that
-# passed both independent repository audits. This gate is intentionally not
-# bypassed by MIXPILOT_SKIP_TESTS.
+# Always audit the exact Git commit from a clean detached worktree. Generated
+# Xcode projects, simulator logs and other untracked CI outputs must never alter
+# the release verdict for an otherwise identical source commit.
 rm -rf "$AUDIT_DIR" "$COUNTER_AUDIT_DIR"
-python3 "$ROOT/Scripts/ultimate_repository_audit.py" --output-dir "$AUDIT_DIR"
-python3 "$ROOT/Scripts/architecture_counter_audit.py" --output-dir "$COUNTER_AUDIT_DIR"
+AUDIT_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/mixpilot-release-audit.XXXXXX")"
+rmdir "$AUDIT_WORKTREE"
+git -C "$ROOT" worktree add --detach "$AUDIT_WORKTREE" "$CURRENT_HEAD" >/dev/null
+python3 "$AUDIT_WORKTREE/Scripts/ultimate_repository_audit.py" \
+  --output-dir "$AUDIT_WORKTREE/ultimate-audit"
+python3 "$AUDIT_WORKTREE/Scripts/architecture_counter_audit.py" \
+  --output-dir "$AUDIT_WORKTREE/architecture-counter-audit"
+cp -R "$AUDIT_WORKTREE/ultimate-audit" "$AUDIT_DIR"
+cp -R "$AUDIT_WORKTREE/architecture-counter-audit" "$COUNTER_AUDIT_DIR"
+git -C "$ROOT" worktree remove --force "$AUDIT_WORKTREE" >/dev/null
+AUDIT_WORKTREE=""
+
 python3 - \
   "$AUDIT_DIR/ultimate-audit.json" \
   "$COUNTER_AUDIT_DIR/architecture-counter-audit.json" \
@@ -54,8 +72,19 @@ for report_name, report_path in (
         )
 PY
 
+tests_already_validated=0
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -s "$ROOT/swift-test.log" ]]; then
+  if grep -Eq \
+    'Test run with [0-9]+ tests passed|Executed [0-9]+ tests, with 0 failures' \
+    "$ROOT/swift-test.log"; then
+    tests_already_validated=1
+  fi
+fi
+
 if [[ "${MIXPILOT_SKIP_TESTS:-0}" == "1" ]]; then
   echo "Skipping Swift tests because MIXPILOT_SKIP_TESTS=1."
+elif (( tests_already_validated == 1 )); then
+  echo "Reusing the successful Swift test gate from this GitHub Actions job."
 else
   swift test
 fi
