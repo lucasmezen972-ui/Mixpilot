@@ -139,7 +139,7 @@ public actor MixPilotCloudService {
         encoder.dateEncodingStrategy = .iso8601
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        commandAgentInstanceID = try? MixPilotCloudAgentIdentityStore().loadOrCreate().instanceID
+        commandAgentInstanceID = try? MixPilotCloudAgentIdentityStore().loadOrCreate()
     }
 
     @discardableResult

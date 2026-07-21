@@ -1,4 +1,5 @@
 #if os(macOS)
+import Foundation
 import MixPilotCore
 
 public extension MixPilotCloudService {
@@ -8,8 +9,8 @@ public extension MixPilotCloudService {
         appBuild: Int,
         rekordboxVersion: String?,
         liveMode: Bool
-    ) async throws -> MixPilotCloudContext {
-        return try await connect(
+    ) async throws -> UUID {
+        try await connect(
             appVersion: appVersion,
             appBuild: appBuild,
             backend: legacyRekordboxContext(rekordboxVersion: rekordboxVersion),
@@ -43,7 +44,11 @@ public extension MixPilotCloudService {
         MixPilotCloudBackendContext(
             identifier: .rekordbox,
             softwareVersion: rekordboxVersion,
-            controllerName: "MixPilot Virtual Controller"
+            controllerName: "MixPilot Virtual Controller",
+            mappingVersion: nil,
+            mappingSHA256: nil,
+            capabilities: DJBackendCapabilities(),
+            validationStatus: DJValidationStatus.requiresBackendValidation.rawValue
         )
     }
 }
