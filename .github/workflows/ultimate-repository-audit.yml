@@ -1,5 +1,5 @@
 name: Ultimate Repository Audit
-# Final pre-release audit trigger: both reports must target the same merge SHA.
+# Diagnostic pass: reports plus the Hub source snapshot are uploaded together.
 
 on:
   pull_request:
