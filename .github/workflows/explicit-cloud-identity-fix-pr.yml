@@ -1,0 +1,118 @@
+name: Explicit cloud identity fix PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - consolidation/security-cloud-trust
+    paths:
+      - .github/explicit-cloud-identity-fix.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch-audit-test-package:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout consolidation branch
+        uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+
+      - name: Apply explicit cloud identity fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/apply_explicit_cloud_identity_fix.py
+          ! grep -R --line-number 'signInAnonymously' \
+            Sources/MixPilotSystem/MixPilotCloudService.swift \
+            Sources/MixPilotSystem/MixPilotRemoteMappingService.swift
+          grep -q 'mixpilot-autopilot' Scripts/build_release.sh
+          grep -q 'cloud.handleAuthenticationCallback(url)' Sources/MixPilotApp/MixPilotApp.swift
+
+      - name: Commit candidate before validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'MixPilot Identity Fix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            Scripts/build_release.sh \
+            Sources/MixPilotApp/MixPilotApp.swift \
+            Sources/MixPilotApp/MixPilotCloudAccountView.swift \
+            Sources/MixPilotApp/MixPilotCloudCoordinator.swift \
+            Sources/MixPilotSystem/MixPilotCloudIdentity.swift \
+            Sources/MixPilotSystem/MixPilotCloudService.swift \
+            Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \
+            Tests/MixPilotSystemTests/CloudIdentityTests.swift
+          git commit -m 'fix: require explicit MixPilot cloud account [skip ci]'
+
+      - name: Run both repository audits on candidate commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          for path in (
+              Path('ultimate-audit/ultimate-audit.json'),
+              Path('architecture-counter-audit/architecture-counter-audit.json'),
+          ):
+              summary = json.loads(path.read_text(encoding='utf-8'))['summary']
+              if summary.get('errors') != 0:
+                  raise SystemExit(f'{path} contains blocking errors')
+              if summary.get('git_head') != head:
+                  raise SystemExit(f'{path} does not target {head}')
+          PY
+
+      - name: Run complete Swift tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee swift-test.log
+
+      - name: Build release product
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift build -c release --product MixPilotAutopilot
+
+      - name: Build and verify final candidate DMG
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.3-cloud-identity-final
+          CODE_SIGN_IDENTITY: '-'
+        run: |
+          set -euo pipefail
+          chmod +x Scripts/*.sh
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+          codesign --verify --deep --strict --verbose=2 'build/MixPilot Autopilot.app'
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+
+      - name: Push validated candidate to consolidation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:consolidation/security-cloud-trust
+
+      - name: Upload final identity candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-0.4.3-cloud-identity-final
+          path: |
+            swift-test.log
+            ultimate-audit
+            architecture-counter-audit
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: error
