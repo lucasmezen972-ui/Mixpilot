@@ -52,7 +52,23 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
       - name: Apply final hardening patch
-        run: python3 Scripts/apply_final_release_hardening.py
+        shell: bash
+        run: |
+          python3 Scripts/apply_final_release_hardening.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Sources/MixPilotApp/SpotifyLibraryCoordinator.swift")
+          text = path.read_text(encoding="utf-8")
+          old = "\nprivate final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"
+          new = """
+// SAFETY: The relay owns only an immutable session identifier and a weak
+// coordinator reference. AuthenticationServices may invoke receive on any
+// thread; receive snapshots both fields and crosses to MainActor before access.
+private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"""
+          if text.count(old) != 1:
+              raise SystemExit("Spotify callback relay safety marker could not be inserted exactly once.")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
       - name: Remove temporary trigger and diagnostic files
         shell: bash
         run: |
