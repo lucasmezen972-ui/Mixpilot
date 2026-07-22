@@ -45,7 +45,7 @@ jobs:
                   path,
                   '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
                   '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
-                  expected=2,
+                  expected=1,
               )'''
           if text.count(old) != 1:
               raise SystemExit("Could not specialize the one-shot audit patch.")
@@ -53,6 +53,16 @@ jobs:
           PY
       - name: Apply final hardening patch
         run: python3 Scripts/apply_final_release_hardening.py
+      - name: Remove temporary trigger and diagnostic files
+        shell: bash
+        run: |
+          rm -f \
+            .github/final-release-hardening-trigger.txt \
+            .github/final-release-hardening-trigger-branch.txt \
+            .github/final-release-hardening-pr-trigger.txt \
+            .github/unused-placeholder.txt \
+            .github/placeholder-final.txt \
+            .github/workflows/final-release-hardening-debug.yml
       - name: Validate patch shape
         shell: bash
         run: |
@@ -61,6 +71,8 @@ jobs:
           git diff --check
           test ! -e Scripts/apply_final_release_hardening.py
           test ! -e .github/workflows/final-release-hardening-pr.yml
+          test ! -e .github/workflows/final-release-hardening-debug.yml
+          test ! -e .github/final-release-hardening-trigger.txt
           test -x Scripts/verify_release_hygiene.sh
           grep -q 'CHECKS_EXECUTED' Scripts/architecture_counter_audit.py
           grep -q 'verify_release_hygiene.sh' .github/workflows/final-pr-validation.yml
