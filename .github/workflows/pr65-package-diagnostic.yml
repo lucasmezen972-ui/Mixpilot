@@ -1,11 +1,12 @@
 name: PR65 package diagnostic
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/final-release-hardening-main
+      - main
     paths:
       - .github/pr65-package-diagnostic.trigger
+      - .github/workflows/pr65-package-diagnostic.yml
 
 permissions:
   contents: read
