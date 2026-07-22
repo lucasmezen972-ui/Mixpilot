@@ -1,0 +1,65 @@
+name: Final release hardening debug
+
+on:
+  pull_request:
+    branches:
+      - consolidation/security-cloud-trust
+    paths:
+      - .github/final-release-hardening-trigger.txt
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+      - name: Match the production patch preparation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Scripts/apply_final_release_hardening.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    replace_once(
+                  path,
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+              )'''
+          new = '''    replace_all(
+                  path,
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  expected=2,
+              )'''
+          if text.count(old) != 1:
+              raise SystemExit("Could not specialize the one-shot audit patch.")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Capture patch result
+        shell: bash
+        run: |
+          set +e
+          python3 Scripts/apply_final_release_hardening.py > hardening-patch.log 2>&1
+          status=$?
+          echo "$status" > hardening-patch.status
+          git diff --stat > hardening-diff-stat.log || true
+          git diff --check >> hardening-patch.log 2>&1 || true
+          exit 0
+      - name: Upload patch diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-release-hardening-debug
+          path: |
+            hardening-patch.log
+            hardening-patch.status
+            hardening-diff-stat.log
+          if-no-files-found: error
+      - name: Reflect patch status
+        run: |
+          status="$(cat hardening-patch.status)"
+          cat hardening-patch.log
+          exit "$status"
