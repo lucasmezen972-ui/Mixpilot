@@ -165,6 +165,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
         <string>mixpilot-spotify</string>
       </array>
     </dict>
+    <dict>
+      <key>CFBundleURLName</key><string>com.mixpilot.autopilot.auth</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>mixpilot-autopilot</string>
+      </array>
+    </dict>
   </array>
   <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -184,6 +191,11 @@ PLIST
 registered_spotify_scheme="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$APP_DIR/Contents/Info.plist")"
 if [[ "$registered_spotify_scheme" != "mixpilot-spotify" ]]; then
   echo "Spotify OAuth callback scheme is missing from the packaged application." >&2
+  exit 1
+fi
+registered_account_scheme="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:1:CFBundleURLSchemes:0' "$APP_DIR/Contents/Info.plist")"
+if [[ "$registered_account_scheme" != "mixpilot-autopilot" ]]; then
+  echo "MixPilot account callback scheme is missing from the packaged application." >&2
   exit 1
 fi
 

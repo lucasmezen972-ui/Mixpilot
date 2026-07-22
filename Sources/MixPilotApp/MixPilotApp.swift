@@ -41,6 +41,9 @@ struct MixPilotAutopilotApp: App {
                     publishCloudBackendContext()
                     cloud.start(liveMode: model.isLiveRunning)
                 }
+                .onOpenURL { url in
+                    cloud.handleAuthenticationCallback(url)
+                }
                 .onChange(of: model.isLiveRunning) { _, isLiveRunning in
                     publishCloudBackendContext()
                     cloud.setLiveMode(isLiveRunning)
@@ -132,6 +135,11 @@ struct MixPilotAutopilotApp: App {
                 .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
+
+        Window("Compte MixPilot", id: "cloud-account") {
+            MixPilotCloudAccountView(cloud: cloud)
+        }
+        .defaultSize(width: 560, height: 420)
 
         Window("Choisir le logiciel DJ", id: "dj-software") {
             DJSoftwareSettingsView(model: model)
@@ -261,6 +269,11 @@ private struct MixPilotWindowCommands: Commands {
                 openWindow(id: "quick-set")
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Compte MixPilot") {
+                openWindow(id: "cloud-account")
+            }
+            .keyboardShortcut(",", modifiers: [.command, .option])
         }
 
         CommandGroup(replacing: .help) {

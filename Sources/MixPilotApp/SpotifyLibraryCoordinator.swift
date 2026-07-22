@@ -837,6 +837,9 @@ fileprivate enum SpotifyAuthenticationCallbackResult: Sendable {
     case invalidCallback
 }
 
+// SAFETY: The immutable session identifier is shared across threads, while the
+// weak coordinator is only copied by the system callback. All coordinator state
+// remains isolated to the MainActor and is accessed only inside the scheduled Task.
 private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {
     private let sessionID: UUID
     private weak var coordinator: SpotifyLibraryCoordinator?

@@ -107,6 +107,7 @@ public actor MixPilotCloudService {
     }()
     public static let publishableKey = "sb_publishable_X1HNpgU3xYsz3F33m-JoUw_B2QjnlB3"
     public static let updateChannel = "stable"
+    public static let authenticationStorageKey = "mixpilot.cloud.auth.v1"
 
     private let supabase: SupabaseClient
     private let urlSession: URLSession
@@ -119,18 +120,27 @@ public actor MixPilotCloudService {
     private var ownerID: UUID?
     private var deviceID: UUID?
     private var sessionID: UUID?
-    private var anonymousAuthenticationUnavailable = false
 
     public init(
         supabase: SupabaseClient? = nil,
         urlSession: URLSession? = nil,
         telemetryQueueURL: URL? = nil
     ) {
+        let resolvedSession = urlSession ?? URLSession(configuration: .ephemeral)
+        self.urlSession = resolvedSession
         self.supabase = supabase ?? SupabaseClient(
             supabaseURL: Self.projectURL,
-            supabaseKey: Self.publishableKey
+            supabaseKey: Self.publishableKey,
+            options: SupabaseClientOptions(
+                auth: .init(
+                    redirectToURL: MixPilotCloudIdentityPolicy.callbackURL,
+                    storageKey: Self.authenticationStorageKey,
+                    flowType: .pkce,
+                    emitLocalSessionAsInitialSession: true
+                ),
+                global: .init(session: resolvedSession)
+            )
         )
-        self.urlSession = urlSession ?? URLSession(configuration: .ephemeral)
         installationID = Self.loadInstallationID()
         telemetryQueue = MixPilotTelemetryQueue(
             fileURL: telemetryQueueURL ?? Self.telemetryQueueURL()
@@ -140,6 +150,42 @@ public actor MixPilotCloudService {
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         commandAgentInstanceID = try? MixPilotCloudAgentIdentityStore().loadOrCreate()
+    }
+
+    public func accountIfAvailable() async throws -> MixPilotCloudAccount? {
+        guard supabase.auth.currentSession != nil else { return nil }
+        let session = try await authenticatedSession()
+        return MixPilotCloudAccount(userID: session.user.id, email: session.user.email)
+    }
+
+    public func requestMagicLink(email rawEmail: String) async throws -> String {
+        let email = try MixPilotCloudIdentityPolicy.normalizedEmail(rawEmail)
+        try await supabase.auth.signInWithOTP(
+            email: email,
+            redirectTo: MixPilotCloudIdentityPolicy.callbackURL,
+            shouldCreateUser: true
+        )
+        return email
+    }
+
+    @discardableResult
+    public func handleAuthenticationCallback(_ url: URL) async throws -> MixPilotCloudAccount {
+        guard MixPilotCloudIdentityPolicy.acceptsCallback(url) else {
+            throw MixPilotCloudIdentityError.invalidCallback
+        }
+        do {
+            let session = try await supabase.auth.session(from: url)
+            resetCloudContext()
+            return MixPilotCloudAccount(userID: session.user.id, email: session.user.email)
+        } catch {
+            throw MixPilotCloudIdentityError.callbackRejected(String(describing: type(of: error)))
+        }
+    }
+
+    public func signOut() async throws {
+        await closeSession()
+        try await supabase.auth.signOut()
+        resetCloudContext()
     }
 
     @discardableResult
@@ -346,30 +392,24 @@ public actor MixPilotCloudService {
         } catch {
             // Closing a remote session is best-effort and must never block local shutdown.
         }
-        self.sessionID = nil
+        resetCloudContext()
     }
 
     private func authenticatedSession() async throws -> Session {
-        do {
-            let session = try await supabase.auth.session
-            if session.isExpired {
-                return try await supabase.auth.refreshSession()
-            }
-            return session
-        } catch {
-            guard !anonymousAuthenticationUnavailable else {
-                throw MixPilotCloudError.authenticationUnavailable
-            }
-            do {
-                return try await supabase.auth.signInAnonymously()
-            } catch {
-                if (error as? AuthError)?.errorCode == .anonymousProviderDisabled {
-                    anonymousAuthenticationUnavailable = true
-                    throw MixPilotCloudError.authenticationUnavailable
-                }
-                throw error
-            }
+        guard supabase.auth.currentSession != nil else {
+            throw MixPilotCloudIdentityError.signedOut
         }
+        let session = try await supabase.auth.session
+        if session.isExpired {
+            return try await supabase.auth.refreshSession()
+        }
+        return session
+    }
+
+    private func resetCloudContext() {
+        ownerID = nil
+        deviceID = nil
+        sessionID = nil
     }
 
     private func performRequest<Response: Decodable>(
