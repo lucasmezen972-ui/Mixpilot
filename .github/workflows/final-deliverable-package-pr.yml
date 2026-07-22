@@ -1,0 +1,62 @@
+name: Final deliverable package PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - consolidation/security-cloud-trust
+    paths:
+      - .github/final-deliverable-package.trigger
+
+permissions:
+  contents: read
+
+jobs:
+  package-final-dmg:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout final consolidation candidate
+        uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+
+      - name: Verify product source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R --line-number 'signInAnonymously' \
+            Sources/MixPilotSystem/MixPilotCloudService.swift \
+            Sources/MixPilotSystem/MixPilotRemoteMappingService.swift
+          grep -q 'flowType: .pkce' Sources/MixPilotSystem/MixPilotCloudService.swift
+          grep -q 'SpotifyWebAuthenticationSessionFactory.makeSession' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          grep -q 'rest/v1/rpc/claim_mixpilot_commands' Sources/MixPilotSystem/MixPilotCloudService.swift
+          test ! -e Scripts/apply_explicit_cloud_identity_fix.py
+          test ! -e Scripts/apply_final_release_hardening.py
+
+      - name: Build final application and DMG without replaying tests
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.3-final
+          CODE_SIGN_IDENTITY: '-'
+          MIXPILOT_SKIP_TESTS: '1'
+        run: |
+          set -euo pipefail
+          chmod +x Scripts/*.sh
+          ./Scripts/build_release.sh
+          ./Scripts/package_dmg.sh
+          codesign --verify --deep --strict --verbose=2 'build/MixPilot Autopilot.app'
+          cd build
+          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+
+      - name: Upload final deliverable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-0.4.3-final
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+            ultimate-audit
+            architecture-counter-audit
+          if-no-files-found: error
