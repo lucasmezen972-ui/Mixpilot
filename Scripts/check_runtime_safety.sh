@@ -107,10 +107,19 @@ require_pattern 'generation == self\.generation' Sources/MixPilotSystem/AudioLev
   'buffers from an obsolete audio-engine generation must be ignored'
 require_pattern 'recoveryQueue' Sources/MixPilotSystem/AudioLevelMonitor.swift \
   'audio engine reconstruction must happen outside the framework callback'
-require_pattern 'anonymousProviderDisabled' Sources/MixPilotSystem/MixPilotCloudService.swift \
-  'a disabled anonymous provider must not be retried indefinitely'
-require_pattern 'anonymousProviderDisabled' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \
-  'remote mapping discovery must cache a disabled anonymous provider'
+
+reject_pattern 'signInAnonymously' Sources/MixPilotSystem/MixPilotCloudService.swift \
+  'the cloud service must never recreate anonymous sessions'
+reject_pattern 'signInAnonymously' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \
+  'remote mapping discovery must never recreate anonymous sessions'
+require_pattern 'guard supabase\.auth\.currentSession != nil' Sources/MixPilotSystem/MixPilotCloudService.swift \
+  'cloud operations must fail closed while signed out'
+require_pattern 'guard supabase\.auth\.currentSession != nil' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \
+  'remote mapping discovery must fail closed while signed out'
+require_pattern 'catch let error as MixPilotCloudIdentityError where error == \.signedOut' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \
+  'the cloud loop must handle explicit signed-out state'
+require_pattern 'try await Task\.sleep\(for: \.seconds\(30\)\)' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \
+  'signed-out polling must remain paced instead of retrying in a tight loop'
 require_pattern 'catch MixPilotCloudError\.authenticationUnavailable' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \
   'the cloud loop must stop when server-side authentication is intentionally disabled'
 
