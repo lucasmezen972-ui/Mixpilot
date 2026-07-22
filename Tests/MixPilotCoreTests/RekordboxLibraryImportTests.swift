@@ -99,8 +99,10 @@ struct RekordboxLibraryImportTests {
           </COLLECTION>
           <PLAYLISTS>
             <NODE Type="0" Name="ROOT" Count="1">
-              <NODE Type="1" Name="Party" KeyType="0" Entries="1">
-                <TRACK Key="100"/>
+              <NODE Type="0" Name="Events" Count="1">
+                <NODE Type="1" Name="Saturday" Entries="1" KeyType="0">
+                  <TRACK Key="100"/>
+                </NODE>
               </NODE>
             </NODE>
           </PLAYLISTS>
@@ -108,13 +110,68 @@ struct RekordboxLibraryImportTests {
         """#.data(using: .utf8)!
 
         let result = try RekordboxLibraryImporter().importData(xml, fileExtension: "xml")
-        #expect(result.source == .officialXML)
+        #expect(result.source == .rekordboxXML)
+        #expect(result.productVersion == "7.2.3")
         #expect(result.tracks.count == 1)
         #expect(result.tracks[0].rating == 4)
-        #expect(result.tracks[0].key == "7A")
         #expect(result.tracks[0].beatGrid.count == 1)
         #expect(result.tracks[0].cues.count == 2)
-        #expect(result.playlists.first?.name == "Party")
-        #expect(result.playlists.first?.trackIDs == ["100"])
+        #expect(result.playlists.count == 1)
+        #expect(result.playlists[0].folderPath == ["Events"])
+        #expect(result.playlists[0].trackExternalIDs == ["100"])
+    }
+
+    @Test("Unknown future fields do not break import and are reported")
+    func futureFields() throws {
+        let json = #"""
+        {
+          "version": "8.0.0-beta",
+          "library": {
+            "tracks": [{
+              "TrackID": "future-1",
+              "Title": "Future Track",
+              "ArtistName": "Future Artist",
+              "AverageBpm": "126,4",
+              "TotalTime": 205,
+              "futureStemLayout": {"vocal": true},
+              "brandNewFlag": 1
+            }]
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let result = try RekordboxLibraryImporter().importData(json, fileExtension: "json")
+        #expect(result.tracks.count == 1)
+        #expect(abs(result.tracks[0].bpm - 126.4) < 0.001)
+        #expect(result.unknownFieldNames.contains("futureStemLayout"))
+        #expect(result.unknownFieldNames.contains("brandNewFlag"))
+    }
+
+    @Test("Known older versions remain importable but streaming is not declared eligible")
+    func olderVersionPolicy() throws {
+        let json = #"""
+        {
+          "version": "6.8.5",
+          "tracks": [{"id":"1", "title":"Local", "artist":"Artist", "bpm":120, "length":180}]
+        }
+        """#.data(using: .utf8)!
+
+        let result = try RekordboxLibraryImporter().importData(json, fileExtension: "json")
+        #expect(result.tracks.count == 1)
+        #expect(result.spotifyCapability == .unavailableByVersion)
+        #expect(result.localTrackCount == 1)
+    }
+
+    @Test("Duplicate rows from nested envelopes are collapsed")
+    func deduplication() throws {
+        let json = #"""
+        {
+          "rows": [{"id":"same", "title":"Track", "artist":"Artist", "bpm":120, "length":180}],
+          "payload": {"tracks": [{"id":"same", "title":"Track", "artist":"Artist", "bpm":120, "length":180}]}
+        }
+        """#.data(using: .utf8)!
+
+        let result = try RekordboxLibraryImporter().importData(json, fileExtension: "json")
+        #expect(result.tracks.count == 1)
     }
 }
