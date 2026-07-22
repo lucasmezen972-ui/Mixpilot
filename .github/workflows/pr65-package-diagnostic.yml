@@ -1,0 +1,85 @@
+name: PR65 package diagnostic
+
+on:
+  push:
+    branches:
+      - fix/final-release-hardening-main
+    paths:
+      - .github/pr65-package-diagnostic.trigger
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostic:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/final-release-hardening-main
+          fetch-depth: 0
+      - name: Run release build with preserved log
+        id: build
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.4-final
+          MIXPILOT_SKIP_TESTS: "1"
+          CODE_SIGN_IDENTITY: "-"
+        run: |
+          set +e
+          chmod +x Scripts/*.sh
+          ./Scripts/build_release.sh > build-release.log 2>&1
+          status=$?
+          echo "$status" > build-release.status
+          exit 0
+      - name: Run DMG packaging with preserved log
+        id: package
+        shell: bash
+        run: |
+          set +e
+          if [[ "$(cat build-release.status)" == "0" ]]; then
+            ./Scripts/package_dmg.sh > package-dmg.log 2>&1
+            status=$?
+          else
+            echo "Packaging skipped because build_release failed." > package-dmg.log
+            status=99
+          fi
+          echo "$status" > package-dmg.status
+          exit 0
+      - name: Capture app and DMG inventory
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          find build -maxdepth 6 -print > build-inventory.log 2>&1
+          if [[ -d "build/MixPilot Autopilot.app" ]]; then
+            codesign --display --verbose=4 "build/MixPilot Autopilot.app" > codesign-display.log 2>&1
+            xattr -lr "build/MixPilot Autopilot.app" > app-xattrs.log 2>&1
+            otool -l "build/MixPilot Autopilot.app/Contents/MacOS/MixPilotAutopilot" > app-otool.log 2>&1
+          fi
+      - name: Upload package diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PR65-package-diagnostic
+          path: |
+            build-release.log
+            build-release.status
+            package-dmg.log
+            package-dmg.status
+            build-inventory.log
+            codesign-display.log
+            app-xattrs.log
+            app-otool.log
+            ultimate-audit
+            architecture-counter-audit
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: warn
+      - name: Reflect result
+        shell: bash
+        run: |
+          cat build-release.log
+          cat package-dmg.log
+          [[ "$(cat build-release.status)" == "0" && "$(cat package-dmg.status)" == "0" ]]
