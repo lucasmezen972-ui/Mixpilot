@@ -22,36 +22,32 @@ jobs:
           ref: consolidation/security-cloud-trust
           fetch-depth: 0
 
-      - name: Apply explicit cloud identity fix
+      - name: Apply explicit identity and final repository cleanup
         shell: bash
         run: |
           set -euo pipefail
           python3 Scripts/apply_explicit_cloud_identity_fix.py
+          python3 Scripts/apply_final_repository_cleanup.py
           ! grep -R --line-number 'signInAnonymously' \
             Sources/MixPilotSystem/MixPilotCloudService.swift \
             Sources/MixPilotSystem/MixPilotRemoteMappingService.swift
           grep -q 'mixpilot-autopilot' Scripts/build_release.sh
           grep -q 'cloud.handleAuthenticationCallback(url)' Sources/MixPilotApp/MixPilotApp.swift
+          grep -q 'SAFETY: The immutable session identifier' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
+          ! grep -q 'Dictionary(uniqueKeysWithValues: plan.commands.map' Sources/MixPilotCore/RekordboxDeviceValidation.swift
 
       - name: Commit clean candidate before validation
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'MixPilot Identity Fix Bot'
+          git config user.name 'MixPilot Final Fix Bot'
           git config user.email 'actions@users.noreply.github.com'
           git rm \
             Scripts/apply_explicit_cloud_identity_fix.py \
+            Scripts/apply_final_repository_cleanup.py \
             .github/workflows/explicit-cloud-identity-fix-pr.yml
-          git add \
-            Scripts/build_release.sh \
-            Sources/MixPilotApp/MixPilotApp.swift \
-            Sources/MixPilotApp/MixPilotCloudAccountView.swift \
-            Sources/MixPilotApp/MixPilotCloudCoordinator.swift \
-            Sources/MixPilotSystem/MixPilotCloudIdentity.swift \
-            Sources/MixPilotSystem/MixPilotCloudService.swift \
-            Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \
-            Tests/MixPilotSystemTests/CloudIdentityTests.swift
-          git commit -m 'fix: require explicit MixPilot cloud account [skip ci]'
+          git add -A
+          git commit -m 'fix: finalize explicit cloud identity and repository cleanup [skip ci]'
 
       - name: Run both repository audits on candidate commit
         id: audits
@@ -95,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-explicit-identity-audits
+          name: MixPilot-final-candidate-audits
           path: |
             ultimate-audit
             architecture-counter-audit
@@ -134,7 +130,7 @@ jobs:
           set -euo pipefail
           git push origin HEAD:consolidation/security-cloud-trust
 
-      - name: Upload final identity candidate
+      - name: Upload final candidate
         uses: actions/upload-artifact@v4
         with:
           name: MixPilot-0.4.3-cloud-identity-final
