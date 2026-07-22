@@ -62,6 +62,20 @@ struct RekordboxDeviceValidationTests {
         #expect(report.passedCount > 0)
     }
 
+    @Test func duplicateCommandIdentifiersDoNotTrap() throws {
+        var plan = try RekordboxDeviceValidationPlanBuilder().make(
+            profile: .developmentDefault,
+            installedVersion: "7.2.3"
+        )
+        let first = try #require(plan.commands.first)
+        plan.commands.append(first)
+
+        let report = RekordboxDeviceValidationReport(plan: plan)
+
+        #expect(report.records.count == Set(plan.commands.map(\.id)).count)
+        #expect(report.records[first.id]?.commandID == first.id)
+    }
+
     @Test func storeRoundTripsAtomically() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MixPilotValidationTests-\(UUID().uuidString)", isDirectory: true)
