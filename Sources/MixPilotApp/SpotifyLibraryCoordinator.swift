@@ -122,6 +122,8 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
 
     private var webAuthenticationSession: ASWebAuthenticationSession?
     private var webAuthenticationPresentationContext: SpotifyAuthenticationPresentationContext?
+    private var webAuthenticationCallbackRelay: SpotifyAuthenticationCallbackRelay?
+    private var webAuthenticationSessionID: UUID?
     private var refreshTask: Task<SpotifyStoredSession, Error>?
     private var currentSession: SpotifyStoredSession?
     private var pendingState: String?
@@ -197,28 +199,16 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             connectionState = .connecting
             statusMessage = "Connexion sécurisée à Spotify…"
 
-            let session = ASWebAuthenticationSession(
+            let sessionID = UUID()
+            let callbackRelay = SpotifyAuthenticationCallbackRelay(
+                sessionID: sessionID,
+                coordinator: self
+            )
+            let session = SpotifyWebAuthenticationSessionFactory.makeSession(
                 url: authorizationURL,
-                callbackURLScheme: Self.callbackURL.scheme
-            ) { [weak self] callbackURL, error in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.webAuthenticationSession = nil
-                    self.webAuthenticationPresentationContext = nil
-
-                    if error != nil {
-                        self.clearPendingAuthorization()
-                        self.present(SpotifyBridgeError.authorizationCancelled)
-                        return
-                    }
-                    guard let callbackURL else {
-                        self.clearPendingAuthorization()
-                        self.present(SpotifyBridgeError.invalidCallback)
-                        return
-                    }
-                    await self.completeAuthorization(callbackURL)
-                }
-            }
+                callbackURLScheme: Self.callbackURL.scheme,
+                relay: callbackRelay
+            )
 
             let presentationContext = SpotifyAuthenticationPresentationContext(
                 anchor: NSApp.keyWindow
@@ -230,6 +220,8 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             session.presentationContextProvider = presentationContext
             session.prefersEphemeralWebBrowserSession = true
             webAuthenticationPresentationContext = presentationContext
+            webAuthenticationCallbackRelay = callbackRelay
+            webAuthenticationSessionID = sessionID
             webAuthenticationSession = session
 
             guard session.start() else {
@@ -241,6 +233,29 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             cancelAuthorizationSession()
             clearPendingAuthorization()
             present(error)
+        }
+    }
+
+    fileprivate func handleAuthenticationCallback(
+        _ result: SpotifyAuthenticationCallbackResult,
+        sessionID: UUID
+    ) async {
+        guard webAuthenticationSessionID == sessionID else { return }
+
+        webAuthenticationSession = nil
+        webAuthenticationPresentationContext = nil
+        webAuthenticationCallbackRelay = nil
+        webAuthenticationSessionID = nil
+
+        switch result {
+        case let .success(callbackURL):
+            await completeAuthorization(callbackURL)
+        case .cancelled:
+            clearPendingAuthorization()
+            present(SpotifyBridgeError.authorizationCancelled)
+        case .invalidCallback:
+            clearPendingAuthorization()
+            present(SpotifyBridgeError.invalidCallback)
         }
     }
 
@@ -786,6 +801,8 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
         webAuthenticationSession?.cancel()
         webAuthenticationSession = nil
         webAuthenticationPresentationContext = nil
+        webAuthenticationCallbackRelay = nil
+        webAuthenticationSessionID = nil
     }
 
     private func clearPendingAuthorization() {
@@ -811,6 +828,54 @@ final class SpotifyLibraryCoordinator: NSObject, ObservableObject {
             ?? "Une erreur technique est survenue."
         connectionState = .failed(message)
         statusMessage = message
+    }
+}
+
+fileprivate enum SpotifyAuthenticationCallbackResult: Sendable {
+    case success(URL)
+    case cancelled
+    case invalidCallback
+}
+
+private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {
+    private let sessionID: UUID
+    private weak var coordinator: SpotifyLibraryCoordinator?
+
+    init(sessionID: UUID, coordinator: SpotifyLibraryCoordinator) {
+        self.sessionID = sessionID
+        self.coordinator = coordinator
+    }
+
+    func receive(callbackURL: URL?, error: Error?) {
+        let result: SpotifyAuthenticationCallbackResult
+        if error != nil {
+            result = .cancelled
+        } else if let callbackURL {
+            result = .success(callbackURL)
+        } else {
+            result = .invalidCallback
+        }
+
+        let sessionID = sessionID
+        let coordinator = coordinator
+        Task { @MainActor [weak coordinator] in
+            await coordinator?.handleAuthenticationCallback(result, sessionID: sessionID)
+        }
+    }
+}
+
+private enum SpotifyWebAuthenticationSessionFactory {
+    static func makeSession(
+        url: URL,
+        callbackURLScheme: String?,
+        relay: SpotifyAuthenticationCallbackRelay
+    ) -> ASWebAuthenticationSession {
+        ASWebAuthenticationSession(
+            url: url,
+            callbackURLScheme: callbackURLScheme
+        ) { [relay] callbackURL, error in
+            relay.receive(callbackURL: callbackURL, error: error)
+        }
     }
 }
 

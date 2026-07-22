@@ -41,6 +41,21 @@ final class SpotifyAuthenticationPresentationTests: XCTestCase {
         ))
     }
 
+    func testAuthenticationCallbackIsCreatedOutsideTheMainActor() throws {
+        let source = try repositoryFile(
+            "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("private enum SpotifyWebAuthenticationSessionFactory"))
+        XCTAssertTrue(source.contains("private final class SpotifyAuthenticationCallbackRelay"))
+        XCTAssertTrue(source.contains("SpotifyWebAuthenticationSessionFactory.makeSession("))
+        XCTAssertTrue(source.contains("relay.receive(callbackURL: callbackURL, error: error)"))
+        XCTAssertTrue(source.contains("Task { @MainActor [weak coordinator] in"))
+        XCTAssertTrue(source.contains("guard webAuthenticationSessionID == sessionID else { return }"))
+        XCTAssertFalse(source.contains(") { [weak self] callbackURL, error in"))
+        XCTAssertFalse(source.contains("Task { @MainActor [weak self] in"))
+    }
+
     func testOAuthCallbackParsingRejectsDuplicateParametersWithoutDictionaryTrap() throws {
         let source = try repositoryFile(
             "Sources/MixPilotApp/SpotifyLibraryCoordinator.swift"
