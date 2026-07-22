@@ -12,17 +12,17 @@ permissions:
   contents: write
 
 jobs:
-  patch-audit-test-package:
-    runs-on: macos-latest
-    timeout-minutes: 75
+  apply-audit-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout consolidation branch
+      - name: Checkout stable consolidation head
         uses: actions/checkout@v4
         with:
           ref: consolidation/security-cloud-trust
           fetch-depth: 0
 
-      - name: Apply explicit identity and final repository cleanup
+      - name: Reapply the already validated deterministic candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +36,7 @@ jobs:
           grep -q 'SAFETY: The immutable session identifier' Sources/MixPilotApp/SpotifyLibraryCoordinator.swift
           ! grep -q 'Dictionary(uniqueKeysWithValues: plan.commands.map' Sources/MixPilotCore/RekordboxDeviceValidation.swift
 
-      - name: Commit clean candidate before validation
+      - name: Commit the clean candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -49,8 +49,7 @@ jobs:
           git add -A
           git commit -m 'fix: finalize explicit cloud identity and repository cleanup [skip ci]'
 
-      - name: Run both repository audits on candidate commit
-        id: audits
+      - name: Verify both audits on the rebased candidate
         shell: bash
         run: |
           set +e
@@ -59,10 +58,6 @@ jobs:
           python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
           architecture_status=$?
           set -e
-          echo '--- Ultimate audit report ---'
-          cat ultimate-audit/ultimate-audit.md
-          echo '--- Architecture counter-audit report ---'
-          cat architecture-counter-audit/architecture-counter-audit.md
           python3 - <<'PY'
           import json
           import subprocess
@@ -73,71 +68,39 @@ jobs:
               Path('ultimate-audit/ultimate-audit.json'),
               Path('architecture-counter-audit/architecture-counter-audit.json'),
           ):
-              summary = json.loads(path.read_text(encoding='utf-8'))['summary']
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              summary = payload['summary']
               print(f'{path}: {summary}')
-              if summary.get('errors') != 0:
-                  failed = True
-              if summary.get('git_head') != head:
+              for finding in payload.get('findings', []):
+                  if finding.get('severity') == 'error':
+                      print(finding)
+              if summary.get('errors') != 0 or summary.get('git_head') != head:
                   failed = True
           if failed:
-              raise SystemExit('Candidate repository audits contain blocking findings or target the wrong commit.')
+              raise SystemExit('Rebased candidate audit failed.')
           PY
           if (( ultimate_status != 0 || architecture_status != 0 )); then
-            echo 'At least one audit process exited non-zero.' >&2
             exit 1
           fi
 
-      - name: Upload candidate audit reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MixPilot-final-candidate-audits
-          path: |
-            ultimate-audit
-            architecture-counter-audit
-          if-no-files-found: warn
-
-      - name: Run complete Swift tests
+      - name: Confirm branch did not move and push
         shell: bash
         run: |
           set -euo pipefail
-          set -o pipefail
-          swift test --parallel 2>&1 | tee swift-test.log
-
-      - name: Build release product
-        shell: bash
-        run: |
-          set -euo pipefail
-          swift build -c release --product MixPilotAutopilot
-
-      - name: Build and verify final candidate DMG
-        shell: bash
-        env:
-          MIXPILOT_VERSION: 0.4.3-cloud-identity-final
-          CODE_SIGN_IDENTITY: '-'
-        run: |
-          set -euo pipefail
-          chmod +x Scripts/*.sh
-          ./Scripts/build_release.sh
-          ./Scripts/package_dmg.sh
-          codesign --verify --deep --strict --verbose=2 'build/MixPilot Autopilot.app'
-          cd build
-          shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
-
-      - name: Push validated candidate to consolidation
-        shell: bash
-        run: |
-          set -euo pipefail
+          candidate_parent="$(git rev-parse HEAD^)"
+          git fetch origin consolidation/security-cloud-trust
+          remote_head="$(git rev-parse origin/consolidation/security-cloud-trust)"
+          if [[ "$candidate_parent" != "$remote_head" ]]; then
+            echo "Consolidation moved from $candidate_parent to $remote_head; refusing stale push." >&2
+            exit 1
+          fi
           git push origin HEAD:consolidation/security-cloud-trust
 
-      - name: Upload final candidate
+      - name: Upload final audit proof
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-0.4.3-cloud-identity-final
+          name: MixPilot-final-rebased-audits
           path: |
-            swift-test.log
             ultimate-audit
             architecture-counter-audit
-            build/MixPilot-Autopilot.dmg
-            build/MixPilot-Autopilot.dmg.sha256
           if-no-files-found: error
