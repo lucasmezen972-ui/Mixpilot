@@ -60,11 +60,12 @@ jobs:
           path = Path("Sources/MixPilotApp/SpotifyLibraryCoordinator.swift")
           text = path.read_text(encoding="utf-8")
           old = "\nprivate final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"
-          new = """
-// SAFETY: The relay owns only an immutable session identifier and a weak
-// coordinator reference. AuthenticationServices may invoke receive on any
-// thread; receive snapshots both fields and crosses to MainActor before access.
-private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"""
+          new = (
+              "\n// SAFETY: The relay owns only an immutable session identifier and a weak\n"
+              "// coordinator reference. AuthenticationServices may invoke receive on any\n"
+              "// thread; receive snapshots both fields and crosses to MainActor before access.\n"
+              "private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"
+          )
           if text.count(old) != 1:
               raise SystemExit("Spotify callback relay safety marker could not be inserted exactly once.")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
