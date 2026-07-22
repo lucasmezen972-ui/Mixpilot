@@ -1,0 +1,218 @@
+name: Final integration candidate
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - consolidation/security-cloud-trust
+    paths:
+      - .github/final-integration-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mixpilot-final-integration-candidate
+  cancel-in-progress: false
+
+jobs:
+  patch-audit-test-package:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout consolidation branch
+        uses: actions/checkout@v4
+        with:
+          ref: consolidation/security-cloud-trust
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure commit identity
+        run: |
+          git config user.name "MixPilot Final Integration Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Apply hardening and explicit identity atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Scripts/apply_final_release_hardening.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    replace_once(
+                  path,
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+              )'''
+          new = '''    replace_all(
+                  path,
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
+                  expected=1,
+              )'''
+          if text.count(old) != 1:
+              raise SystemExit("Could not specialize final hardening patch.")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+          python3 Scripts/apply_final_release_hardening.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Sources/MixPilotApp/SpotifyLibraryCoordinator.swift")
+          text = path.read_text(encoding="utf-8")
+          old = "\nprivate final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"
+          new = (
+              "\n// SAFETY: The relay owns only an immutable session identifier and a weak\n"
+              "// coordinator reference. AuthenticationServices may invoke receive on any\n"
+              "// thread; receive snapshots both fields and crosses to MainActor before access.\n"
+              "private final class SpotifyAuthenticationCallbackRelay: @unchecked Sendable {"
+          )
+          if text.count(old) != 1:
+              raise SystemExit("Spotify callback relay safety marker could not be inserted exactly once.")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+          python3 Scripts/apply_explicit_cloud_identity_fix.py
+
+      - name: Remove all one-shot scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            Scripts/apply_explicit_cloud_identity_fix.py \
+            Scripts/apply_final_repository_cleanup.py \
+            .github/workflows/explicit-cloud-identity-fix-pr.yml \
+            .github/explicit-cloud-identity-fix.trigger \
+            .github/workflows/final-release-hardening-debug.yml \
+            .github/workflows/final-release-hardening-pr.yml \
+            .github/final-release-hardening-trigger.txt \
+            .github/final-release-hardening-trigger-branch.txt \
+            .github/final-release-hardening-pr-trigger.txt \
+            .github/unused-placeholder.txt \
+            .github/placeholder-final.txt \
+            .github/workflows/final-integration-candidate.yml \
+            .github/final-integration-trigger.txt
+          chmod +x Scripts/*.sh
+          git diff --check
+          ! grep -R --line-number 'signInAnonymously' \
+            Sources/MixPilotSystem/MixPilotCloudService.swift \
+            Sources/MixPilotSystem/MixPilotRemoteMappingService.swift
+          grep -q 'MixPilotCloudIdentityPolicy.callbackURL' Sources/MixPilotSystem/MixPilotCloudService.swift
+          grep -q 'cloud.handleAuthenticationCallback(url)' Sources/MixPilotApp/MixPilotApp.swift
+          grep -q 'CHECKS_EXECUTED' Scripts/architecture_counter_audit.py
+          grep -q 'verify_release_hygiene.sh' Scripts/package_dmg.sh
+          test -f Scripts/verify_release_hygiene.sh
+
+      - name: Commit exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git commit -m "fix: finalize cloud identity and clean release hardening [skip ci]"
+
+      - name: Run both audits
+        id: audits
+        shell: bash
+        run: |
+          set +e
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit > ultimate-audit.log 2>&1
+          ultimate_status=$?
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit > architecture-counter-audit.log 2>&1
+          architecture_status=$?
+          printf '%s\n' "$ultimate_status" > ultimate-audit.status
+          printf '%s\n' "$architecture_status" > architecture-counter-audit.status
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          failed = False
+          for path in (
+              Path("ultimate-audit/ultimate-audit.json"),
+              Path("architecture-counter-audit/architecture-counter-audit.json"),
+          ):
+              summary = json.loads(path.read_text(encoding="utf-8"))["summary"]
+              print(f"{path}: {summary}")
+              if summary.get("errors") != 0 or summary.get("git_head") != head:
+                  failed = True
+              if path.name == "architecture-counter-audit.json" and summary.get("checks", 0) < 50:
+                  failed = True
+          raise SystemExit(1 if failed else 0)
+          PY
+          summary_status=$?
+          if (( ultimate_status != 0 || architecture_status != 0 || summary_status != 0 )); then
+            exit 1
+          fi
+
+      - name: Run complete Swift tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          swift test --parallel 2>&1 | tee swift-test.log
+
+      - name: Build and inspect clean DMG
+        id: package
+        shell: bash
+        env:
+          MIXPILOT_VERSION: 0.4.4-final
+          CODE_SIGN_IDENTITY: "-"
+        run: |
+          set +e
+          ./Scripts/build_release.sh > build-release.log 2>&1
+          build_status=$?
+          package_status=99
+          if (( build_status == 0 )); then
+            ./Scripts/package_dmg.sh > package-dmg.log 2>&1
+            package_status=$?
+          else
+            printf '%s\n' 'Packaging skipped because release build failed.' > package-dmg.log
+          fi
+          printf '%s\n' "$build_status" > build-release.status
+          printf '%s\n' "$package_status" > package-dmg.status
+          if (( build_status == 0 && package_status == 0 )); then
+            (cd build && shasum -a 256 -c MixPilot-Autopilot.dmg.sha256) > checksum.log 2>&1
+            checksum_status=$?
+          else
+            printf '%s\n' 'Checksum skipped.' > checksum.log
+            checksum_status=99
+          fi
+          printf '%s\n' "$checksum_status" > checksum.status
+          if (( build_status != 0 || package_status != 0 || checksum_status != 0 )); then
+            exit 1
+          fi
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-final-integration-evidence
+          path: |
+            ultimate-audit
+            architecture-counter-audit
+            ultimate-audit.log
+            architecture-counter-audit.log
+            ultimate-audit.status
+            architecture-counter-audit.status
+            swift-test.log
+            build-release.log
+            build-release.status
+            package-dmg.log
+            package-dmg.status
+            checksum.log
+            checksum.status
+          if-no-files-found: warn
+
+      - name: Push validated candidate
+        if: success()
+        shell: bash
+        run: git push origin HEAD:consolidation/security-cloud-trust
+
+      - name: Upload final clean DMG
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-0.4.4-final-clean
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: error
