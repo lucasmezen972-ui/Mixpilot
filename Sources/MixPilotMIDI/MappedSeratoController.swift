@@ -50,12 +50,17 @@ public actor MappedMIDIController: DJCommandSending {
             do {
                 try await Task.sleep(for: Self.momentaryPulseDuration)
             } catch {
-                try? controller.sendNoteOff(
-                    channel: mapping.channel,
-                    note: mapping.number,
-                    velocity: mapping.offRawValue
-                )
-                throw error
+                let sleepError = error
+                do {
+                    try controller.sendNoteOff(
+                        channel: mapping.channel,
+                        note: mapping.number,
+                        velocity: mapping.offRawValue
+                    )
+                } catch {
+                    throw error
+                }
+                throw sleepError
             }
             try controller.sendNoteOff(
                 channel: mapping.channel,
@@ -72,12 +77,17 @@ public actor MappedMIDIController: DJCommandSending {
             do {
                 try await Task.sleep(for: Self.momentaryPulseDuration)
             } catch {
-                try? controller.sendControlChangeRaw(
-                    channel: mapping.channel,
-                    controller: mapping.number,
-                    value: mapping.offRawValue
-                )
-                throw error
+                let sleepError = error
+                do {
+                    try controller.sendControlChangeRaw(
+                        channel: mapping.channel,
+                        controller: mapping.number,
+                        value: mapping.offRawValue
+                    )
+                } catch {
+                    throw error
+                }
+                throw sleepError
             }
             try controller.sendControlChangeRaw(
                 channel: mapping.channel,

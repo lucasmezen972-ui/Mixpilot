@@ -60,14 +60,19 @@ public struct MixPilotTelemetryEvent: Identifiable, Codable, Hashable, Sendable 
     }
 
     private static func sanitizePayload(_ payload: [String: String]) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: payload.compactMap { key, value in
+        var sanitized: [String: String] = [:]
+
+        // Sorting makes collisions deterministic. When two source keys normalize to
+        // the same safe key, the lexicographically first source key wins.
+        for (key, value) in payload.sorted(by: { $0.key < $1.key }) {
             let normalizedKey = key.lowercased().replacingOccurrences(of: "-", with: "_")
-            guard !forbiddenKeys.contains(normalizedKey) else { return nil }
+            guard !forbiddenKeys.contains(normalizedKey) else { continue }
             let safeKey = sanitizeToken(normalizedKey)
-            guard !safeKey.isEmpty else { return nil }
-            let safeValue = String(value.prefix(240))
-            return (safeKey, safeValue)
-        })
+            guard !safeKey.isEmpty, sanitized[safeKey] == nil else { continue }
+            sanitized[safeKey] = String(value.prefix(240))
+        }
+
+        return sanitized
     }
 }
 
@@ -86,48 +91,84 @@ public struct MixPilotTelemetryEnvelope: Codable, Hashable, Sendable {
 }
 
 public actor MixPilotTelemetryQueue {
-    private var events: [MixPilotTelemetryEvent]
+    private var events: [MixPilotTelemetryEvent] = []
+    private var hasLoadedPersistedEvents = false
     private let fileURL: URL
     private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
-        decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        events = (try? decoder.decode([MixPilotTelemetryEvent].self, from: Data(contentsOf: fileURL))) ?? []
     }
 
-    public func enqueue(_ event: MixPilotTelemetryEvent) throws {
+    public func enqueue(_ event: MixPilotTelemetryEvent) async throws {
+        await loadPersistedEventsIfNeeded()
         if !events.contains(where: { $0.clientEventID == event.clientEventID }) {
             events.append(event)
         }
         if events.count > 5_000 {
             events.removeFirst(events.count - 5_000)
         }
-        try persist()
+        try await persist()
     }
 
-    public func peek(limit: Int = 100) -> [MixPilotTelemetryEvent] {
-        Array(events.prefix(max(1, limit)))
+    public func peek(limit: Int = 100) async -> [MixPilotTelemetryEvent] {
+        await loadPersistedEventsIfNeeded()
+        return Array(events.prefix(max(1, limit)))
     }
 
-    public func remove(clientEventIDs: Set<UUID>) throws {
+    public func remove(clientEventIDs: Set<UUID>) async throws {
+        await loadPersistedEventsIfNeeded()
         events.removeAll { clientEventIDs.contains($0.clientEventID) }
-        try persist()
+        try await persist()
     }
 
-    public var count: Int { events.count }
+    public var count: Int {
+        get async {
+            await loadPersistedEventsIfNeeded()
+            return events.count
+        }
+    }
 
-    private func persist() throws {
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
+    private func loadPersistedEventsIfNeeded() async {
+        guard !hasLoadedPersistedEvents else { return }
+        hasLoadedPersistedEvents = true
+        let sourceURL = fileURL
+
+        events = await Task.detached(priority: .utility) {
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else { return [] }
+
+            do {
+                let data = try Data(contentsOf: sourceURL)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                return try decoder.decode([MixPilotTelemetryEvent].self, from: data)
+            } catch {
+                let quarantineURL = sourceURL
+                    .deletingPathExtension()
+                    .appendingPathExtension("corrupt-\(UUID().uuidString).json")
+                do {
+                    try FileManager.default.moveItem(at: sourceURL, to: quarantineURL)
+                } catch {
+                    // The queue remains usable in memory even if quarantine fails.
+                }
+                return []
+            }
+        }.value
+    }
+
+    private func persist() async throws {
         let data = try encoder.encode(events)
-        try data.write(to: fileURL, options: .atomic)
+        let destinationURL = fileURL
+
+        try await Task.detached(priority: .utility) {
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: destinationURL, options: .atomic)
+        }.value
     }
 }

@@ -6,7 +6,8 @@ import MixPilotSystem
 extension AppModel {
     var onlineBackendContext: MixPilotCloudBackendContext? {
         guard let selectedBackend,
-              let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }) else {
+              let descriptor = backendDescriptors.first(where: { $0.identifier == selectedBackend }),
+              let mappingSHA256 = try? MixPilotRemoteMappingValidator.profileSHA256(mappingProfile) else {
             return nil
         }
 
@@ -15,7 +16,7 @@ extension AppModel {
             softwareVersion: descriptor.environment.softwareVersion,
             controllerName: "MixPilot Virtual Controller",
             mappingVersion: "profile-\(mappingProfile.schemaVersion)",
-            mappingSHA256: try? MixPilotRemoteMappingValidator.profileSHA256(mappingProfile),
+            mappingSHA256: mappingSHA256,
             capabilities: descriptor.capabilities,
             validationStatus: preflightReport.canStartLive ? "ready" : "configuration_required"
         )

@@ -6,6 +6,7 @@ import MixPilotSystem
 @MainActor
 final class MixPilotCloudCoordinator: ObservableObject {
     @Published private(set) var connectionState: MixPilotCloudConnectionState = .idle
+    @Published private(set) var identityState: MixPilotCloudIdentityState = .checking
     @Published private(set) var availableUpdate: MixPilotCloudRelease?
     @Published private(set) var availableMapping: MixPilotRemoteMappingRelease?
     @Published private(set) var activeCompatibilityOverride: MixPilotCompatibilityOverride?
@@ -37,9 +38,9 @@ final class MixPilotCloudCoordinator: ObservableObject {
         self.remoteMappingService = remoteMappingService
         self.mappingInstaller = mappingInstaller
         self.diagnosticsPreferences = diagnosticsPreferences
-        self.onlineDiagnosticsEnabled = diagnosticsPreferences.isEnabled
-        self.appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
-        self.appBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 1
+        onlineDiagnosticsEnabled = diagnosticsPreferences.isEnabled
+        appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        appBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 1
     }
 
     func configureBackendContextProvider(
@@ -59,6 +60,7 @@ final class MixPilotCloudCoordinator: ObservableObject {
     func start(liveMode: Bool) {
         self.liveMode = liveMode
         guard loopTask == nil else { return }
+        heartbeatCounter = 0
         loopTask = Task { [weak self] in
             await self?.runLoop()
         }
@@ -66,30 +68,100 @@ final class MixPilotCloudCoordinator: ObservableObject {
 
     func setLiveMode(_ value: Bool) {
         liveMode = value
-        Task {
-            try? await service.record(
-                MixPilotTelemetryEvent(
-                    category: "runtime",
-                    name: value ? "live_started" : "live_stopped"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await service.record(
+                    MixPilotTelemetryEvent(
+                        category: "runtime",
+                        name: value ? "live_started" : "live_stopped"
+                    )
                 )
-            )
-            if !value {
-                await refreshRemoteCompatibility(showNoUpdateMessage: false)
+            } catch {
+                statusDetail = "Le changement de mode Live reste local : l’événement n’a pas pu être transmis."
+            }
+            if !value, identityState.isSignedIn {
+                _ = await refreshRemoteCompatibility(showNoUpdateMessage: false)
             }
         }
     }
 
-    func checkNow() {
+    func refreshIdentity() {
         Task { [weak self] in
             guard let self else { return }
-            await checkForUpdate(showNoUpdateMessage: true)
-            await refreshRemoteCompatibility(showNoUpdateMessage: true)
+            await updateIdentityFromStoredSession()
+        }
+    }
+
+    func requestMagicLink(email: String) {
+        identityState = .checking
+        statusDetail = "Envoi du lien de connexion…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let normalized = try await service.requestMagicLink(email: email)
+                identityState = .linkSent(email: normalized)
+                statusDetail = "Un lien de connexion a été envoyé à \(normalized). Ouvre-le sur ce Mac."
+            } catch {
+                let message = humanIdentityMessage(error)
+                identityState = .failed(message: message)
+                statusDetail = message
+            }
+        }
+    }
+
+    func handleAuthenticationCallback(_ url: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let account = try await service.handleAuthenticationCallback(url)
+                identityState = .signedIn(account)
+                statusDetail = account.email.map { "Compte connecté • \($0)" } ?? "Compte MixPilot connecté."
+                restartLoopAfterIdentityChange()
+            } catch {
+                let message = humanIdentityMessage(error)
+                identityState = .failed(message: message)
+                statusDetail = message
+            }
+        }
+    }
+
+    func signOut() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await service.signOut()
+            } catch {
+                // Local session cleanup remains the priority; server logout is best-effort.
+            }
+            identityState = .signedOut
+            connectionState = .idle
+            statusDetail = "Compte déconnecté • le Live local reste disponible."
+            availableUpdate = nil
+            availableMapping = nil
+            activeCompatibilityOverride = nil
+            lastHeartbeatAt = nil
+            restartLoopAfterIdentityChange()
+        }
+    }
+
+    func checkNow() {
+        guard identityState.isSignedIn else {
+            statusDetail = "Connecte ton compte MixPilot pour vérifier les mises à jour en ligne."
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await checkForUpdate(showNoUpdateMessage: true)
+            _ = await refreshRemoteCompatibility(showNoUpdateMessage: true)
         }
     }
 
     func openAvailableUpdate() {
         guard let availableUpdate else { return }
-        NSWorkspace.shared.open(availableUpdate.preferredOpenURL)
+        if !NSWorkspace.shared.open(availableUpdate.preferredOpenURL) {
+            statusDetail = "La page de mise à jour n’a pas pu être ouverte."
+        }
     }
 
     func dismissUpdate() {
@@ -110,15 +182,20 @@ final class MixPilotCloudCoordinator: ObservableObject {
 
     func dismissAvailableMapping() {
         guard let release = availableMapping, !release.mandatory else { return }
-        Task {
-            try? await remoteMappingService.recordInstallation(
-                release: release,
-                status: .dismissed,
-                details: ["source": "user"]
-            )
-        }
         availableMapping = nil
         mappingStatus = "Correctif ignoré. La configuration locale actuelle reste inchangée."
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await remoteMappingService.recordInstallation(
+                    release: release,
+                    status: .dismissed,
+                    details: ["source": "user"]
+                )
+            } catch {
+                mappingStatus += " L’accusé de réception en ligne n’a pas été transmis."
+            }
+        }
     }
 
     func revealStagedPreset() {
@@ -153,19 +230,23 @@ final class MixPilotCloudCoordinator: ObservableObject {
                     if let hash = result.generatedArtifactSHA256 {
                         details["artifact_sha256"] = hash
                     }
-                    try? await remoteMappingService.recordInstallation(
-                        release: release,
-                        status: .rolledBack,
-                        previousProfileSHA256: result.previousProfileSHA256,
-                        appliedProfileSHA256: result.appliedProfileSHA256,
-                        details: details
-                    )
+                    do {
+                        try await remoteMappingService.recordInstallation(
+                            release: release,
+                            status: .rolledBack,
+                            previousProfileSHA256: result.previousProfileSHA256,
+                            appliedProfileSHA256: result.appliedProfileSHA256,
+                            details: details
+                        )
+                    } catch {
+                        mappingStatus += " La restauration locale est confirmée, mais le cloud n’a pas reçu l’accusé."
+                    }
                 }
                 if let url = result.generatedArtifactURL {
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
             } catch {
-                mappingStatus = "L’ancien mapping n’a pas pu être restauré. La configuration actuelle n’a pas été modifiée."
+                mappingStatus = "L’ancien mapping n’a pas pu être restauré. La configuration actuelle n’a pas été modifiée : \(humanCloudError(error))"
             }
         }
     }
@@ -176,10 +257,44 @@ final class MixPilotCloudCoordinator: ObservableObject {
         Task { await service.closeSession() }
     }
 
+    private func updateIdentityFromStoredSession() async {
+        do {
+            if let account = try await service.accountIfAvailable() {
+                identityState = .signedIn(account)
+            } else if case .linkSent = identityState {
+                // Preserve the useful confirmation while the user opens the e-mail.
+            } else {
+                identityState = .signedOut
+            }
+        } catch {
+            identityState = .failed(message: humanIdentityMessage(error))
+        }
+    }
+
+    private func restartLoopAfterIdentityChange() {
+        loopTask?.cancel()
+        loopTask = nil
+        heartbeatCounter = 0
+        start(liveMode: liveMode)
+    }
+
     private func runLoop() async {
+        defer { loopTask = nil }
         var connected = false
         while !Task.isCancelled {
             do {
+                guard let account = try await service.accountIfAvailable() else {
+                    if case .linkSent = identityState {
+                        // Keep the confirmation while the callback is pending.
+                    } else {
+                        identityState = .signedOut
+                    }
+                    connectionState = .idle
+                    statusDetail = "Connecte ton compte MixPilot pour activer les services en ligne facultatifs."
+                    try await Task.sleep(for: .seconds(30))
+                    continue
+                }
+                identityState = .signedIn(account)
                 let backend = await backendContextProvider()
                 let diagnosticsEnabled = diagnosticsPreferences.isEnabled
                 onlineDiagnosticsEnabled = diagnosticsEnabled
@@ -199,8 +314,8 @@ final class MixPilotCloudCoordinator: ObservableObject {
                     statusDetail = diagnosticsEnabled
                         ? "Services en ligne disponibles • diagnostics autorisés."
                         : "Services en ligne disponibles • diagnostics désactivés."
-                    await checkForUpdate(showNoUpdateMessage: false)
-                    await refreshRemoteCompatibility(showNoUpdateMessage: false)
+                    _ = await checkForUpdate(showNoUpdateMessage: false)
+                    _ = await refreshRemoteCompatibility(showNoUpdateMessage: false)
                     await processRemoteCommands()
                 }
 
@@ -216,13 +331,23 @@ final class MixPilotCloudCoordinator: ObservableObject {
 
                 heartbeatCounter += 1
                 if heartbeatCounter.isMultiple(of: 10) {
-                    await checkForUpdate(showNoUpdateMessage: false)
-                    await refreshRemoteCompatibility(showNoUpdateMessage: false)
+                    _ = await checkForUpdate(showNoUpdateMessage: false)
+                    _ = await refreshRemoteCompatibility(showNoUpdateMessage: false)
                     await processRemoteCommands()
                 }
                 try await Task.sleep(for: .seconds(30))
             } catch is CancellationError {
                 break
+            } catch let error as MixPilotCloudIdentityError where error == .signedOut {
+                identityState = .signedOut
+                connectionState = .idle
+                statusDetail = error.localizedDescription
+                connected = false
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                } catch {
+                    break
+                }
             } catch MixPilotCloudError.authenticationUnavailable {
                 connectionState = .offline("Services en ligne désactivés")
                 statusDetail = "L’authentification en ligne est désactivée côté service. Le Live et les mappings locaux restent disponibles."
@@ -240,7 +365,9 @@ final class MixPilotCloudCoordinator: ObservableObject {
         }
     }
 
-    private func checkForUpdate(showNoUpdateMessage: Bool) async {
+    @discardableResult
+    private func checkForUpdate(showNoUpdateMessage: Bool) async -> Bool {
+        guard identityState.isSignedIn else { return false }
         do {
             availableUpdate = try await service.checkForUpdate(currentBuild: appBuild)
             if let release = availableUpdate {
@@ -248,21 +375,25 @@ final class MixPilotCloudCoordinator: ObservableObject {
             } else if showNoUpdateMessage {
                 statusDetail = "MixPilot est à jour."
             }
+            return true
         } catch {
             if showNoUpdateMessage {
                 statusDetail = "La mise à jour n’a pas pu être vérifiée. Le Live local n’est pas affecté."
             }
+            return false
         }
     }
 
-    private func refreshRemoteCompatibility(showNoUpdateMessage: Bool) async {
+    @discardableResult
+    private func refreshRemoteCompatibility(showNoUpdateMessage: Bool) async -> Bool {
+        guard identityState.isSignedIn else { return false }
         guard let backend = await backendContextProvider() else {
             availableMapping = nil
             activeCompatibilityOverride = nil
             if showNoUpdateMessage {
                 mappingStatus = "Choisis un logiciel DJ pour rechercher un correctif compatible."
             }
-            return
+            return false
         }
 
         let controller = controllerName(for: backend)
@@ -280,15 +411,22 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 controllerName: controller
             )
 
-            if let release,
-               let local = try? await mappingInstaller.currentState(),
-               local.releaseID == release.id,
-               local.backend == nil || local.backend == backend.identifier {
-                availableMapping = nil
-                if showNoUpdateMessage {
-                    mappingStatus = "Le correctif \(backend.identifier.displayName) v\(release.mappingVersion) est déjà installé."
+            if let release {
+                do {
+                    if let local = try await mappingInstaller.currentState(),
+                       local.releaseID == release.id,
+                       local.backend == nil || local.backend == backend.identifier {
+                        availableMapping = nil
+                        if showNoUpdateMessage {
+                            mappingStatus = "Le correctif \(backend.identifier.displayName) v\(release.mappingVersion) est déjà installé."
+                        }
+                        return true
+                    }
+                } catch {
+                    availableMapping = release
+                    mappingStatus = "L’état du correctif local est illisible. L’installation automatique est suspendue ; une installation manuelle reste proposée."
+                    return false
                 }
-                return
             }
 
             availableMapping = release
@@ -296,26 +434,32 @@ final class MixPilotCloudCoordinator: ObservableObject {
                 if showNoUpdateMessage {
                     mappingStatus = "Aucun nouveau correctif compatible avec cette version de \(backend.identifier.displayName)."
                 }
-                return
+                return true
             }
 
             mappingStatus = "Correctif \(backend.identifier.displayName) v\(release.mappingVersion) disponible."
-            try? await remoteMappingService.recordInstallation(
-                release: release,
-                status: .discovered,
-                details: [
-                    "app_build": String(appBuild),
-                    "software_version": backend.softwareVersion ?? "unknown",
-                    "dj_backend": backend.identifier.rawValue
-                ]
-            )
+            do {
+                try await remoteMappingService.recordInstallation(
+                    release: release,
+                    status: .discovered,
+                    details: [
+                        "app_build": String(appBuild),
+                        "software_version": backend.softwareVersion ?? "unknown",
+                        "dj_backend": backend.identifier.rawValue
+                    ]
+                )
+            } catch {
+                mappingStatus += " Le catalogue n’a pas reçu l’accusé de découverte."
+            }
             if release.applyMode != .notify, !liveMode {
                 await stageMapping(release)
             }
+            return true
         } catch {
             if showNoUpdateMessage {
                 mappingStatus = "Le catalogue de correctifs n’a pas pu être consulté. La configuration locale reste disponible."
             }
+            return false
         }
     }
 
@@ -354,30 +498,42 @@ final class MixPilotCloudCoordinator: ObservableObject {
             if let hash = result.generatedArtifactSHA256 {
                 details["artifact_sha256"] = hash
             }
-            try? await remoteMappingService.recordInstallation(
-                release: release,
-                status: .staged,
-                previousProfileSHA256: result.previousProfileSHA256,
-                appliedProfileSHA256: result.appliedProfileSHA256,
-                details: details
-            )
-            try? await service.record(MixPilotTelemetryEvent(
-                category: "mapping",
-                name: "remote_mapping_staged",
-                payload: [
-                    "mapping_version": String(release.mappingVersion),
-                    "dj_backend": backend.identifier.rawValue,
-                    "artifact_kind": result.artifactKind.rawValue
-                ]
-            ))
+            do {
+                try await remoteMappingService.recordInstallation(
+                    release: release,
+                    status: .staged,
+                    previousProfileSHA256: result.previousProfileSHA256,
+                    appliedProfileSHA256: result.appliedProfileSHA256,
+                    details: details
+                )
+            } catch {
+                mappingStatus += " Le cloud n’a pas reçu la confirmation d’installation."
+            }
+            do {
+                try await service.record(MixPilotTelemetryEvent(
+                    category: "mapping",
+                    name: "remote_mapping_staged",
+                    payload: [
+                        "mapping_version": String(release.mappingVersion),
+                        "dj_backend": backend.identifier.rawValue,
+                        "artifact_kind": result.artifactKind.rawValue
+                    ]
+                ))
+            } catch {
+                statusDetail = "Le correctif est prêt localement, mais sa télémétrie n’a pas été transmise."
+            }
         } catch {
-            mappingStatus = "Le correctif n’a pas été installé et le mapping actuel reste intact."
-            try? await remoteMappingService.recordInstallation(
-                release: release,
-                status: .failed,
-                errorCode: String(describing: type(of: error)),
-                details: ["stage": "local_validation"]
-            )
+            mappingStatus = "Le correctif n’a pas été installé et le mapping actuel reste intact : \(humanCloudError(error))"
+            do {
+                try await remoteMappingService.recordInstallation(
+                    release: release,
+                    status: .failed,
+                    errorCode: String(describing: type(of: error)),
+                    details: ["stage": "local_validation"]
+                )
+            } catch {
+                mappingStatus += " L’échec n’a pas pu être enregistré en ligne."
+            }
         }
     }
 
@@ -391,48 +547,109 @@ final class MixPilotCloudCoordinator: ObservableObject {
     }
 
     private func processRemoteCommands() async {
+        guard identityState.isSignedIn else { return }
         do {
-            for command in try await service.pendingCommands() {
-                let result: [String: String]
-                let succeeded: Bool
-                switch command.command {
-                case "check_for_update", "refresh_configuration":
-                    await checkForUpdate(showNoUpdateMessage: false)
-                    await refreshRemoteCompatibility(showNoUpdateMessage: false)
-                    result = ["action": "configuration_refreshed"]
-                    succeeded = true
-                case "flush_telemetry":
-                    let backend = await backendContextProvider()
-                    try await service.heartbeat(
-                        appVersion: appVersion,
-                        appBuild: appBuild,
-                        backend: backend,
-                        liveMode: liveMode,
-                        telemetryEnabled: diagnosticsPreferences.isEnabled
+            let commands = try await service.pendingCommands()
+            for command in commands {
+                let outcome = await executeRemoteCommand(command)
+                do {
+                    try await service.completeCommand(
+                        command,
+                        succeeded: outcome.succeeded,
+                        result: outcome.result
                     )
-                    result = ["action": diagnosticsPreferences.isEnabled ? "diagnostics_flushed" : "diagnostics_disabled"]
-                    succeeded = true
-                case "run_diagnostics":
+                } catch {
+                    statusDetail = "Une commande distante a été traitée localement mais son accusé de réception n’a pas pu être envoyé."
+                    break
+                }
+            }
+        } catch {
+            statusDetail = "Les commandes distantes n’ont pas pu être consultées. Le contrôle local reste prioritaire."
+            do {
+                try await service.record(MixPilotTelemetryEvent(
+                    category: "online_services",
+                    name: "command_poll_failed",
+                    severity: .warning,
+                    payload: ["error_type": String(describing: type(of: error))]
+                ))
+            } catch {
+                // The local UI already reports the polling failure. A telemetry
+                // failure must never recurse or affect the local runtime.
+            }
+        }
+    }
+
+    private func executeRemoteCommand(
+        _ command: MixPilotCloudCommand
+    ) async -> (succeeded: Bool, result: [String: String]) {
+        do {
+            switch command.command {
+            case "check_for_update", "refresh_configuration":
+                let updateSucceeded = await checkForUpdate(showNoUpdateMessage: false)
+                let mappingSucceeded = await refreshRemoteCompatibility(showNoUpdateMessage: false)
+                return (
+                    updateSucceeded && mappingSucceeded,
+                    ["action": updateSucceeded && mappingSucceeded
+                        ? "configuration_refreshed"
+                        : "configuration_refresh_incomplete"]
+                )
+
+            case "flush_telemetry":
+                let backend = await backendContextProvider()
+                try await service.heartbeat(
+                    appVersion: appVersion,
+                    appBuild: appBuild,
+                    backend: backend,
+                    liveMode: liveMode,
+                    telemetryEnabled: diagnosticsPreferences.isEnabled
+                )
+                return (
+                    true,
+                    ["action": diagnosticsPreferences.isEnabled
+                        ? "diagnostics_flushed"
+                        : "diagnostics_disabled"]
+                )
+
+            case "run_diagnostics":
+                if diagnosticsPreferences.isEnabled {
                     try await service.record(MixPilotTelemetryEvent(
                         category: "diagnostics",
                         name: "remote_check_requested"
                     ))
-                    result = ["action": diagnosticsPreferences.isEnabled ? "diagnostics_recorded" : "diagnostics_disabled"]
-                    succeeded = true
-                default:
-                    result = ["error": "command_not_allowlisted"]
-                    succeeded = false
+                    return (true, ["action": "diagnostics_recorded"])
                 }
-                try await service.completeCommand(command, succeeded: succeeded, result: result)
+                return (true, ["action": "diagnostics_disabled"])
+
+            default:
+                return (false, ["error": "command_not_allowlisted"])
             }
         } catch {
-            try? await service.record(MixPilotTelemetryEvent(
-                category: "online_services",
-                name: "command_poll_failed",
-                severity: .warning,
-                payload: ["error_type": String(describing: type(of: error))]
-            ))
+            return (
+                false,
+                [
+                    "error": "command_execution_failed",
+                    "error_type": String(describing: type(of: error))
+                ]
+            )
         }
+    }
+
+    private func humanIdentityMessage(_ error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let message = localized.errorDescription,
+           !message.isEmpty {
+            return message
+        }
+        return "La connexion au compte MixPilot n’a pas pu être terminée. Le Live local reste disponible."
+    }
+
+    private func humanCloudError(_ error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return description
+        }
+        return "erreur technique non identifiée"
     }
 }
 #endif

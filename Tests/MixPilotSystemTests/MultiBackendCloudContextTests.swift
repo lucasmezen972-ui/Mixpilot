@@ -31,8 +31,8 @@ func cloudContextUsesDynamicBackend() throws {
         )
 
         #expect(object["identifier"] as? String == backend.rawValue)
-        #expect(object["softwareVersion"] as? String == "7.1")
-        #expect(object["mappingVersion"] as? String == "12")
+        #expect(object["software_version"] as? String == "7.1")
+        #expect(object["mapping_version"] as? String == "12")
         #expect((object["capabilities"] as? [String: Any])?["playPause"] != nil)
     }
 }

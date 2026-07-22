@@ -1,6 +1,8 @@
 import Foundation
 import Security
 
+// SAFETY: The store is stateless apart from an immutable service identifier.
+// Security framework calls do not retain references to mutable Swift state.
 final class KeychainStore: @unchecked Sendable {
     static let shared = KeychainStore()
 
@@ -15,16 +17,23 @@ final class KeychainStore: @unchecked Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data
+        ]
 
-        SecItemDelete(query as CFDictionary)
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.unhandled(updateStatus)
+        }
 
         var insert = query
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
-        let status = SecItemAdd(insert as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainError.unhandled(status)
+        let addStatus = SecItemAdd(insert as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw KeychainError.unhandled(addStatus)
         }
     }
 

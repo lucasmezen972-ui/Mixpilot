@@ -103,9 +103,14 @@ public struct MixPilotCloudRelease: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    private static let officialReleasesURL = URL(
-        string: "https://github.com/lucasmezen972-ui/Mixpilot/releases"
-    )!
+    private static let officialReleasesURL: URL = {
+        guard let url = URL(
+            string: "https://github.com/lucasmezen972-ui/Mixpilot/releases"
+        ) else {
+            return URL(fileURLWithPath: "/")
+        }
+        return url
+    }()
 
     private static func rolloutBucket(for installationID: UUID) -> Int {
         var hash: UInt64 = 1_469_598_103_934_665_603

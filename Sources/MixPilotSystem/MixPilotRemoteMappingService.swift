@@ -20,15 +20,23 @@ public actor MixPilotRemoteMappingService {
     private let decoder: JSONDecoder
     private let installationID: UUID
     private let provenanceVerifier = MixPilotMappingProvenanceVerifier()
-    private var anonymousAuthenticationUnavailable = false
 
-    public init(urlSession: URLSession = .shared) {
+    public init(urlSession: URLSession = URLSession(configuration: .ephemeral)) {
         self.urlSession = urlSession
-        self.supabase = SupabaseClient(
+        supabase = SupabaseClient(
             supabaseURL: MixPilotCloudService.projectURL,
-            supabaseKey: MixPilotCloudService.publishableKey
+            supabaseKey: MixPilotCloudService.publishableKey,
+            options: SupabaseClientOptions(
+                auth: .init(
+                    redirectToURL: MixPilotCloudIdentityPolicy.callbackURL,
+                    storageKey: MixPilotCloudService.authenticationStorageKey,
+                    flowType: .pkce,
+                    emitLocalSessionAsInitialSession: true
+                ),
+                global: .init(session: urlSession)
+            )
         )
-        self.installationID = Self.loadInstallationID()
+        installationID = Self.loadInstallationID()
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -167,7 +175,9 @@ public actor MixPilotRemoteMappingService {
                 URLQueryItem(name: "limit", value: "1")
             ]
         )
-        guard let device = devices.first else { return }
+        guard let device = devices.first else {
+            throw MixPilotCloudError.invalidResponse
+        }
 
         let _: EmptyRemoteMappingResponse = try await performRequest(
             path: "rest/v1/mixpilot_mapping_installations",
@@ -229,22 +239,14 @@ public actor MixPilotRemoteMappingService {
     }
 
     private func authenticatedSession() async throws -> Session {
-        do {
-            return try await supabase.auth.session
-        } catch {
-            guard !anonymousAuthenticationUnavailable else {
-                throw MixPilotCloudError.authenticationUnavailable
-            }
-            do {
-                return try await supabase.auth.signInAnonymously()
-            } catch {
-                if (error as? AuthError)?.errorCode == .anonymousProviderDisabled {
-                    anonymousAuthenticationUnavailable = true
-                    throw MixPilotCloudError.authenticationUnavailable
-                }
-                throw error
-            }
+        guard supabase.auth.currentSession != nil else {
+            throw MixPilotCloudIdentityError.signedOut
         }
+        let session = try await supabase.auth.session
+        if session.isExpired {
+            return try await supabase.auth.refreshSession()
+        }
+        return session
     }
 
     private func performRequest<Response: Decodable>(
@@ -310,13 +312,13 @@ public actor MixPilotRemoteMappingService {
             throw MixPilotCloudError.invalidResponse
         }
         guard 200..<300 ~= http.statusCode else {
-            throw MixPilotCloudError.rejected(
-                statusCode: http.statusCode,
-                body: String(data: data, encoding: .utf8) ?? ""
-            )
+            throw MixPilotCloudError.rejected(statusCode: http.statusCode)
         }
-        if Response.self == EmptyRemoteMappingResponse.self, data.isEmpty {
-            return EmptyRemoteMappingResponse() as! Response
+        if data.isEmpty {
+            guard Response.self == EmptyRemoteMappingResponse.self else {
+                throw MixPilotCloudError.emptyResponse
+            }
+            return try decoder.decode(Response.self, from: Data("{}".utf8))
         }
         return try decoder.decode(Response.self, from: data)
     }

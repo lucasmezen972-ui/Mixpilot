@@ -18,11 +18,14 @@ extension AppModel {
                 }
                 try await backendRegistry.select(identifier)
                 selectedBackend = identifier
+                runtimeCoordinator = nil
                 try await associatePreparedProject(with: identifier)
                 try await rebuildRuntimeCoordinator()
                 await refreshEnvironmentNow()
             } catch {
+                runtimeCoordinator = nil
                 runtimeStatus = humanMessage(for: error)
+                await refreshEnvironmentNow()
             }
         }
     }
@@ -87,6 +90,7 @@ extension AppModel {
         guard let backendRegistry else {
             backendStatus = "Initialisation des logiciels DJ"
             backendValidationReport = nil
+            runtimeCoordinator = nil
             evaluatePreflight()
             return
         }
@@ -114,32 +118,52 @@ extension AppModel {
         let observation = accessibilityBridge.observe(backend: selectedBackend)
         accessibilityStatus = observation.accessibilityGranted ? "Autorisée" : "Action requise"
         audioStatus = audioMonitor.isRunning ? "Surveillance active" : "Surveillance arrêtée"
-        libraryRowCount = observation.accessibilityGranted
-            ? accessibilityBridge.libraryRows(
+        if observation.accessibilityGranted {
+            let visibleRows = await accessibilityBridge.libraryRows(
                 backend: selectedBackend,
                 maxRows: 1_000
-            ).count
-            : 0
-
-        if let backend = try? await backendRegistry.activeBackend() {
-            backendValidationReport = await backend.validateConfiguration()
+            )
+            libraryRowCount = visibleRows.count
         } else {
-            backendValidationReport = nil
+            libraryRowCount = 0
         }
 
-        if observation.isRunning && observation.accessibilityGranted {
+        var activeBackendAvailable = false
+        do {
+            let backend = try await backendRegistry.activeBackend()
+            backendValidationReport = await backend.validateConfiguration()
+            activeBackendAvailable = true
+        } catch {
+            backendValidationReport = nil
+            runtimeCoordinator = nil
+            runtimeStatus = humanMessage(for: error)
+        }
+
+        if activeBackendAvailable,
+           observation.isRunning,
+           observation.accessibilityGranted {
             runtimeStatus = "\(descriptor.displayName) observable"
         }
 
-        if !isLiveRunning {
-            try? await rebuildRuntimeCoordinator()
+        if !isLiveRunning, activeBackendAvailable {
+            do {
+                try await rebuildRuntimeCoordinator()
+            } catch {
+                runtimeCoordinator = nil
+                runtimeStatus = humanMessage(for: error)
+            }
         }
         evaluatePreflight()
     }
 
     func rebuildRuntimeCoordinator() async throws {
         guard !isLiveRunning else { throw DJBackendError.liveChangeForbidden }
-        guard let backendRegistry else { return }
+        guard let backendRegistry else {
+            runtimeCoordinator = nil
+            throw DJBackendError.commandRejected(
+                "Le registre des logiciels DJ n’est pas encore disponible."
+            )
+        }
         let backend = try await backendRegistry.activeBackend()
         runtimeCoordinator = LiveAutopilotCoordinator(backend: backend)
     }
@@ -151,9 +175,9 @@ extension AppModel {
         guard project.backend != identifier else { return }
 
         project.selectBackend(identifier)
+        _ = try await projectStore.save(project)
         preparedProject = project
         liveArmed = false
-        _ = try await projectStore.save(project)
         runtimeStatus = "Set associé à \(identifier.displayName) • inspecte les adaptations puis verrouille de nouveau le plan"
     }
 

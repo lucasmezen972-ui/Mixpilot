@@ -1,0 +1,51 @@
+#if os(macOS)
+import MixPilotCore
+import MixPilotSystem
+
+@MainActor
+extension AppModel {
+    func prepareSpotifyPlaylist(
+        name: String,
+        tracks spotifyTracks: [SpotifyLibraryTrack],
+        usedLikedSongsFallback: Bool
+    ) throws {
+        guard let selectedBackend else {
+            throw SpotifyBridgeError.backendNotSelected
+        }
+        let usable = spotifyTracks.filter {
+            !$0.isLocal && $0.isPlayable != false && $0.duration > 0
+        }
+        guard usable.count >= 2 else {
+            throw SpotifyBridgeError.notEnoughPlayableTracks
+        }
+
+        let tracks = usable.map { $0.asMixPilotTrack() }
+        preparedProject = SetPreparationEngine().prepare(
+            name: "Spotify — \(name)",
+            tracks: tracks,
+            backend: selectedBackend
+        )
+        optimizationReport = SetOptimizer().analyze(tracks: tracks)
+        libraryRowCount = tracks.count
+
+        var warnings = [
+            PlaylistImportWarning(
+                rowIndex: -1,
+                message: "BPM non analysé — transition prudente"
+            ),
+        ]
+        if usedLikedSongsFallback {
+            warnings.append(PlaylistImportWarning(
+                rowIndex: -1,
+                message: "La playlist a été complétée avec les Titres likés pour atteindre deux morceaux exploitables."
+            ))
+        }
+        playlistWarnings = warnings
+
+        runtimeStatus = "\(tracks.count) titres Spotify préparés pour \(selectedBackend.displayName)."
+        updateSnapshotForProject()
+        evaluatePreflight()
+        selectedSection = .preflight
+    }
+}
+#endif

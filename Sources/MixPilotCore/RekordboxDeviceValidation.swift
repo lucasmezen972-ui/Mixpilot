@@ -145,9 +145,9 @@ public struct RekordboxDeviceValidationReport: Codable, Hashable, Sendable {
     public init(plan: RekordboxDeviceValidationPlan, date: Date = Date()) {
         self.schemaVersion = Self.schemaVersion
         self.target = plan.target
-        self.records = Dictionary(uniqueKeysWithValues: plan.commands.map {
-            ($0.id, RekordboxDeviceValidationRecord(commandID: $0.id))
-        })
+        self.records = plan.commands.reduce(into: [:]) { records, command in
+            records[command.id] = RekordboxDeviceValidationRecord(commandID: command.id)
+        }
         self.createdAt = date
         self.updatedAt = date
     }

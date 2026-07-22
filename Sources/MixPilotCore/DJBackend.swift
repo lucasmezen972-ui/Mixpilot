@@ -546,7 +546,11 @@ public actor DJBackendRegistry {
         backends: [any DJBackend],
         selectionStore: any DJBackendSelectionStoring = UserDefaultsDJBackendSelectionStore()
     ) {
-        self.backends = Dictionary(uniqueKeysWithValues: backends.map { ($0.identifier, $0) })
+        var indexedBackends: [DJBackendIdentifier: any DJBackend] = [:]
+        for backend in backends {
+            indexedBackends[backend.identifier] = backend
+        }
+        self.backends = indexedBackends
         self.selectionStore = selectionStore
     }
 

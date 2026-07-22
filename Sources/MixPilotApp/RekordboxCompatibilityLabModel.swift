@@ -36,9 +36,18 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
     private let environmentProbe = RekordboxEnvironmentProbe()
     private let accessibilityBridge = DJAccessibilityBridge()
     private let actionBridge = RekordboxAccessibilityActionBridge()
+    private let exportWriter = RekordboxCompatibilityExportWriter()
 
     func inspect() {
+        guard !isInspecting else { return }
         isInspecting = true
+        status = "Inspection de rekordbox…"
+        Task { @MainActor [weak self] in
+            await self?.inspectNow()
+        }
+    }
+
+    private func inspectNow() async {
         defer { isInspecting = false }
 
         let environment = environmentProbe.probe()
@@ -66,7 +75,10 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
             return
         }
 
-        rows = accessibilityBridge.libraryRows(backend: .rekordbox, maxRows: 1_500)
+        rows = await accessibilityBridge.libraryRows(
+            backend: .rekordbox,
+            maxRows: 1_500
+        )
         do {
             actionableElements = try actionBridge.inspect()
             status = "\(rows.count) ligne(s) et \(actionableElements.count) contrôle(s) actionnable(s) détectés."
@@ -147,11 +159,37 @@ final class RekordboxCompatibilityLabModel: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(export).write(to: url, options: .atomic)
-            status = "Diagnostic exporté : \(url.lastPathComponent)"
+            let data = try encoder.encode(export)
+            status = "Écriture du diagnostic…"
+            Task { @MainActor [weak self, exportWriter] in
+                guard let self else { return }
+                do {
+                    try await exportWriter.write(data, to: url)
+                    self.status = "Diagnostic exporté : \(url.lastPathComponent)"
+                } catch {
+                    self.status = "Échec export : \(error.localizedDescription)"
+                }
+            }
         } catch {
             status = "Échec export : \(error.localizedDescription)"
         }
+    }
+}
+
+private actor RekordboxCompatibilityExportWriter {
+    func write(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        guard try Data(contentsOf: url) == data else {
+            throw RekordboxCompatibilityExportError.verificationFailed
+        }
+    }
+}
+
+private enum RekordboxCompatibilityExportError: Error, LocalizedError {
+    case verificationFailed
+
+    var errorDescription: String? {
+        "Le diagnostic écrit ne correspond pas aux données préparées."
     }
 }
 #endif

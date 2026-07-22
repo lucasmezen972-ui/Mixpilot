@@ -4,6 +4,17 @@ import MixPilotCore
 import MixPilotMIDI
 import MixPilotSystem
 
+enum MappingTestResult: Equatable, Sendable {
+    case sending
+    case sent(commandID: UUID, sentAt: Date)
+    case failed(error: String)
+
+    var sentCommand: (id: UUID, sentAt: Date)? {
+        guard case .sent(let commandID, let sentAt) = self else { return nil }
+        return (commandID, sentAt)
+    }
+}
+
 @MainActor
 extension AppModel {
     func configureMIDI() {
@@ -20,7 +31,15 @@ extension AppModel {
             midiStatus = "Contrôleur virtuel actif"
 
             Task {
-                let profile = (try? await store.load()) ?? .developmentDefault
+                let profile: MIDIMappingProfile
+                do {
+                    profile = try await store.load()
+                } catch {
+                    profile = .developmentDefault
+                    midiStatus = "Profil local illisible • profil sûr chargé"
+                    runtimeStatus = humanMessage(for: error)
+                }
+
                 mappingProfile = profile
                 let mapped = MappedMIDIController(controller: controller, profile: profile)
                 mappedController = mapped
@@ -43,12 +62,20 @@ extension AppModel {
                 selectedBackend = await registry.restoreSelection()
 
                 if selectedBackend != nil {
-                    try? await rebuildRuntimeCoordinator()
+                    do {
+                        try await rebuildRuntimeCoordinator()
+                    } catch {
+                        runtimeCoordinator = nil
+                        runtimeStatus = humanMessage(for: error)
+                        midiStatus = "Contrôleur actif • runtime DJ indisponible"
+                    }
                 } else {
                     runtimeCoordinator = nil
                 }
 
-                midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
+                if runtimeCoordinator != nil || selectedBackend == nil {
+                    midiStatus = "Contrôleur actif • \(Int(profile.liveControlCoverageRatio * 100)) % des commandes critiques configurées"
+                }
                 await refreshEnvironmentNow()
             }
         } catch {
@@ -59,50 +86,77 @@ extension AppModel {
     }
 
     func resetDefaultMapping() {
-        mappingProfile = .developmentDefault
-        Task {
-            await mappedController?.replaceProfile(mappingProfile)
-            _ = try? await mappingStore?.save(mappingProfile)
-            midiStatus = "Profil par défaut chargé"
-            await refreshEnvironmentNow()
+        guard let mappingStore else {
+            midiStatus = "Le stockage du mapping n’est pas encore disponible."
+            return
         }
-    }
 
-    func saveMapping() {
+        let profile = MIDIMappingProfile.developmentDefault
+        mappingProfile = profile
         Task {
             do {
-                _ = try await mappingStore?.save(mappingProfile)
-                await mappedController?.replaceProfile(mappingProfile)
-                midiStatus = "Mapping sauvegardé"
+                _ = try await mappingStore.save(profile)
+                await mappedController?.replaceProfile(profile)
+                midiStatus = "Profil par défaut chargé et sauvegardé"
                 await refreshEnvironmentNow()
             } catch {
-                midiStatus = "Le mapping n’a pas pu être sauvegardé. Vérifie l’espace disponible, puis réessaie."
-            }
-        }
-    }
-
-    func testMapping(_ action: DJControlAction) {
-        Task {
-            do {
-                guard let mappedController else {
-                    throw DJBackendError.commandRejected(
-                        "Le contrôleur MIDI n’est pas encore disponible."
-                    )
-                }
-                if let mapping = mappingProfile[action], mapping.kind == .controlChange {
-                    try await mappedController.set(action, value: 0.5)
-                } else {
-                    try await mappedController.trigger(action)
-                }
-                midiStatus = "Commande envoyée. Confirme maintenant la réaction du logiciel DJ."
-            } catch {
-                midiStatus = "La commande n’a pas pu être envoyée. Vérifie le mapping et la connexion MIDI."
+                midiStatus = "Le profil par défaut est chargé en mémoire mais n’a pas pu être sauvegardé."
                 runtimeStatus = humanMessage(for: error)
             }
         }
     }
 
-    func recordMappingValidation(_ action: DJControlAction, succeeded: Bool) {
+    func saveMapping() {
+        guard let mappingStore else {
+            midiStatus = "Le stockage du mapping n’est pas encore disponible."
+            return
+        }
+
+        let profile = mappingProfile
+        Task {
+            do {
+                _ = try await mappingStore.save(profile)
+                await mappedController?.replaceProfile(profile)
+                midiStatus = "Mapping sauvegardé"
+                await refreshEnvironmentNow()
+            } catch {
+                midiStatus = "Le mapping n’a pas pu être sauvegardé. Vérifie l’espace disponible, puis réessaie."
+                runtimeStatus = humanMessage(for: error)
+            }
+        }
+    }
+
+    func testMapping(_ action: DJControlAction) async -> MappingTestResult {
+        midiStatus = "Envoi de la commande MIDI…"
+        do {
+            guard let mappedController else {
+                throw DJBackendError.commandRejected(
+                    "Le contrôleur MIDI n’est pas encore disponible."
+                )
+            }
+            if let mapping = mappingProfile[action], mapping.kind == .controlChange {
+                try await mappedController.set(action, value: 0.5)
+            } else {
+                try await mappedController.trigger(action)
+            }
+            let commandID = UUID()
+            let sentAt = Date()
+            midiStatus = "Commande envoyée. Confirme maintenant la réaction du logiciel DJ."
+            return .sent(commandID: commandID, sentAt: sentAt)
+        } catch {
+            let message = humanMessage(for: error)
+            midiStatus = "La commande n’a pas pu être envoyée. Vérifie le mapping et la connexion MIDI."
+            runtimeStatus = message
+            return .failed(error: message)
+        }
+    }
+
+    func recordMappingValidation(
+        _ action: DJControlAction,
+        commandID: UUID,
+        sentAt: Date,
+        succeeded: Bool
+    ) {
         guard let selectedBackend else {
             midiStatus = "Choisis d’abord le logiciel DJ à tester."
             return
@@ -118,21 +172,26 @@ extension AppModel {
             mappingVersion: mappingProfile.validationIdentifier,
             action: action
         )
+        let resultLabel = succeeded ? "DEVICE_CONFIRMED" : "USER_REJECTED"
         let record = DJCommandValidationRecord(
             key: key,
             status: succeeded ? .automatedSuccess : .failed,
             evidence: succeeded ? .deviceConfirmed : .userRejected,
-            detail: succeeded
-                ? "Réaction confirmée par l’utilisateur sur le logiciel DJ actif."
-                : "La réaction attendue n’a pas été observée."
+            validatedAt: Date(),
+            detail: "\(resultLabel); commandID=\(commandID.uuidString); sentAt=\(ISO8601DateFormatter().string(from: sentAt))"
         )
 
         Task {
-            try? await commandValidationStore.record(record)
-            midiStatus = succeeded
-                ? "Commande confirmée avec \(selectedBackend.displayName)."
-                : "Commande marquée comme non fonctionnelle. MixPilot ne l’utilisera pas en Live."
-            await refreshEnvironmentNow()
+            do {
+                try await commandValidationStore.record(record)
+                midiStatus = succeeded
+                    ? "Commande confirmée avec \(selectedBackend.displayName)."
+                    : "Commande marquée comme non fonctionnelle. MixPilot ne l’utilisera pas en Live."
+                await refreshEnvironmentNow()
+            } catch {
+                midiStatus = "Commande testée, mais la validation n’a pas pu être sauvegardée."
+                runtimeStatus = humanMessage(for: error)
+            }
         }
     }
 }
