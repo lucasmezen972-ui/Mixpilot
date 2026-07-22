@@ -36,7 +36,7 @@ func diagnosticExporterCreatesFiles() async throws {
         validations: [
             DiagnosticValidation(name: "Core", status: .simulatedSuccess, detail: "Tests passés")
         ],
-        recentEvents: ["Loaded /Users/example/private/path"]
+        recentEvents: ["Loaded /private/tmp/mixpilot-tests/private/path"]
     )
     let result = try await DiagnosticExporter(directory: directory).export(snapshot)
     #expect(FileManager.default.fileExists(atPath: result.jsonURL.path))

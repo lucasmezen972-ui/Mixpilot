@@ -19,6 +19,7 @@ public enum PreparationAudioCaptureError: Error, LocalizedError {
     }
 }
 
+// SAFETY: Every mutable capture field and AVAudioEngine lifecycle transition is serialized by lock; the audio tap calls append(), which uses the same lock.
 public final class PreparationAudioCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let lock = NSLock()

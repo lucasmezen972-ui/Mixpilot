@@ -43,6 +43,12 @@ for report_name, report_path in (
     summary = report.get("summary", {})
     if summary.get("errors") != 0:
         raise SystemExit(f"The {report_name} contains blocking errors.")
+    if report_name == "architecture counter-audit":
+        checks = summary.get("checks")
+        if not isinstance(checks, int) or checks < 50:
+            raise SystemExit(
+                f"The {report_name} executed insufficient checks: {checks!r}."
+            )
     if summary.get("git_head") != expected_head:
         raise SystemExit(
             f"The repository changed after the last successful {report_name}; rebuild before packaging."
@@ -52,7 +58,10 @@ PY
 [[ -d "$APP_DIR" ]] || "$ROOT/Scripts/build_release.sh"
 rm -rf "$STAGING" "$DMG" "$DMG.sha256"
 mkdir -p "$STAGING"
-/usr/bin/ditto "$APP_DIR" "$STAGING/$APP_NAME.app"
+find "$APP_DIR" -name '.DS_Store' -delete
+/usr/bin/xattr -cr "$APP_DIR"
+COPYFILE_DISABLE=1 /usr/bin/ditto --norsrc --noextattr "$APP_DIR" "$STAGING/$APP_NAME.app"
+/usr/bin/xattr -cr "$STAGING/$APP_NAME.app"
 ln -s /Applications "$STAGING/Applications"
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
 (
@@ -60,4 +69,5 @@ hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING" -ov -format UDZO "$DMG
   shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
   shasum -a 256 -c "$DMG_NAME.sha256"
 )
+bash "$ROOT/Scripts/verify_release_hygiene.sh"
 echo "Packaged: $DMG"

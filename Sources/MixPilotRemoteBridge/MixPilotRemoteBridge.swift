@@ -4,6 +4,7 @@ import Foundation
 import MixPilotRemoteProtocol
 import Network
 
+// SAFETY: Network callbacks only touch the lock-protected closed flag; all pairing, protocol and subscription state is read or mutated after an explicit hop to MainActor. NWConnection is designed for cross-queue use.
 private final class MixPilotRemoteClientSession: @unchecked Sendable {
     let id = UUID()
     let connection: NWConnection
@@ -93,6 +94,7 @@ private final class MixPilotRemoteClientSession: @unchecked Sendable {
 }
 
 @MainActor
+// SAFETY: The bridge is globally MainActor-isolated. Network framework callbacks capture it only to create a Task that hops back to MainActor before accessing state.
 public final class MixPilotRemoteBridge: ObservableObject, @unchecked Sendable {
     @Published public private(set) var isRunning = false
     @Published public private(set) var status = "Télécommande désactivée"

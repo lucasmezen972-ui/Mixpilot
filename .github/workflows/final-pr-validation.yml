@@ -10,7 +10,7 @@ on:
       version:
         description: "Version used for the development DMG"
         required: false
-        default: "0.4.0-dev"
+        default: "0.4.4-final"
         type: string
 
 permissions:
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MIXPILOT_VALIDATION_VERSION: ${{ github.event.inputs.version || '0.4.0-dev' }}
+  MIXPILOT_VALIDATION_VERSION: ${{ github.event.inputs.version || '0.4.4-final' }}
 
 jobs:
   repository-audits:
@@ -66,6 +66,10 @@ jobs:
               summary = report.get("summary", {})
               if summary.get("errors") != 0:
                   raise SystemExit(f"{report_path} contains blocking errors")
+              if report_path.name == "architecture-counter-audit.json":
+                  checks = summary.get("checks")
+                  if not isinstance(checks, int) or checks < 50:
+                      raise SystemExit(f"{report_path} executed insufficient checks: {checks!r}")
               if summary.get("git_head") != head:
                   raise SystemExit(f"{report_path} does not match {head}")
           PY
@@ -182,7 +186,7 @@ jobs:
           xcrun simctl list runtimes
 
   apple-validation:
-    name: macOS, iPhone, simulations and development DMG
+    name: macOS, iPhone, simulations and clean DMG
     needs: runner-smoke-macos
     runs-on: macos-latest
     timeout-minutes: 90
@@ -289,36 +293,47 @@ jobs:
             -resultBundlePath iphone-remote-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test 2>&1 | tee iphone-remote-xctest.log
-      - name: Build application and development DMG
+      - name: Build application and clean DMG
         env:
           MIXPILOT_VERSION: ${{ env.MIXPILOT_VALIDATION_VERSION }}
           CODE_SIGN_IDENTITY: "-"
         run: |
           ./Scripts/build_release.sh
           ./Scripts/package_dmg.sh
-      - name: Verify development app and checksum
+      - name: Verify application, DMG hygiene and checksum
         shell: bash
         run: |
           set -euo pipefail
           codesign --verify --deep --strict --verbose=2 "build/MixPilot Autopilot.app"
+          ./Scripts/verify_release_hygiene.sh
           cd build
           shasum -a 256 -c MixPilot-Autopilot.dmg.sha256
+      - name: Upload clean final DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-clean-DMG-${{ env.MIXPILOT_VALIDATION_VERSION }}
+          path: |
+            build/MixPilot-Autopilot.dmg
+            build/MixPilot-Autopilot.dmg.sha256
+          if-no-files-found: error
       - name: Validation summary
         if: always()
         shell: bash
         run: |
           {
             echo "## Final validation"
-            echo "- Two independent repository audits passed on the same Git commit."
+            echo "- Two independent repository audits passed on the exact Git commit."
+            echo "- The architecture counter-audit must execute at least 50 checks."
+            echo "- The mounted DMG is inspected for user data and unexpected payloads."
             echo "- Development/ad hoc signing is accepted for this workflow."
             echo "- Developer ID and notarization are not required here."
             echo "- Physical DJ software, audio and controller tests remain separate."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload final validation artifacts
+      - name: Upload final validation diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MixPilot-PR-final-validation
+          name: MixPilot-PR-final-validation-diagnostics
           path: |
             static-checks
             swift-test.log
@@ -327,6 +342,4 @@ jobs:
             Mobile/MixPilotRemote/iphone-remote-xctest.log
             Mobile/MixPilotRemote/available-simulators.json
             Mobile/MixPilotRemote/iphone-remote-tests.xcresult
-            build/MixPilot-Autopilot.dmg
-            build/MixPilot-Autopilot.dmg.sha256
           if-no-files-found: warn

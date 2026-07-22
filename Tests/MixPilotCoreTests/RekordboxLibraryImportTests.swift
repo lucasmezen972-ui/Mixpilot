@@ -8,7 +8,7 @@ struct RekordboxLibraryImportTests {
     func rekordboxConnectRows() throws {
         let json = #"""
         {
-          "dbPath": "/Users/dj/Library/Pioneer/rekordbox/master.db",
+          "dbPath": "/private/tmp/mixpilot-tests/Pioneer/rekordbox/master.db",
           "count": 1,
           "rows": [{
             "id": "rb-1",

@@ -33,9 +33,8 @@ trap cleanup_audit_worktree EXIT
 
 cd "$ROOT"
 
-# Always audit the exact Git commit from a clean detached worktree. Generated
-# Xcode projects, simulator logs and other untracked CI outputs must never alter
-# the release verdict for an otherwise identical source commit.
+# Audit the exact Git commit from a clean detached worktree. Generated Xcode
+# projects, simulator logs and untracked CI outputs cannot alter the verdict.
 rm -rf "$AUDIT_DIR" "$COUNTER_AUDIT_DIR"
 AUDIT_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/mixpilot-release-audit.XXXXXX")"
 rmdir "$AUDIT_WORKTREE"
@@ -66,6 +65,12 @@ for report_name, report_path in (
     summary = report.get("summary", {})
     if summary.get("errors") != 0:
         raise SystemExit(f"The {report_name} contains blocking errors.")
+    if report_name == "architecture counter-audit":
+        checks = summary.get("checks")
+        if not isinstance(checks, int) or checks < 50:
+            raise SystemExit(
+                f"The {report_name} executed insufficient checks: {checks!r}."
+            )
     if summary.get("git_head") != expected_head:
         raise SystemExit(
             f"The {report_name} does not match the current Git commit."
@@ -103,6 +108,7 @@ fi
 rm -rf "$APP_DIR" "$ICONSET_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$RESOURCES_DIR" "$ICONSET_DIR"
 cp "$SWIFTPM_BIN_DIR/$EXECUTABLE" "$APP_DIR/Contents/MacOS/$EXECUTABLE"
+/usr/bin/strip -S "$APP_DIR/Contents/MacOS/$EXECUTABLE"
 
 shopt -s nullglob
 resource_bundles=("$SWIFTPM_BIN_DIR"/*.bundle)
@@ -115,7 +121,7 @@ fi
 
 for resource_bundle in "${resource_bundles[@]}"; do
   bundle_name="$(basename "$resource_bundle")"
-  /usr/bin/ditto "$resource_bundle" "$RESOURCES_DIR/$bundle_name"
+  COPYFILE_DISABLE=1 /usr/bin/ditto --norsrc "$resource_bundle" "$RESOURCES_DIR/$bundle_name"
 done
 
 if [[ ! -d "$RESOURCES_DIR/MixPilot_MixPilotHelp.bundle" ]]; then
@@ -161,16 +167,12 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <dict>
       <key>CFBundleURLName</key><string>com.mixpilot.autopilot.spotify</string>
       <key>CFBundleURLSchemes</key>
-      <array>
-        <string>mixpilot-spotify</string>
-      </array>
+      <array><string>mixpilot-spotify</string></array>
     </dict>
     <dict>
       <key>CFBundleURLName</key><string>com.mixpilot.autopilot.auth</string>
       <key>CFBundleURLSchemes</key>
-      <array>
-        <string>mixpilot-autopilot</string>
-      </array>
+      <array><string>mixpilot-autopilot</string></array>
     </dict>
   </array>
   <key>NSHumanReadableCopyright</key><string>© 2026 $PUBLISHER. Tous droits réservés.</string>
@@ -180,9 +182,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>NSScreenCaptureUsageDescription</key><string>MixPilot peut observer l’interface visible du logiciel DJ sélectionné afin de confirmer les titres, les decks et les erreurs.</string>
   <key>NSLocalNetworkUsageDescription</key><string>MixPilot utilise le réseau local uniquement pour connecter l’application Remote sur ton iPhone au Mac.</string>
   <key>NSBonjourServices</key>
-  <array>
-    <string>_mixpilot._tcp</string>
-  </array>
+  <array><string>_mixpilot._tcp</string></array>
 </dict>
 </plist>
 PLIST
@@ -199,10 +199,10 @@ if [[ "$registered_account_scheme" != "mixpilot-autopilot" ]]; then
   exit 1
 fi
 
+find "$APP_DIR" -name '.DS_Store' -delete
+/usr/bin/xattr -cr "$APP_DIR"
+
 if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
-  # Keep macOS Accessibility/Screen Recording grants stable across local builds.
-  # An ad-hoc signature otherwise gets an implicit cdhash-only requirement that
-  # changes every time the executable changes.
   codesign \
     --force \
     --deep \
