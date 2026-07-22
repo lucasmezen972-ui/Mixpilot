@@ -35,8 +35,8 @@ jobs:
       - name: Apply hardening and explicit identity atomically
         shell: bash
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
+          set +e
+          python3 - <<'PY' > patch-preparation.log 2>&1
           from pathlib import Path
           path = Path("Scripts/apply_final_release_hardening.py")
           text = path.read_text(encoding="utf-8")
@@ -55,8 +55,18 @@ jobs:
               raise SystemExit("Could not specialize final hardening patch.")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
-          python3 Scripts/apply_final_release_hardening.py
-          python3 - <<'PY'
+          preparation_status=$?
+          hardening_status=99
+          safety_status=99
+          identity_status=99
+          if (( preparation_status == 0 )); then
+            python3 Scripts/apply_final_release_hardening.py > final-hardening.log 2>&1
+            hardening_status=$?
+          else
+            printf '%s\n' 'Hardening skipped because patch preparation failed.' > final-hardening.log
+          fi
+          if (( hardening_status == 0 )); then
+            python3 - <<'PY' > spotify-safety.log 2>&1
           from pathlib import Path
           path = Path("Sources/MixPilotApp/SpotifyLibraryCoordinator.swift")
           text = path.read_text(encoding="utf-8")
@@ -71,7 +81,23 @@ jobs:
               raise SystemExit("Spotify callback relay safety marker could not be inserted exactly once.")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
-          python3 Scripts/apply_explicit_cloud_identity_fix.py
+            safety_status=$?
+          else
+            printf '%s\n' 'Safety proof skipped because hardening failed.' > spotify-safety.log
+          fi
+          if (( safety_status == 0 )); then
+            python3 Scripts/apply_explicit_cloud_identity_fix.py > explicit-cloud-identity.log 2>&1
+            identity_status=$?
+          else
+            printf '%s\n' 'Identity patch skipped because safety proof failed.' > explicit-cloud-identity.log
+          fi
+          printf '%s\n' "$preparation_status" > patch-preparation.status
+          printf '%s\n' "$hardening_status" > final-hardening.status
+          printf '%s\n' "$safety_status" > spotify-safety.status
+          printf '%s\n' "$identity_status" > explicit-cloud-identity.status
+          if (( preparation_status != 0 || hardening_status != 0 || safety_status != 0 || identity_status != 0 )); then
+            exit 1
+          fi
 
       - name: Remove all one-shot scaffolding
         shell: bash
@@ -187,6 +213,14 @@ jobs:
         with:
           name: MixPilot-final-integration-evidence
           path: |
+            patch-preparation.log
+            patch-preparation.status
+            final-hardening.log
+            final-hardening.status
+            spotify-safety.log
+            spotify-safety.status
+            explicit-cloud-identity.log
+            explicit-cloud-identity.status
             ultimate-audit
             architecture-counter-audit
             ultimate-audit.log
