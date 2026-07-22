@@ -13,12 +13,13 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: consolidation/security-cloud-trust
-      - name: Match the production patch preparation
+      - name: Prepare and apply the candidate patch
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -33,33 +34,52 @@ jobs:
                   path,
                   '        rel = file_path.relative_to(ROOT).as_posix()\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
                   '        rel = file_path.relative_to(ROOT).as_posix()\\n        mark_check(2)\\n        try:\\n            text = file_path.read_text(encoding="utf-8")',
-                  expected=2,
+                  expected=1,
               )'''
           if text.count(old) != 1:
               raise SystemExit("Could not specialize the one-shot audit patch.")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
-      - name: Capture patch result
+          python3 Scripts/apply_final_release_hardening.py
+          rm -f \
+            .github/final-release-hardening-trigger.txt \
+            .github/final-release-hardening-trigger-branch.txt \
+            .github/final-release-hardening-pr-trigger.txt \
+            .github/unused-placeholder.txt \
+            .github/placeholder-final.txt \
+            .github/workflows/final-release-hardening-debug.yml
+          chmod +x Scripts/*.sh
+          git diff --check
+      - name: Run audits without hiding findings
         shell: bash
         run: |
           set +e
-          python3 Scripts/apply_final_release_hardening.py > hardening-patch.log 2>&1
-          status=$?
-          echo "$status" > hardening-patch.status
-          git diff --stat > hardening-diff-stat.log || true
-          git diff --check >> hardening-patch.log 2>&1 || true
+          python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit > ultimate-audit.log 2>&1
+          first=$?
+          python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit > architecture-counter-audit.log 2>&1
+          second=$?
+          printf '%s\n' "$first" > ultimate-audit.status
+          printf '%s\n' "$second" > architecture-counter-audit.status
           exit 0
-      - name: Upload patch diagnostics
+      - name: Upload complete diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: final-release-hardening-debug
+          name: final-release-hardening-audit-debug
           path: |
-            hardening-patch.log
-            hardening-patch.status
-            hardening-diff-stat.log
+            ultimate-audit
+            architecture-counter-audit
+            ultimate-audit.log
+            architecture-counter-audit.log
+            ultimate-audit.status
+            architecture-counter-audit.status
           if-no-files-found: error
-      - name: Reflect patch status
+      - name: Reflect audit status
+        shell: bash
         run: |
-          status="$(cat hardening-patch.status)"
-          cat hardening-patch.log
-          exit "$status"
+          cat ultimate-audit.log
+          cat architecture-counter-audit.log
+          first="$(cat ultimate-audit.status)"
+          second="$(cat architecture-counter-audit.status)"
+          if [[ "$first" != 0 || "$second" != 0 ]]; then
+            exit 1
+          fi
