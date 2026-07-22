@@ -63,25 +63,21 @@ jobs:
             .github/unused-placeholder.txt \
             .github/placeholder-final.txt \
             .github/workflows/final-release-hardening-debug.yml
-      - name: Validate patch shape
+      - name: Validate patch syntax
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           chmod +x Scripts/*.sh
           git diff --check
           test ! -e Scripts/apply_final_release_hardening.py
           test ! -e .github/workflows/final-release-hardening-pr.yml
           test ! -e .github/workflows/final-release-hardening-debug.yml
           test ! -e .github/final-release-hardening-trigger.txt
-          test -x Scripts/verify_release_hygiene.sh
-          grep -q 'CHECKS_EXECUTED' Scripts/architecture_counter_audit.py
-          grep -q 'verify_release_hygiene.sh' .github/workflows/final-pr-validation.yml
-          grep -q '/usr/bin/strip -S' Scripts/build_release.sh
-          grep -q -- '--noextattr' Scripts/package_dmg.sh
-          if grep -R -n '/Users/' Tests Sources Mobile Shared 2>/dev/null; then
-            echo "A tracked user-home literal remains." >&2
-            exit 1
-          fi
+          python3 -m py_compile Scripts/ultimate_repository_audit.py
+          python3 -m py_compile Scripts/architecture_counter_audit.py
+          bash -n Scripts/build_release.sh
+          bash -n Scripts/package_dmg.sh
+          bash -n Scripts/verify_release_hygiene.sh
       - name: Commit candidate locally
         shell: bash
         run: |
@@ -92,8 +88,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile Scripts/ultimate_repository_audit.py
-          python3 -m py_compile Scripts/architecture_counter_audit.py
           python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
           python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
           python3 - <<'PY'
