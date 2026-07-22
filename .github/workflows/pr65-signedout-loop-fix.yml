@@ -1,0 +1,93 @@
+name: PR65 signed-out loop fix
+
+on:
+  push:
+    branches:
+      - fix/final-release-hardening-main
+    paths:
+      - .github/pr65-signedout-loop-fix.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/final-release-hardening-main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stop signed-out retries and update runtime contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected one match in {path}, found {count}: {old!r}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "Sources/MixPilotApp/MixPilotCloudCoordinator.swift",
+              '''                    statusDetail = "Connecte ton compte MixPilot pour activer les services en ligne facultatifs."
+                    try await Task.sleep(for: .seconds(30))
+                    continue''',
+              '''                    statusDetail = "Connecte ton compte MixPilot pour activer les services en ligne facultatifs."
+                    connected = false
+                    // Signed-out state is terminal for this loop; identity changes restart it explicitly.
+                    break''',
+          )
+          replace_once(
+              "Sources/MixPilotApp/MixPilotCloudCoordinator.swift",
+              '''                connected = false
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                } catch {
+                    break
+                }''',
+              '''                connected = false
+                // Signed-out state is terminal for this loop; identity changes restart it explicitly.
+                break''',
+          )
+          replace_once(
+              "Scripts/check_runtime_safety.sh",
+              '''require_pattern 'anonymousProviderDisabled' Sources/MixPilotSystem/MixPilotCloudService.swift \\
+  'a disabled anonymous provider must not be retried indefinitely'
+require_pattern 'anonymousProviderDisabled' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \\
+  'remote mapping discovery must cache a disabled anonymous provider'
+require_pattern 'catch MixPilotCloudError\\.authenticationUnavailable' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \\
+  'the cloud loop must stop when server-side authentication is intentionally disabled' ''',
+              '''reject_pattern 'signInAnonymously' Sources/MixPilotSystem/MixPilotCloudService.swift \\
+  'the cloud service must never recreate anonymous sessions'
+reject_pattern 'signInAnonymously' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \\
+  'remote mapping discovery must never recreate anonymous sessions'
+require_pattern 'guard supabase\\.auth\\.currentSession != nil' Sources/MixPilotSystem/MixPilotCloudService.swift \\
+  'cloud operations must fail closed while signed out'
+require_pattern 'guard supabase\\.auth\\.currentSession != nil' Sources/MixPilotSystem/MixPilotRemoteMappingService.swift \\
+  'remote mapping discovery must fail closed while signed out'
+require_pattern 'Signed-out state is terminal for this loop' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \\
+  'the cloud loop must stop until an explicit identity change restarts it'
+require_pattern 'catch MixPilotCloudError\\.authenticationUnavailable' Sources/MixPilotApp/MixPilotCloudCoordinator.swift \\
+  'the cloud loop must stop when server-side authentication is intentionally disabled' ''',
+          )
+          PY
+          rm -f .github/workflows/pr65-signedout-loop-fix.yml .github/pr65-signedout-loop-fix.trigger
+          git diff --check
+          bash -n Scripts/check_runtime_safety.sh
+          ./Scripts/check_runtime_safety.sh
+      - name: Commit and push
+        shell: bash
+        run: |
+          git config user.name "MixPilot CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: stop cloud retries while signed out"
+          git push origin HEAD:fix/final-release-hardening-main
