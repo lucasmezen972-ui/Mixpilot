@@ -179,8 +179,8 @@ def check_spotify_contracts(findings: list[Finding]) -> None:
         ("SpotifyAuthenticationCallbackRelay: @unchecked Sendable", "spotify-relay-missing", "Spotify callback relay is missing."),
         ("// SAFETY:", "spotify-relay-safety-undocumented", "The unchecked Sendable relay lacks a local safety proof."),
         ("SpotifyWebAuthenticationSessionFactory", "spotify-session-factory-missing", "AuthenticationServices callback is not created outside MainActor."),
-        ("pendingAuthenticationSessionID", "spotify-session-id-missing", "Spotify callbacks are not bound to a session identifier."),
-        ("guard pendingAuthenticationSessionID == sessionID", "spotify-stale-callback-guard-missing", "Stale Spotify callbacks are not rejected."),
+        ("webAuthenticationSessionID", "spotify-session-id-missing", "Spotify callbacks are not bound to a session identifier."),
+        ("guard webAuthenticationSessionID == sessionID", "spotify-stale-callback-guard-missing", "Stale Spotify callbacks are not rejected."),
         ("prefersEphemeralWebBrowserSession = true", "spotify-ephemeral-session-missing", "Spotify browser session is not ephemeral."),
         ("SpotifyPKCE.challenge", "spotify-pkce-missing", "Spotify OAuth PKCE is missing."),
     )
