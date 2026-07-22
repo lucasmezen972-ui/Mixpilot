@@ -34,13 +34,14 @@ if /usr/bin/xattr -lr "$APP_DIR" 2>/dev/null | grep -E 'com\.apple\.(quarantine|
 fi
 
 TEXT_SCAN="$(mktemp "${TMPDIR:-/tmp}/mixpilot-release-text.XXXXXX")"
+MACHO_PATH_SCAN="$(mktemp "${TMPDIR:-/tmp}/mixpilot-macho-paths.XXXXXX")"
 MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/mixpilot-dmg-mount.XXXXXX")"
 attached=0
 cleanup() {
   if (( attached == 1 )); then
     hdiutil detach "$MOUNT_POINT" -quiet || true
   fi
-  rm -f "$TEXT_SCAN"
+  rm -f "$TEXT_SCAN" "$MACHO_PATH_SCAN"
   rmdir "$MOUNT_POINT" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -65,8 +66,15 @@ if grep -E 'gh[pousr]_[A-Za-z0-9]{30,}|sk-(proj-)?[A-Za-z0-9_-]{20,}|BEGIN (RSA 
   exit 1
 fi
 
-if /usr/bin/otool -l "$EXECUTABLE" | grep -E '/Users/|/home/' >/dev/null; then
+# otool prints the queried executable path as its first line. Only inspect actual
+# Mach-O `name` and `path` fields so the runner's checkout path cannot create a
+# false positive.
+/usr/bin/otool -l "$EXECUTABLE" | awk '
+  /^[[:space:]]+(name|path)[[:space:]]+/ { print $2 }
+' > "$MACHO_PATH_SCAN"
+if grep -E '^/Users/|^/home/' "$MACHO_PATH_SCAN" >/dev/null; then
   echo "Mach-O load command contains a user-specific path." >&2
+  cat "$MACHO_PATH_SCAN" >&2
   exit 1
 fi
 
