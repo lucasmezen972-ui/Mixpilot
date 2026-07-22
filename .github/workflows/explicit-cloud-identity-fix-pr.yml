@@ -33,12 +33,15 @@ jobs:
           grep -q 'mixpilot-autopilot' Scripts/build_release.sh
           grep -q 'cloud.handleAuthenticationCallback(url)' Sources/MixPilotApp/MixPilotApp.swift
 
-      - name: Commit candidate before validation
+      - name: Commit clean candidate before validation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'MixPilot Identity Fix Bot'
           git config user.email 'actions@users.noreply.github.com'
+          git rm \
+            Scripts/apply_explicit_cloud_identity_fix.py \
+            .github/workflows/explicit-cloud-identity-fix-pr.yml
           git add \
             Scripts/build_release.sh \
             Sources/MixPilotApp/MixPilotApp.swift \
@@ -51,26 +54,52 @@ jobs:
           git commit -m 'fix: require explicit MixPilot cloud account [skip ci]'
 
       - name: Run both repository audits on candidate commit
+        id: audits
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           python3 Scripts/ultimate_repository_audit.py --output-dir ultimate-audit
+          ultimate_status=$?
           python3 Scripts/architecture_counter_audit.py --output-dir architecture-counter-audit
+          architecture_status=$?
+          set -e
+          echo '--- Ultimate audit report ---'
+          cat ultimate-audit/ultimate-audit.md
+          echo '--- Architecture counter-audit report ---'
+          cat architecture-counter-audit/architecture-counter-audit.md
           python3 - <<'PY'
           import json
           import subprocess
           from pathlib import Path
           head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          failed = False
           for path in (
               Path('ultimate-audit/ultimate-audit.json'),
               Path('architecture-counter-audit/architecture-counter-audit.json'),
           ):
               summary = json.loads(path.read_text(encoding='utf-8'))['summary']
+              print(f'{path}: {summary}')
               if summary.get('errors') != 0:
-                  raise SystemExit(f'{path} contains blocking errors')
+                  failed = True
               if summary.get('git_head') != head:
-                  raise SystemExit(f'{path} does not target {head}')
+                  failed = True
+          if failed:
+              raise SystemExit('Candidate repository audits contain blocking findings or target the wrong commit.')
           PY
+          if (( ultimate_status != 0 || architecture_status != 0 )); then
+            echo 'At least one audit process exited non-zero.' >&2
+            exit 1
+          fi
+
+      - name: Upload candidate audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MixPilot-explicit-identity-audits
+          path: |
+            ultimate-audit
+            architecture-counter-audit
+          if-no-files-found: warn
 
       - name: Run complete Swift tests
         shell: bash
